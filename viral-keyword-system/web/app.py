@@ -33,14 +33,14 @@ from src.report.renderer import render_report
 
 app = FastAPI(title="써큐톡스 키워드 리서치 대시보드")
 
-# Static 파일: 로컬에서는 mount, Vercel에서는 vercel.json routes로 처리
-try:
-    from fastapi.staticfiles import StaticFiles
-    _static_dir = Path(__file__).parent / "static"
-    if _static_dir.exists():
+# Static 파일: 로컬/Railway는 mount, Vercel은 public/ 폴더로 자동 서빙
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.exists():
+    try:
+        from fastapi.staticfiles import StaticFiles
         app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
-except Exception:
-    pass
+    except Exception:
+        pass
 
 _jinja_env = jinja2.Environment(
     loader=jinja2.FileSystemLoader(str(Path(__file__).parent / "templates")),

@@ -1,0 +1,22 @@
+# 환경변수 / 시크릿
+.env
+.env.*
+
+# 출력 CSV
+output/
+naver-keyword-collector/output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp

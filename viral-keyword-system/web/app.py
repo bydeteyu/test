@@ -49,6 +49,9 @@ CACHE_DIR.mkdir(exist_ok=True)
 # 진행 중인 작업 관리
 _jobs: dict[str, dict] = {}  # job_id → {status, queue, result_path}
 
+# 메모리 내 리포트 캐시 (Railway 파일시스템 휘발성 대비)
+_report_cache: dict[str, str] = {}  # date_str → markdown content
+
 
 # ── 파이프라인 실행 (별도 스레드) ────────────────────────────────────────────
 
@@ -140,6 +143,9 @@ def _run_pipeline(job_id: str, keywords: list[str], use_cache: bool):
         out_path = render_report(generated, analysis, trends, videos, seasonal, today)
         emit("report", f"리포트 저장: {out_path.name}", 95)
 
+        # 메모리 캐시에도 저장 (클라우드 환경 대비)
+        _report_cache[today.strftime("%Y-%m-%d")] = out_path.read_text(encoding="utf-8")
+
         _jobs[job_id]["result_path"] = str(out_path)
         _jobs[job_id]["status"] = "done"
         _jobs[job_id]["generated"] = generated
@@ -223,19 +229,24 @@ async def stream(job_id: str):
 @app.get("/api/report/{date_str}")
 async def get_report(date_str: str):
     """마크다운 리포트를 HTML로 변환해서 반환."""
+    # 파일 먼저, 없으면 메모리 캐시
     path = OUTPUT_DIR / f"{date_str}.md"
-    if not path.exists():
+    if path.exists():
+        md = path.read_text(encoding="utf-8")
+    elif date_str in _report_cache:
+        md = _report_cache[date_str]
+    else:
         return JSONResponse({"error": "리포트 없음"}, status_code=404)
 
-    md = path.read_text(encoding="utf-8")
     html = markdown2.markdown(md, extras=["tables", "fenced-code-blocks"])
     return JSONResponse({"html": html, "raw": md})
 
 
 @app.get("/api/reports")
 async def list_reports():
-    reports = sorted(OUTPUT_DIR.glob("*.md"), reverse=True)
-    return JSONResponse({"reports": [p.stem for p in reports if p.stem != ".gitkeep"]})
+    file_dates = {p.stem for p in OUTPUT_DIR.glob("*.md") if p.stem != ".gitkeep"}
+    all_dates = sorted(file_dates | set(_report_cache.keys()), reverse=True)
+    return JSONResponse({"reports": all_dates})
 
 
 if __name__ == "__main__":

@@ -1,0 +1,46 @@
+{
+  "cafes": [
+    {
+      "slug": "dangsamo",
+      "name": "당뇨와건강",
+      "type": "A",
+      "description": "페인 발굴",
+      "url": "https://cafe.naver.com/dangsamo"
+    },
+    {
+      "slug": "pyurion",
+      "name": "고고당",
+      "type": "A",
+      "description": "페인 발굴",
+      "url": "https://cafe.naver.com/pyurion"
+    },
+    {
+      "slug": "cantsb",
+      "name": "씨씨앙",
+      "type": "A",
+      "description": "페인 발굴",
+      "url": "https://cafe.naver.com/cantsb"
+    },
+    {
+      "slug": "thyroidcancers",
+      "name": "갑상선포럼",
+      "type": "A",
+      "description": "페인 발굴",
+      "url": "https://cafe.naver.com/thyroidcancers"
+    },
+    {
+      "slug": "t1d",
+      "name": "슈거트리",
+      "type": "A",
+      "description": "페인 발굴",
+      "url": "https://cafe.naver.com/t1d"
+    },
+    {
+      "slug": "rksghwhantk",
+      "name": "전간조",
+      "type": "B",
+      "description": "광고 트렌드",
+      "url": "https://cafe.naver.com/rksghwhantk"
+    }
+  ]
+}

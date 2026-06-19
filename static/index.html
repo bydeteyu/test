@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>키워드 리서치 대시보드</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<!-- ── 헤더 ── -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">🔍</span>
+      <span class="logo-text">KeywordLens</span>
+    </div>
+    <p class="header-sub">네이버 검색 데이터 기반 키워드 기회 분석</p>
+  </div>
+</header>
+
+<!-- ── 검색 섹션 ── -->
+<section class="search-section">
+  <div class="search-card">
+    <h2 class="search-title">시드 키워드 입력</h2>
+    <p class="search-hint">콤마(,)로 구분해 여러 키워드를 입력할 수 있습니다</p>
+    <div class="search-row">
+      <input id="keyword-input" type="text"
+             placeholder="예: 러닝화, 운동화, 스포츠용품"
+             class="keyword-input" />
+      <button id="search-btn" class="search-btn" onclick="startResearch()">
+        분석 시작
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- ── 진행 상황 ── -->
+<section id="progress-section" class="progress-section hidden">
+  <div class="progress-card">
+    <h3 class="progress-title">분석 진행 중</h3>
+    <div class="steps">
+      <div class="step" id="step-1">
+        <div class="step-dot"></div>
+        <div class="step-body">
+          <span class="step-label">Step 1</span>
+          <span class="step-desc">연관 키워드 수집</span>
+          <span class="step-msg" id="msg-1"></span>
+        </div>
+      </div>
+      <div class="step" id="step-2">
+        <div class="step-dot"></div>
+        <div class="step-body">
+          <span class="step-label">Step 2</span>
+          <span class="step-desc">트렌드 데이터 수집</span>
+          <span class="step-msg" id="msg-2"></span>
+        </div>
+      </div>
+      <div class="step" id="step-3">
+        <div class="step-dot"></div>
+        <div class="step-body">
+          <span class="step-label">Step 3</span>
+          <span class="step-desc">기회 점수 계산</span>
+          <span class="step-msg" id="msg-3"></span>
+        </div>
+      </div>
+      <div class="step" id="step-4">
+        <div class="step-dot"></div>
+        <div class="step-body">
+          <span class="step-label">Step 4</span>
+          <span class="step-desc">AI 검색 대응 확장</span>
+          <span class="step-msg" id="msg-4"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 결과 대시보드 ── -->
+<section id="result-section" class="result-section hidden">
+
+  <!-- 요약 카드 -->
+  <div class="summary-bar">
+    <div class="summary-card">
+      <span class="summary-label">분석 키워드 수</span>
+      <span class="summary-value" id="stat-total">—</span>
+    </div>
+    <div class="summary-card highlight">
+      <span class="summary-label">상위 기회 키워드</span>
+      <span class="summary-value" id="stat-top">—</span>
+    </div>
+    <div class="summary-card">
+      <span class="summary-label">상승 트렌드</span>
+      <span class="summary-value" id="stat-rising">—</span>
+    </div>
+    <div class="summary-card">
+      <span class="summary-label">생성 시각</span>
+      <span class="summary-value small" id="stat-time">—</span>
+    </div>
+  </div>
+
+  <!-- 차트 행 -->
+  <div class="chart-row">
+    <div class="chart-card">
+      <h3 class="chart-title">TOP 10 기회 점수</h3>
+      <canvas id="chart-score"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">트렌드 분포</h3>
+      <canvas id="chart-trend"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">경쟁도 분포</h3>
+      <canvas id="chart-comp"></canvas>
+    </div>
+  </div>
+
+  <!-- 키워드 테이블 -->
+  <div class="table-card">
+    <div class="table-header-row">
+      <h3 class="chart-title">기회 키워드 상세</h3>
+      <button class="export-btn" onclick="exportCSV()">CSV 내보내기</button>
+    </div>
+    <div class="table-wrap">
+      <table id="result-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>키워드</th>
+            <th>월 검색량</th>
+            <th>PC</th>
+            <th>모바일</th>
+            <th>경쟁도</th>
+            <th>트렌드</th>
+            <th>기회 점수</th>
+            <th>확장 키워드</th>
+          </tr>
+        </thead>
+        <tbody id="result-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</section>
+
+<script src="/app.js"></script>
+</body>
+</html>

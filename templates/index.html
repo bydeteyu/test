@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>네이버 카페글 수집기</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #f4f6fb; color: #222; min-height: 100vh; }
+
+  header { background: #03c75a; color: #fff; padding: 18px 32px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 1.3rem; font-weight: 700; letter-spacing: -.5px; }
+  header span { font-size: .85rem; opacity: .85; }
+
+  .wrap { max-width: 900px; margin: 36px auto; padding: 0 16px; }
+
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 28px; margin-bottom: 24px; }
+
+  label { display: block; font-weight: 600; margin-bottom: 8px; font-size: .95rem; }
+  .hint { font-size: .8rem; color: #888; margin-bottom: 10px; }
+
+  textarea {
+    width: 100%; height: 110px; border: 1.5px solid #dde1ea; border-radius: 8px;
+    padding: 12px; font-size: .95rem; resize: vertical; outline: none;
+    transition: border .2s;
+  }
+  textarea:focus { border-color: #03c75a; }
+
+  .options { display: flex; align-items: center; gap: 16px; margin-top: 14px; flex-wrap: wrap; }
+  .options label { font-weight: 400; display: flex; align-items: center; gap: 6px; margin: 0; cursor: pointer; }
+
+  button.run {
+    margin-top: 18px; width: 100%; padding: 13px;
+    background: #03c75a; color: #fff; font-size: 1rem; font-weight: 700;
+    border: none; border-radius: 8px; cursor: pointer; transition: background .2s;
+  }
+  button.run:hover { background: #02a84b; }
+  button.run:disabled { background: #b2dfcc; cursor: not-allowed; }
+
+  /* 상태 바 */
+  #statusBar { display: none; padding: 12px 16px; border-radius: 8px; font-size: .9rem; margin-bottom: 18px; }
+  #statusBar.running { background: #fff8e1; color: #b8860b; border: 1px solid #ffe082; }
+  #statusBar.done    { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+  #statusBar.error   { background: #fce4ec; color: #c62828; border: 1px solid #f48fb1; }
+
+  /* 결과 */
+  .kw-block { margin-bottom: 28px; }
+  .kw-title {
+    font-size: 1rem; font-weight: 700; margin-bottom: 10px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+  .kw-title .badge { background: #03c75a; color: #fff; font-size: .75rem; padding: 2px 10px; border-radius: 20px; }
+  .dl-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #1976d2; color: #fff; font-size: .82rem; font-weight: 600;
+    padding: 5px 14px; border-radius: 6px; text-decoration: none; cursor: pointer;
+    border: none;
+  }
+  .dl-btn:hover { background: #1565c0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th { background: #f0f4f8; padding: 9px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #dde1ea; }
+  td { padding: 9px 12px; border-bottom: 1px solid #eef0f4; vertical-align: top; word-break: break-all; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8fffe; }
+  td a { color: #1976d2; text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+
+  .empty { color: #aaa; font-size: .9rem; padding: 18px 0; }
+
+  .spinner {
+    display: inline-block; width: 18px; height: 18px; vertical-align: middle;
+    border: 3px solid #b2dfcc; border-top-color: #03c75a;
+    border-radius: 50%; animation: spin .7s linear infinite;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="white" fill-opacity=".25"/><path d="M6 8h12M6 12h8M6 16h10" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg>
+  <h1>네이버 카페글 수집기</h1>
+  <span>통합검색 카페글 → 엑셀 저장</span>
+</header>
+
+<div class="wrap">
+
+  <!-- 입력 폼 -->
+  <div class="card">
+    <label for="kwInput">검색 키워드</label>
+    <p class="hint">키워드를 한 줄에 하나씩 또는 콤마(,)로 구분해 입력하세요.</p>
+    <textarea id="kwInput" placeholder="예)&#10;수원한방병원 추천&#10;수원 교통사고 한의원"></textarea>
+
+    <div class="options">
+      <label>
+        <input type="checkbox" id="headlessChk" checked>
+        헤드리스 모드 (브라우저 창 숨김)
+      </label>
+    </div>
+
+    <button class="run" id="runBtn" onclick="startSearch()">검색 시작</button>
+  </div>
+
+  <!-- 상태 -->
+  <div id="statusBar"></div>
+
+  <!-- 결과 -->
+  <div id="results"></div>
+
+</div>
+
+<script>
+let pollTimer = null;
+
+async function startSearch() {
+  const raw = document.getElementById('kwInput').value.trim();
+  if (!raw) { alert('키워드를 입력하세요.'); return; }
+
+  const headless = document.getElementById('headlessChk').checked;
+  document.getElementById('runBtn').disabled = true;
+  document.getElementById('results').innerHTML = '';
+  setStatus('running', '수집 중입니다… 잠시 기다려 주세요.');
+
+  const res = await fetch('/api/search', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ keywords: raw, headless })
+  });
+  const { job_id, error } = await res.json();
+  if (error) { setStatus('error', error); enableBtn(); return; }
+
+  pollTimer = setInterval(() => pollStatus(job_id), 2000);
+}
+
+async function pollStatus(job_id) {
+  const res = await fetch(`/api/status/${job_id}`);
+  const job = await res.json();
+
+  if (job.status === 'running' || job.status === 'pending') return;
+
+  clearInterval(pollTimer);
+  enableBtn();
+
+  if (job.status === 'error') {
+    setStatus('error', '오류 발생: ' + job.error);
+    return;
+  }
+
+  const total = job.results.reduce((s, r) => s + r.posts.length, 0);
+  setStatus('done', `완료! 총 ${total}건 수집됨.`);
+  renderResults(job.results, job.files);
+}
+
+function renderResults(results, files) {
+  const wrap = document.getElementById('results');
+  wrap.innerHTML = '';
+
+  results.forEach((r, i) => {
+    const file = files.find(f => f.includes(sanitizeForPath(r.keyword)));
+    const block = document.createElement('div');
+    block.className = 'card kw-block';
+
+    const dlBtn = file
+      ? `<a class="dl-btn" href="/api/download?path=${encodeURIComponent(file)}">
+           ⬇ 엑셀 다운로드
+         </a>`
+      : '';
+
+    let rows = '';
+    if (r.posts.length === 0) {
+      rows = `<tr><td colspan="3" class="empty">결과 없음</td></tr>`;
+    } else {
+      r.posts.forEach((p, idx) => {
+        rows += `<tr>
+          <td>${idx + 1}</td>
+          <td>${escHtml(p['제목'])}</td>
+          <td>${escHtml(p['카페이름'])}</td>
+          <td><a href="${escHtml(p['링크'])}" target="_blank" rel="noopener">바로가기</a></td>
+        </tr>`;
+      });
+    }
+
+    block.innerHTML = `
+      <div class="kw-title">
+        <span>${escHtml(r.keyword)} <span class="badge">${r.posts.length}건</span></span>
+        ${dlBtn}
+      </div>
+      <table>
+        <thead><tr><th>#</th><th>제목</th><th>카페</th><th>링크</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    wrap.appendChild(block);
+  });
+}
+
+function setStatus(type, msg) {
+  const bar = document.getElementById('statusBar');
+  bar.className = type;
+  bar.style.display = 'block';
+  const spinner = type === 'running' ? '<span class="spinner"></span>' : '';
+  bar.innerHTML = spinner + msg;
+}
+
+function enableBtn() {
+  document.getElementById('runBtn').disabled = false;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function sanitizeForPath(kw) {
+  return kw.replace(/[^\w가-힣]/g, '_').replace(/_+/g,'_').replace(/^_|_$/g,'');
+}
+</script>
+</body>
+</html>

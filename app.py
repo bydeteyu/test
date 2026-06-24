@@ -60,7 +60,8 @@ def api_search():
     if not keywords:
         return jsonify({"error": "키워드를 입력하세요."}), 400
 
-    headless = data.get("headless", True)
+    # 서버 환경에서는 항상 headless=True
+    headless = True
     job_id = uuid.uuid4().hex
     JOBS[job_id] = {"status": "pending", "results": [], "files": [], "error": ""}
     t = threading.Thread(target=_run_job, args=(job_id, keywords, headless), daemon=True)
@@ -80,7 +81,6 @@ def api_status(job_id):
 def api_download():
     path = request.args.get("path", "")
     p = Path(path).resolve()
-    # OUTPUT_DIR 안의 파일만 허용
     if not str(p).startswith(str(OUTPUT_DIR.resolve())):
         abort(403)
     if not p.exists():
@@ -89,4 +89,5 @@ def api_download():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

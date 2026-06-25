@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-네이버 카페 게시글 조회수 / 댓글수 추적기 (웹 어드민 모듈)
+네이버 카페 게시글 조회수 / 댓글수 추적기
 """
 
 import re
@@ -12,15 +12,14 @@ from datetime import datetime
 REQUEST_DELAY = 1.5
 _clubid_cache = {}
 
-HEADERS_BASE = {
+HEADERS_BROWSER = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/125.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
     "Accept-Language": "ko-KR,ko;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
 }
 
 HEADERS_API = {
@@ -33,73 +32,96 @@ HEADERS_API = {
     "Accept-Language": "ko-KR,ko;q=0.9",
 }
 
+CLUBID_PATTERNS = [
+    r'"cafeId"\s*:\s*"?(\d+)"?',
+    r'"clubId"\s*:\s*"?(\d+)"?',
+    r'clubid=(\d+)',
+    r'g_sClubId\s*=\s*["\']([\d]+)["\']',
+    r'"cafe_id"\s*:\s*"?(\d+)"?',
+    r'cafeId=(\d+)',
+]
+
 
 def make_api_headers(clubid=None, articleid=None, cookie=""):
     h = dict(HEADERS_API)
     if clubid and articleid:
-        h["Referer"] = f"https://m.cafe.naver.com/ca-fe/web/cafes/{clubid}/articles/{articleid}"
+        h["Referer"] = (
+            f"https://cafe.naver.com/ca-fe/web/cafes/{clubid}/articles/{articleid}"
+        )
     if cookie:
         h["Cookie"] = cookie
     return h
 
 
 def expand_url(url, session):
-    """naver.me 등 단축 URL을 실제 URL로 펼친다."""
+    """naver.me 단축 URL → 실제 URL"""
     if "naver.me" in url:
         try:
             r = session.get(
-                url,
-                headers=HEADERS_BASE,
-                allow_redirects=True,
-                timeout=15
+                url, headers=HEADERS_BROWSER,
+                allow_redirects=True, timeout=15
             )
             return r.url
-        except Exception as e:
+        except Exception:
             return url
     return url
 
 
-def resolve_clubid(cafe_name, session):
-    if cafe_name in _clubid_cache:
-        return _clubid_cache[cafe_name]
-    try:
-        html = session.get(
-            f"https://cafe.naver.com/{cafe_name}",
-            headers=HEADERS_BASE,
-            timeout=10
-        ).text
-    except Exception:
-        return None
-    for p in [
-        r'"cafeId"\s*:\s*"?(\d+)"?',
-        r'"clubId"\s*:\s*"?(\d+)"?',
-        r'clubid=(\d+)',
-        r'g_sClubId\s*=\s*["\'](\.d+)["\']',
-    ]:
+def extract_clubid_from_html(html: str):
+    for p in CLUBID_PATTERNS:
         m = re.search(p, html)
         if m:
-            _clubid_cache[cafe_name] = m.group(1)
             return m.group(1)
     return None
 
 
-def parse_url(url, session):
+def resolve_clubid(cafe_name: str, session, article_url: str = ""):
+    """cafe_name → 숫자 clubid. 실패 시 article_url 페이지에서 재시도."""
+    if cafe_name in _clubid_cache:
+        return _clubid_cache[cafe_name]
+
+    # 1) 카페 홈 페이지
+    for url in [
+        f"https://cafe.naver.com/{cafe_name}",
+        article_url,
+    ]:
+        if not url:
+            continue
+        try:
+            html = session.get(url, headers=HEADERS_BROWSER, timeout=10).text
+            cid = extract_clubid_from_html(html)
+            if cid:
+                _clubid_cache[cafe_name] = cid
+                return cid
+        except Exception:
+            continue
+
+    return None
+
+
+def parse_url(url: str, session):
+    """링크 → (clubid, articleid, expanded_url)"""
     original = url.strip()
     expanded = expand_url(original, session)
 
     for u in [expanded, original]:
+        # 구형 querystring
         m = re.search(r'clubid=(\d+).*?articleid=(\d+)', u, re.IGNORECASE)
         if m:
             return m.group(1), m.group(2), expanded
 
+        # 모바일/신형 API 형태
         m = re.search(r'cafes/(\d+)/articles/(\d+)', u)
         if m:
             return m.group(1), m.group(2), expanded
 
+        # 신형 cafe.naver.com/slug/number
         m = re.search(r'cafe\.naver\.com/([^/?#]+)/(\d+)', u)
         if m:
-            clubid = resolve_clubid(m.group(1), session)
-            return clubid, m.group(2), expanded
+            cafe_name, articleid = m.group(1), m.group(2)
+            clubid = resolve_clubid(cafe_name, session, article_url=u)
+            if clubid:
+                return clubid, articleid, expanded
 
     return None, None, expanded
 
@@ -144,7 +166,11 @@ def fetch_and_extract(clubid, articleid, session, cookie=""):
         f"cafes/{clubid}/articles/{articleid}"
         f"?query=&menuId=0&boardType=L&useCafeId=true&requestFrom=A"
     )
-    r = session.get(api, headers=make_api_headers(clubid, articleid, cookie), timeout=10)
+    r = session.get(
+        api,
+        headers=make_api_headers(clubid, articleid, cookie),
+        timeout=10
+    )
     r.raise_for_status()
     data = r.json()
     read = deep_find(data, {"readCount", "viewCount", "readcount", "hit"})
@@ -172,7 +198,9 @@ def run_tracker(urls: list[str], cookie: str = "") -> list[dict]:
             })
             continue
         try:
-            title, read, comment = fetch_and_extract(clubid, articleid, session, cookie)
+            title, read, comment = fetch_and_extract(
+                clubid, articleid, session, cookie
+            )
             rows.append({
                 "date": today, "clubid": clubid, "articleid": articleid,
                 "title": title or "",

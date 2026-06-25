@@ -9,6 +9,10 @@ import time
 import requests
 from datetime import datetime
 
+# Playwright 폴백용 (회원전용 카페 → API 403일 때 화면 숫자 직접 스크랩)
+VIEW_RE = re.compile(r'조회\s*([\d,]+)')
+COMMENT_RE = re.compile(r'댓글\s*([\d,]+)')
+
 REQUEST_DELAY = 1.5
 _clubid_cache = {}
 
@@ -179,40 +183,169 @@ def fetch_and_extract(clubid, articleid, session, cookie=""):
     return title, read, comment
 
 
+def _counts_from_text(text: str):
+    """렌더된 페이지 텍스트에서 조회수/댓글수 추출"""
+    read = comment = None
+    m = VIEW_RE.search(text)
+    if m:
+        try:
+            read = int(m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    m = COMMENT_RE.search(text)
+    if m:
+        try:
+            comment = int(m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    return read, comment
+
+
+def fetch_via_browser(page, url: str):
+    """
+    실제 카페 글 페이지를 렌더링해서 화면에 보이는
+    조회수/댓글수/제목을 직접 스크랩 (회원전용 카페 폴백).
+    """
+    page.goto(url, wait_until="networkidle", timeout=30000)
+    time.sleep(1.5)
+
+    title = read = comment = None
+
+    # 페이지 본문 + 모든 iframe(cafe_main 등) 텍스트를 모아서 검색
+    texts = []
+    try:
+        texts.append(page.inner_text("body"))
+    except Exception:
+        pass
+    for fr in page.frames:
+        try:
+            texts.append(fr.inner_text("body"))
+        except Exception:
+            continue
+
+    for t in texts:
+        if not t:
+            continue
+        r, c = _counts_from_text(t)
+        if read is None and r is not None:
+            read = r
+        if comment is None and c is not None:
+            comment = c
+
+    # 제목: og:title 또는 페이지 타이틀
+    try:
+        og = page.locator('meta[property="og:title"]')
+        if og.count() > 0:
+            title = og.first.get_attribute("content")
+    except Exception:
+        pass
+    if not title:
+        try:
+            t = page.title()
+            # "글 제목 : 네이버 카페" 형태 정리
+            title = re.split(r"\s*[:：]\s*", t)[0].strip() if t else None
+        except Exception:
+            pass
+
+    return title, read, comment
+
+
 def run_tracker(urls: list[str], cookie: str = "") -> list[dict]:
     session = requests.Session()
     today = datetime.now().strftime("%Y-%m-%d %H:%M")
     rows = []
-    for url in urls:
-        url = url.strip()
-        if not url or url.startswith("#"):
-            continue
-        clubid, articleid, expanded = parse_url(url, session)
-        if not (clubid and articleid):
-            rows.append({
-                "date": today, "clubid": "", "articleid": "",
-                "title": "URL 해석 실패",
-                "read_count": "", "comment_count": "",
-                "url": url,
-                "error": f"parse_fail (expanded: {expanded})"
-            })
-            continue
-        try:
-            title, read, comment = fetch_and_extract(
-                clubid, articleid, session, cookie
+
+    # Playwright 브라우저는 폴백이 필요할 때만 lazy 하게 띄운다
+    _pw = {"ctx": None, "browser": None, "page": None}
+
+    def get_page():
+        if _pw["page"] is None:
+            from playwright.sync_api import sync_playwright
+            _pw["ctx"] = sync_playwright().start()
+            _pw["browser"] = _pw["ctx"].chromium.launch(headless=True)
+            ctx = _pw["browser"].new_context(
+                user_agent=HEADERS_BROWSER["User-Agent"],
+                locale="ko-KR",
             )
+            # 로그인 쿠키가 있으면 주입 → 회원전용 글 정상 노출
+            if cookie:
+                cookies = []
+                for part in cookie.split(";"):
+                    if "=" not in part:
+                        continue
+                    name, _, value = part.strip().partition("=")
+                    if name:
+                        cookies.append({
+                            "name": name, "value": value,
+                            "domain": ".naver.com", "path": "/",
+                        })
+                if cookies:
+                    try:
+                        ctx.add_cookies(cookies)
+                    except Exception:
+                        pass
+            _pw["page"] = ctx.new_page()
+        return _pw["page"]
+
+    def close_browser():
+        try:
+            if _pw["browser"]:
+                _pw["browser"].close()
+            if _pw["ctx"]:
+                _pw["ctx"].stop()
+        except Exception:
+            pass
+
+    try:
+        for url in urls:
+            url = url.strip()
+            if not url or url.startswith("#"):
+                continue
+            clubid, articleid, expanded = parse_url(url, session)
+            if not (clubid and articleid):
+                rows.append({
+                    "date": today, "clubid": "", "articleid": "",
+                    "title": "URL 해석 실패",
+                    "read_count": "", "comment_count": "",
+                    "url": url,
+                    "error": f"parse_fail (expanded: {expanded})"
+                })
+                continue
+
+            title = read = comment = None
+            api_error = ""
+            try:
+                title, read, comment = fetch_and_extract(
+                    clubid, articleid, session, cookie
+                )
+            except Exception as e:
+                api_error = str(e)
+
+            # API 실패(403 등) 또는 숫자 못 찾음 → 브라우저 렌더링 폴백
+            if read is None and comment is None:
+                try:
+                    b_url = expanded or url
+                    bt, br, bc = fetch_via_browser(get_page(), b_url)
+                    title = title or bt
+                    if br is not None:
+                        read = br
+                    if bc is not None:
+                        comment = bc
+                except Exception as e:
+                    if not api_error:
+                        api_error = f"browser_fail: {e}"
+
+            got = (read is not None) or (comment is not None)
             rows.append({
                 "date": today, "clubid": clubid, "articleid": articleid,
                 "title": title or "",
                 "read_count": read if read is not None else "",
                 "comment_count": comment if comment is not None else "",
-                "url": url, "error": ""
+                "url": url,
+                "error": "" if got else (api_error or "데이터 없음"),
             })
-        except Exception as e:
-            rows.append({
-                "date": today, "clubid": clubid, "articleid": articleid,
-                "title": "", "read_count": "", "comment_count": "",
-                "url": url, "error": str(e)
-            })
-        time.sleep(REQUEST_DELAY)
+            time.sleep(REQUEST_DELAY)
+    finally:
+        close_browser()
+
     return rows

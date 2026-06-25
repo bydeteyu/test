@@ -206,8 +206,8 @@ def fetch_via_browser(page, url: str):
     실제 카페 글 페이지를 렌더링해서 화면에 보이는
     조회수/댓글수/제목을 직접 스크랩 (회원전용 카페 폴백).
     """
-    page.goto(url, wait_until="networkidle", timeout=30000)
-    time.sleep(1.5)
+    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    time.sleep(2.5)
 
     title = read = comment = None
 
@@ -262,7 +262,20 @@ def run_tracker(urls: list[str], cookie: str = "") -> list[dict]:
         if _pw["page"] is None:
             from playwright.sync_api import sync_playwright
             _pw["ctx"] = sync_playwright().start()
-            _pw["browser"] = _pw["ctx"].chromium.launch(headless=True)
+            # 512MB 무료 인스턴스용 저메모리 플래그
+            _pw["browser"] = _pw["ctx"].chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--single-process",
+                    "--no-zygote",
+                    "--disable-gpu",
+                    "--disable-extensions",
+                    "--disable-background-networking",
+                    "--js-flags=--max-old-space-size=256",
+                ],
+            )
             ctx = _pw["browser"].new_context(
                 user_agent=HEADERS_BROWSER["User-Agent"],
                 locale="ko-KR",

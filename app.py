@@ -1,7 +1,8 @@
 """
-네이버 카페글 수집기 + 조회수 추적기 — 웹 어드민
-실행: python app.py
-접속: http://localhost:5000
+네이버 카페 어드민 — 페이지 분리 버전
+/ → 메인 허브
+/collect → 카페글 수집
+/track → 조회수 추적
 """
 
 import os
@@ -10,7 +11,6 @@ import uuid
 import threading
 from io import StringIO
 from pathlib import Path
-from datetime import datetime
 
 from flask import Flask, render_template, request, jsonify, send_file, abort, make_response
 
@@ -25,8 +25,22 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 JOBS: dict[str, dict] = {}
 
 
-# ── 수집기 ──────────────────────────────────────
-def _run_collect_job(job_id, keywords):
+# ── 페이지 ──
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@app.route("/collect")
+def page_collect():
+    return render_template("collect.html")
+
+@app.route("/track")
+def page_track():
+    return render_template("track.html")
+
+
+# ── 카페글 수집 API ──
+def _run_collect(job_id, keywords):
     job = JOBS[job_id]
     job["status"] = "running"
     all_results, files = [], []
@@ -43,11 +57,6 @@ def _run_collect_job(job_id, keywords):
         job.update({"error": str(e), "status": "error"})
 
 
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-
 @app.route("/api/search", methods=["POST"])
 def api_search():
     data = request.get_json(force=True)
@@ -57,7 +66,7 @@ def api_search():
         return jsonify({"error": "키워드를 입력하세요."}), 400
     job_id = uuid.uuid4().hex
     JOBS[job_id] = {"status": "pending", "results": [], "files": [], "error": ""}
-    threading.Thread(target=_run_collect_job, args=(job_id, keywords), daemon=True).start()
+    threading.Thread(target=_run_collect, args=(job_id, keywords), daemon=True).start()
     return jsonify({"job_id": job_id})
 
 
@@ -80,8 +89,8 @@ def api_download():
     return send_file(p, as_attachment=True)
 
 
-# ── 추적기 ──────────────────────────────────────
-def _run_track_job(job_id, urls, cookie):
+# ── 조회수 추적 API ──
+def _run_track(job_id, urls, cookie):
     job = JOBS[job_id]
     job["status"] = "running"
     try:
@@ -101,7 +110,7 @@ def api_track():
     cookie = data.get("cookie", "")
     job_id = uuid.uuid4().hex
     JOBS[job_id] = {"status": "pending", "rows": [], "error": ""}
-    threading.Thread(target=_run_track_job, args=(job_id, urls, cookie), daemon=True).start()
+    threading.Thread(target=_run_track, args=(job_id, urls, cookie), daemon=True).start()
     return jsonify({"job_id": job_id})
 
 
@@ -111,12 +120,11 @@ def api_track_download():
     job = JOBS.get(job_id)
     if not job or job["status"] != "done":
         abort(404)
-    rows = job["rows"]
     si = StringIO()
     fields = ["date", "title", "read_count", "comment_count", "url", "error"]
     w = csv.DictWriter(si, fieldnames=fields, extrasaction="ignore")
     w.writeheader()
-    w.writerows(rows)
+    w.writerows(job["rows"])
     output = make_response(si.getvalue().encode("utf-8-sig"))
     output.headers["Content-Disposition"] = "attachment; filename=tracker_result.csv"
     output.headers["Content-Type"] = "text/csv; charset=utf-8"

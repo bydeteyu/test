@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>조회수 추적</h1></title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Apple SD Gothic Neo', sans-serif; background: #f0f2f7; min-height: 100vh; }
+header { background: #1a1a2e; color: #fff; padding: 16px 28px; display: flex; align-items: center; gap: 16px; }
+header a { color: rgba(255,255,255,.5); text-decoration: none; font-size: .85rem; }
+header a:hover { color: #fff; }
+header h1 { font-size: 1rem; font-weight: 700; color: #fff; }
+.wrap { max-width: 860px; margin: 32px auto; padding: 0 18px; }
+.card { background: #fff; border-radius: 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06); padding: 24px; margin-bottom: 20px; }
+label.lbl { display: block; font-weight: 600; margin-bottom: 6px; font-size: .92rem; }
+.hint { font-size: .78rem; color: #aaa; margin-bottom: 9px; }
+textarea { width: 100%; border: 1.5px solid #e0e3ed; border-radius: 8px; padding: 10px 12px; font-size: .9rem; resize: vertical; outline: none; transition: border .18s; background: #fafbfd; }
+textarea:focus { border-color: #03c75a; background: #fff; }
+.ta-md { height: 130px; }
+.ta-ck { height: 55px; }
+button.run { margin-top: 14px; width: 100%; padding: 12px; background: #03c75a; color: #fff; font-size: .97rem; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; transition: background .2s; }
+button.run:hover { background: #02a84b; }
+button.run:disabled { background: #b2dfcc; cursor: not-allowed; }
+.sbar { display: none; padding: 10px 14px; border-radius: 8px; font-size: .87rem; margin-bottom: 14px; }
+.sbar.running { background: #fff8e1; color: #9a6e00; border: 1px solid #ffe082; }
+.sbar.done    { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+.sbar.error   { background: #fce4ec; color: #c62828; border: 1px solid #f48fb1; }
+.block-title { font-size: .95rem; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.badge { background: #03c75a; color: #fff; font-size: .7rem; padding: 2px 9px; border-radius: 20px; margin-left: 6px; }
+.dl-btn { display: inline-flex; align-items: center; gap: 5px; background: #1976d2; color: #fff; font-size: .78rem; font-weight: 600; padding: 5px 13px; border-radius: 6px; text-decoration: none; border: none; cursor: pointer; }
+.dl-btn:hover { background: #1565c0; }
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+th { background: #f5f6fa; padding: 8px 11px; text-align: left; font-weight: 600; border-bottom: 2px solid #e8eaf0; white-space: nowrap; }
+td { padding: 8px 11px; border-bottom: 1px solid #f0f1f5; vertical-align: top; word-break: break-all; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8fffb; }
+td a { color: #1976d2; text-decoration: none; }
+td a:hover { text-decoration: underline; }
+td.num { text-align: right; }
+.err-cell { color: #c62828; font-size: .78rem; }
+.spinner { display: inline-block; width: 14px; height: 14px; vertical-align: middle; border: 2.5px solid #c8e6c9; border-top-color: #03c75a; border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">&larr; 홈</a>
+  <h1>&#128202; 조회수 추적</h1>
+</header>
+<div class="wrap">
+  <div class="card">
+    <label class="lbl">추적할 게시글 URL</label>
+    <p class="hint">한 줄에 하나씩 입력 (# 시작 줄 무시)</p>
+    <textarea id="urlInput" class="ta-md" placeholder="https://cafe.naver.com/카페이름/123456&#10;https://cafe.naver.com/카페이름/789012"></textarea>
+
+    <label class="lbl" style="margin-top:14px">네이버 쿠키 <span style="font-weight:400;color:#bbb">(선택 — 회원공개 글)</span></label>
+    <p class="hint">개발자도구 → 네트워크 탭 → Cookie 헤더 값 복사</p>
+    <textarea id="cookieInput" class="ta-ck" placeholder="NID_AUT=...; NID_SES=..."></textarea>
+
+    <button class="run" id="runBtn" onclick="startTrack()">조회수 추적 시작</button>
+  </div>
+  <div id="status" class="sbar"></div>
+  <div id="results"></div>
+</div>
+<script>
+let timer = null, currentJob = null;
+function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function setStatus(t, m) {
+  const el = document.getElementById('status');
+  el.className = 'sbar ' + t; el.style.display = 'block';
+  el.innerHTML = (t==='running' ? '<span class="spinner"></span>' : '') + m;
+}
+async function startTrack() {
+  const raw = document.getElementById('urlInput').value.trim();
+  if (!raw) { alert('URL을 입력하세요.'); return; }
+  const cookie = document.getElementById('cookieInput').value.trim();
+  document.getElementById('runBtn').disabled = true;
+  document.getElementById('results').innerHTML = '';
+  setStatus('running', '조회수 확인 중… URL 수에 따라 시간이 걸릴 수 있습니다.');
+  const { job_id, error } = await (await fetch('/api/track', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({urls: raw, cookie}) })).json();
+  if (error) { setStatus('error', error); document.getElementById('runBtn').disabled=false; return; }
+  currentJob = job_id;
+  timer = setInterval(() => poll(job_id), 2500);
+}
+async function poll(job_id) {
+  const job = await (await fetch('/api/status/'+job_id)).json();
+  if (job.status==='running'||job.status==='pending') return;
+  clearInterval(timer);
+  document.getElementById('runBtn').disabled = false;
+  if (job.status==='error') { setStatus('error','오류: '+job.error); return; }
+  const ok = job.rows.filter(r=>!r.error).length;
+  setStatus('done','완료! '+ok+'/'+job.rows.length+'건 수집됨.');
+  const wrap = document.getElementById('results');
+  wrap.innerHTML = '';
+  const b = document.createElement('div'); b.className='card';
+  const dl = '<button class="dl-btn" onclick="dl(\'' + job_id + '\')">&#8595; CSV 다운로드</button>';
+  const trs = job.rows.map((r,i)=>'<tr><td>'+(i+1)+'</td><td>'+(esc(r.title)||'<span style="color:#ccc">-</span>')+'</td><td class="num">'+(r.read_count!==''?Number(r.read_count).toLocaleString():'-')+'</td><td class="num">'+(r.comment_count!==''?Number(r.comment_count).toLocaleString():'-')+'</td><td><a href="'+esc(r.url)+'" target="_blank">바로가기</a></td><td>'+(r.error?'<span class="err-cell">'+esc(r.error)+'</span>':'')+'</td></tr>').join('');
+  b.innerHTML = '<div class="block-title"><span>추적 결과<span class="badge">'+job.rows.length+'건</span></span>'+dl+'</div><table><thead><tr><th>#</th><th>제목</th><th>조회수</th><th>댓글수</th><th>링크</th><th>오류</th></tr></thead><tbody>'+trs+'</tbody></table>';
+  wrap.appendChild(b);
+}
+function dl(job_id) { window.location='/api/track/download?job_id='+job_id; }
+</script>
+</body>
+</html>

@@ -5,175 +5,214 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>네이버 카페 어드민</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Apple SD Gothic Neo', sans-serif; background: #f4f6fb; color: #222; min-height: 100vh; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Apple SD Gothic Neo', sans-serif; background: #f0f2f7; color: #1a1a2e; display: flex; min-height: 100vh; }
 
-  header { background: #03c75a; color: #fff; padding: 16px 32px; display: flex; align-items: center; gap: 12px; }
-  header h1 { font-size: 1.25rem; font-weight: 700; }
-  header span { font-size: .82rem; opacity: .85; }
+.sidebar {
+  width: 220px; min-height: 100vh; background: #1a1a2e;
+  display: flex; flex-direction: column; flex-shrink: 0;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+.sidebar-logo {
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.sidebar-logo h1 { font-size: 1rem; font-weight: 700; color: #03c75a; }
+.sidebar-logo p  { font-size: .72rem; color: rgba(255,255,255,.4); margin-top: 3px; }
 
-  /* 탭 */
-  .tabs { display: flex; background: #fff; border-bottom: 2px solid #e0e4ed; padding: 0 24px; }
-  .tab-btn {
-    padding: 14px 28px; font-size: .95rem; font-weight: 600; cursor: pointer;
-    border: none; background: none; color: #888; border-bottom: 3px solid transparent;
-    margin-bottom: -2px; transition: color .15s, border-color .15s;
-  }
-  .tab-btn.active { color: #03c75a; border-bottom-color: #03c75a; }
+.menu-group { padding: 16px 0 4px; }
+.menu-label {
+  font-size: .68rem; font-weight: 700; color: rgba(255,255,255,.3);
+  letter-spacing: .08em; text-transform: uppercase;
+  padding: 0 20px 8px;
+}
+.menu-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; cursor: pointer;
+  color: rgba(255,255,255,.6); font-size: .88rem; font-weight: 500;
+  border-left: 3px solid transparent;
+  transition: background .15s, color .15s, border-color .15s;
+  user-select: none;
+}
+.menu-item:hover { background: rgba(255,255,255,.06); color: #fff; }
+.menu-item.active { background: rgba(3,199,90,.12); color: #03c75a; border-left-color: #03c75a; }
+.menu-item .ico { font-size: 1rem; width: 20px; text-align: center; }
 
-  .wrap { max-width: 960px; margin: 32px auto; padding: 0 16px; }
-  .tab-panel { display: none; }
-  .tab-panel.active { display: block; }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+  background: #fff; padding: 14px 28px;
+  border-bottom: 1px solid #e8eaf0;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.topbar-title { font-size: 1.05rem; font-weight: 700; }
+.topbar-sub { font-size: .8rem; color: #999; }
 
-  .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.07); padding: 26px; margin-bottom: 22px; }
-  label.lbl { display: block; font-weight: 600; margin-bottom: 6px; font-size: .93rem; }
-  .hint { font-size: .78rem; color: #999; margin-bottom: 10px; }
+.content { padding: 28px; flex: 1; }
+.page { display: none; }
+.page.active { display: block; }
 
-  textarea {
-    width: 100%; border: 1.5px solid #dde1ea; border-radius: 8px;
-    padding: 11px; font-size: .92rem; resize: vertical; outline: none;
-    transition: border .18s;
-  }
-  textarea:focus { border-color: #03c75a; }
-  .ta-kw { height: 100px; }
-  .ta-url { height: 130px; }
-  .ta-cookie { height: 60px; }
+.card { background: #fff; border-radius: 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06); padding: 24px; margin-bottom: 20px; }
 
-  button.run {
-    margin-top: 16px; width: 100%; padding: 13px;
-    background: #03c75a; color: #fff; font-size: 1rem; font-weight: 700;
-    border: none; border-radius: 8px; cursor: pointer; transition: background .2s;
-  }
-  button.run:hover { background: #02a84b; }
-  button.run:disabled { background: #b2dfcc; cursor: not-allowed; }
+label.lbl { display: block; font-weight: 600; margin-bottom: 6px; font-size: .92rem; }
+.hint { font-size: .78rem; color: #aaa; margin-bottom: 9px; }
 
-  .status-bar { display: none; padding: 11px 15px; border-radius: 8px; font-size: .88rem; margin-bottom: 16px; }
-  .status-bar.running { background: #fff8e1; color: #b8860b; border: 1px solid #ffe082; }
-  .status-bar.done    { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
-  .status-bar.error   { background: #fce4ec; color: #c62828; border: 1px solid #f48fb1; }
+textarea {
+  width: 100%; border: 1.5px solid #e0e3ed; border-radius: 8px;
+  padding: 10px 12px; font-size: .9rem; resize: vertical; outline: none;
+  transition: border .18s; background: #fafbfd;
+}
+textarea:focus { border-color: #03c75a; background: #fff; }
+.ta-sm  { height: 90px; }
+.ta-md  { height: 130px; }
+.ta-ck  { height: 55px; }
 
-  .kw-block { margin-bottom: 24px; }
-  .block-title {
-    font-size: .97rem; font-weight: 700; margin-bottom: 10px;
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
-  }
-  .badge { background: #03c75a; color: #fff; font-size: .72rem; padding: 2px 10px; border-radius: 20px; }
-  .dl-btn {
-    display: inline-flex; align-items: center; gap: 5px;
-    background: #1976d2; color: #fff; font-size: .8rem; font-weight: 600;
-    padding: 5px 13px; border-radius: 6px; text-decoration: none; border: none; cursor: pointer;
-  }
-  .dl-btn:hover { background: #1565c0; }
+button.run {
+  margin-top: 14px; width: 100%; padding: 12px;
+  background: #03c75a; color: #fff; font-size: .97rem; font-weight: 700;
+  border: none; border-radius: 8px; cursor: pointer; transition: background .2s;
+}
+button.run:hover { background: #02a84b; }
+button.run:disabled { background: #b2dfcc; cursor: not-allowed; }
 
-  table { width: 100%; border-collapse: collapse; font-size: .86rem; }
-  th { background: #f0f4f8; padding: 8px 11px; text-align: left; font-weight: 600; border-bottom: 2px solid #dde1ea; }
-  td { padding: 8px 11px; border-bottom: 1px solid #eef0f4; vertical-align: top; word-break: break-all; }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: #f8fffe; }
-  td a { color: #1976d2; text-decoration: none; }
-  td a:hover { text-decoration: underline; }
-  .empty { color: #bbb; font-size: .88rem; padding: 16px 0; }
-  .err-cell { color: #c62828; font-size: .8rem; }
+.sbar { display: none; padding: 10px 14px; border-radius: 8px; font-size: .87rem; margin-bottom: 14px; }
+.sbar.running { background: #fff8e1; color: #9a6e00; border: 1px solid #ffe082; }
+.sbar.done    { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+.sbar.error   { background: #fce4ec; color: #c62828; border: 1px solid #f48fb1; }
 
-  .spinner { display: inline-block; width: 16px; height: 16px; vertical-align: middle;
-    border: 3px solid #c8e6c9; border-top-color: #03c75a;
-    border-radius: 50%; animation: spin .7s linear infinite; margin-right: 7px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+.block-title {
+  font-size: .95rem; font-weight: 700; margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+}
+.badge { background: #03c75a; color: #fff; font-size: .7rem; padding: 2px 9px; border-radius: 20px; margin-left: 6px; }
+.dl-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #1976d2; color: #fff; font-size: .78rem; font-weight: 600;
+  padding: 5px 13px; border-radius: 6px; text-decoration: none; border: none; cursor: pointer;
+}
+.dl-btn:hover { background: #1565c0; }
+
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+th { background: #f5f6fa; padding: 8px 11px; text-align: left; font-weight: 600; border-bottom: 2px solid #e8eaf0; white-space: nowrap; }
+td { padding: 8px 11px; border-bottom: 1px solid #f0f1f5; vertical-align: top; word-break: break-all; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8fffb; }
+td a { color: #1976d2; text-decoration: none; }
+td a:hover { text-decoration: underline; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.empty { color: #ccc; font-size: .87rem; padding: 14px 0; }
+.err-cell { color: #c62828; font-size: .78rem; }
+
+.spinner { display: inline-block; width: 14px; height: 14px; vertical-align: middle;
+  border: 2.5px solid #c8e6c9; border-top-color: #03c75a;
+  border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 
-<header>
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="white" fill-opacity=".25"/><path d="M6 8h12M6 12h8M6 16h10" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg>
-  <h1>네이버 카페 어드민</h1>
-  <span>카페글 수집 · 조회수 추적</span>
-</header>
-
-<!-- 탭 -->
-<div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('collect', this)">카페글 수집</button>
-  <button class="tab-btn" onclick="switchTab('track', this)">조회수 추적</button>
-</div>
-
-<div class="wrap">
-
-  <!-- ── 탭1: 카페글 수집 ── -->
-  <div id="panel-collect" class="tab-panel active">
-    <div class="card">
-      <label class="lbl" for="kwInput">검색 키워드</label>
-      <p class="hint">한 줄에 하나씩 또는 콤마(,)로 구분</p>
-      <textarea id="kwInput" class="ta-kw" placeholder="수원한방병원 추천&#10;수원 교통사고 한의원"></textarea>
-      <button class="run" id="collectBtn" onclick="startCollect()">검색 시작</button>
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <h1>&#9752; 카페 어드민</h1>
+    <p>네이버 카페 관리 도구</p>
+  </div>
+  <div class="menu-group">
+    <div class="menu-label">수집</div>
+    <div class="menu-item active" onclick="goPage('collect', this)">
+      <span class="ico">&#128269;</span> 카페글 수집
     </div>
-    <div id="collectStatus" class="status-bar"></div>
-    <div id="collectResults"></div>
+    <div class="menu-item" onclick="goPage('track', this)">
+      <span class="ico">&#128202;</span> 조회수 추적
+    </div>
+  </div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="topTitle">카페글 수집</div>
+      <div class="topbar-sub" id="topSub">키워드로 통합검색 카페글 추출 → CSV</div>
+    </div>
   </div>
 
-  <!-- ── 탭2: 조회수 추적 ── -->
-  <div id="panel-track" class="tab-panel">
-    <div class="card">
-      <label class="lbl" for="urlInput">추적할 게시글 URL</label>
-      <p class="hint">한 줄에 하나씩 입력 (# 으로 시작하는 줄은 무시)</p>
-      <textarea id="urlInput" class="ta-url" placeholder="https://cafe.naver.com/카페이름/123456&#10;https://cafe.naver.com/카페이름/789012"></textarea>
+  <div class="content">
 
-      <label class="lbl" for="cookieInput" style="margin-top:14px">네이버 쿠키 <span style="font-weight:400;color:#aaa">(선택 — 회원공개 글일 때만)</span></label>
-      <p class="hint">로그인 후 개발자도구 → 네트워크 탭에서 Cookie 헤더 값 복사</p>
-      <textarea id="cookieInput" class="ta-cookie" placeholder="NID_AUT=...; NID_SES=..."></textarea>
-
-      <button class="run" id="trackBtn" onclick="startTrack()">조회수 추적 시작</button>
+    <div id="page-collect" class="page active">
+      <div class="card">
+        <label class="lbl">검색 키워드</label>
+        <p class="hint">한 줄에 하나씩 또는 콤마(,)로 구분</p>
+        <textarea id="kwInput" class="ta-sm" placeholder="수원한방병원 추천&#10;수원 교통사고 한의원"></textarea>
+        <button class="run" id="collectBtn" onclick="startCollect()">검색 시작</button>
+      </div>
+      <div id="collectStatus" class="sbar"></div>
+      <div id="collectResults"></div>
     </div>
-    <div id="trackStatus" class="status-bar"></div>
-    <div id="trackResults"></div>
-  </div>
 
+    <div id="page-track" class="page">
+      <div class="card">
+        <label class="lbl">추적할 게시글 URL</label>
+        <p class="hint">한 줄에 하나씩 입력 (# 으로 시작하는 줄은 무시)</p>
+        <textarea id="urlInput" class="ta-md" placeholder="https://cafe.naver.com/카페이름/123456&#10;https://cafe.naver.com/카페이름/789012"></textarea>
+        <label class="lbl" style="margin-top:14px">네이버 쿠키 <span style="font-weight:400;color:#bbb">(선택 — 회원공개 글일 때만)</span></label>
+        <p class="hint">브라우저 개발자도구 → 네트워크 탭 → Cookie 헤더 값 복사</p>
+        <textarea id="cookieInput" class="ta-ck" placeholder="NID_AUT=...; NID_SES=..."></textarea>
+        <button class="run" id="trackBtn" onclick="startTrack()">조회수 추적 시작</button>
+      </div>
+      <div id="trackStatus" class="sbar"></div>
+      <div id="trackResults"></div>
+    </div>
+
+  </div>
 </div>
 
 <script>
-// ── 탭 전환 ──────────────────────────────────
-function switchTab(name, btn) {
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('panel-' + name).classList.add('active');
-  btn.classList.add('active');
+const PAGE_META = {
+  collect: { title: '카페글 수집', sub: '키워드로 통합검색 카페글 추출 → CSV' },
+  track:   { title: '조회수 추적', sub: '게시글 URL → 조회수 / 댓글수 확인 → CSV' },
+};
+
+function goPage(name, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  el.classList.add('active');
+  document.getElementById('topTitle').textContent = PAGE_META[name].title;
+  document.getElementById('topSub').textContent   = PAGE_META[name].sub;
 }
 
-// ── 공통 유틸 ────────────────────────────────
 function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function setStatus(id, type, msg) {
   const el = document.getElementById(id);
-  el.className = 'status-bar ' + type;
+  el.className = 'sbar ' + type;
   el.style.display = 'block';
   el.innerHTML = (type === 'running' ? '<span class="spinner"></span>' : '') + msg;
 }
-let pollTimer = null;
 
-// ── 카페글 수집 ──────────────────────────────
+let collectTimer = null;
 async function startCollect() {
   const raw = document.getElementById('kwInput').value.trim();
   if (!raw) { alert('키워드를 입력하세요.'); return; }
   document.getElementById('collectBtn').disabled = true;
   document.getElementById('collectResults').innerHTML = '';
   setStatus('collectStatus', 'running', '수집 중입니다… 잠시 기다려 주세요.');
-
   const res = await fetch('/api/search', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ keywords: raw })
   });
   const { job_id, error } = await res.json();
   if (error) { setStatus('collectStatus', 'error', error); document.getElementById('collectBtn').disabled = false; return; }
-  pollTimer = setInterval(() => pollCollect(job_id), 2500);
+  collectTimer = setInterval(() => pollCollect(job_id), 2500);
 }
 
 async function pollCollect(job_id) {
   const job = await (await fetch('/api/status/' + job_id)).json();
   if (job.status === 'running' || job.status === 'pending') return;
-  clearInterval(pollTimer);
+  clearInterval(collectTimer);
   document.getElementById('collectBtn').disabled = false;
   if (job.status === 'error') { setStatus('collectStatus', 'error', '오류: ' + job.error); return; }
   const total = job.results.reduce((s, r) => s + r.posts.length, 0);
-  setStatus('collectStatus', 'done', `완료! 총 ${total}건 수집됨.`);
+  setStatus('collectStatus', 'done', '완료! 총 ' + total + '건 수집됨.');
   renderCollect(job.results, job.files);
 }
 
@@ -181,23 +220,19 @@ function renderCollect(results, files) {
   const wrap = document.getElementById('collectResults');
   wrap.innerHTML = '';
   results.forEach(r => {
-    const file = files.find(f => f.replace(/[^\w가-힣]/g,'_').includes(r.keyword.replace(/[^\w가-힣]/g,'_')));
-    const dlBtn = file ? `<a class="dl-btn" href="/api/download?path=${encodeURIComponent(file)}">↓ CSV 다운로드</a>` : '';
-    let rows = r.posts.length === 0
-      ? `<tr><td colspan="4" class="empty">결과 없음</td></tr>`
-      : r.posts.map((p, i) => `<tr><td>${i+1}</td><td>${escHtml(p['제목'])}</td><td>${escHtml(p['카페이름'])}</td><td><a href="${escHtml(p['링크'])}" target="_blank">바로가기</a></td></tr>`).join('');
+    const file = files.find(f => f.includes(r.keyword.replace(/[^\w가-힣]/g,'_')));
+    const dlBtn = file ? '<a class="dl-btn" href="/api/download?path=' + encodeURIComponent(file) + '">&#8595; CSV 다운로드</a>' : '';
+    const rows = r.posts.length === 0
+      ? '<tr><td colspan="4" class="empty">결과 없음</td></tr>'
+      : r.posts.map((p,i) => '<tr><td>'+(i+1)+'</td><td>'+escHtml(p['제목'])+'</td><td>'+escHtml(p['카페이름'])+'</td><td><a href="'+escHtml(p['링크'])+'" target="_blank">바로가기</a></td></tr>').join('');
     const block = document.createElement('div');
-    block.className = 'card kw-block';
-    block.innerHTML = `<div class="block-title"><span>${escHtml(r.keyword)} <span class="badge">${r.posts.length}건</span></span>${dlBtn}</div>
-      <table><thead><tr><th>#</th><th>제목</th><th>카페</th><th>링크</th></tr></thead><tbody>${rows}</tbody></table>`;
+    block.className = 'card';
+    block.innerHTML = '<div class="block-title"><span>'+escHtml(r.keyword)+'<span class="badge">'+r.posts.length+'건</span></span>'+dlBtn+'</div><table><thead><tr><th>#</th><th>제목</th><th>카페</th><th>링크</th></tr></thead><tbody>'+rows+'</tbody></table>';
     wrap.appendChild(block);
   });
 }
 
-// ── 조회수 추적 ──────────────────────────────
 let trackTimer = null;
-let currentTrackJob = null;
-
 async function startTrack() {
   const raw = document.getElementById('urlInput').value.trim();
   if (!raw) { alert('URL을 입력하세요.'); return; }
@@ -205,14 +240,12 @@ async function startTrack() {
   document.getElementById('trackBtn').disabled = true;
   document.getElementById('trackResults').innerHTML = '';
   setStatus('trackStatus', 'running', '조회수 확인 중… URL 수에 따라 시간이 걸릴 수 있습니다.');
-
   const res = await fetch('/api/track', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ urls: raw, cookie })
   });
   const { job_id, error } = await res.json();
   if (error) { setStatus('trackStatus', 'error', error); document.getElementById('trackBtn').disabled = false; return; }
-  currentTrackJob = job_id;
   trackTimer = setInterval(() => pollTrack(job_id), 2500);
 }
 
@@ -223,7 +256,7 @@ async function pollTrack(job_id) {
   document.getElementById('trackBtn').disabled = false;
   if (job.status === 'error') { setStatus('trackStatus', 'error', '오류: ' + job.error); return; }
   const ok = job.rows.filter(r => !r.error).length;
-  setStatus('trackStatus', 'done', `완료! ${ok}/${job.rows.length}건 수집됨.`);
+  setStatus('trackStatus', 'done', '완료! ' + ok + '/' + job.rows.length + '건 수집됨.');
   renderTrack(job.rows, job_id);
 }
 
@@ -232,24 +265,9 @@ function renderTrack(rows, job_id) {
   wrap.innerHTML = '';
   const block = document.createElement('div');
   block.className = 'card';
-  const dlBtn = `<button class="dl-btn" onclick="downloadTrack('${job_id}')">↓ CSV 다운로드</button>`;
-  let trs = rows.map((r, i) => {
-    const err = r.error ? `<span class="err-cell">${escHtml(r.error)}</span>` : '';
-    return `<tr>
-      <td>${i+1}</td>
-      <td>${escHtml(r.title) || '<span style="color:#bbb">-</span>'}</td>
-      <td style="text-align:right">${r.read_count !== '' ? Number(r.read_count).toLocaleString() : '-'}</td>
-      <td style="text-align:right">${r.comment_count !== '' ? Number(r.comment_count).toLocaleString() : '-'}</td>
-      <td><a href="${escHtml(r.url)}" target="_blank">바로가기</a></td>
-      <td>${err}</td>
-    </tr>`;
-  }).join('');
-  block.innerHTML = `
-    <div class="block-title"><span>추적 결과 <span class="badge">${rows.length}건</span></span>${dlBtn}</div>
-    <table>
-      <thead><tr><th>#</th><th>제목</th><th>조회수</th><th>댓글수</th><th>링크</th><th>오류</th></tr></thead>
-      <tbody>${trs}</tbody>
-    </table>`;
+  const dlBtn = '<button class="dl-btn" onclick="downloadTrack(\'' + job_id + '\')">&#8595; CSV 다운로드</button>';
+  const trs = rows.map((r,i) => '<tr><td>'+(i+1)+'</td><td>'+(escHtml(r.title)||'<span style="color:#ccc">-</span>')+'</td><td class="num">'+(r.read_count!==''?Number(r.read_count).toLocaleString():'-')+'</td><td class="num">'+(r.comment_count!==''?Number(r.comment_count).toLocaleString():'-')+'</td><td><a href="'+escHtml(r.url)+'" target="_blank">바로가기</a></td><td>'+(r.error?'<span class="err-cell">'+escHtml(r.error)+'</span>':'')+'</td></tr>').join('');
+  block.innerHTML = '<div class="block-title"><span>추적 결과<span class="badge">'+rows.length+'건</span></span>'+dlBtn+'</div><table><thead><tr><th>#</th><th>제목</th><th>조회수</th><th>댓글수</th><th>링크</th><th>오류</th></tr></thead><tbody>'+trs+'</tbody></table>';
   wrap.appendChild(block);
 }
 

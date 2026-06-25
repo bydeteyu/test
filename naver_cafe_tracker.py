@@ -18,13 +18,24 @@ HEADERS_BASE = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/125.0.0.0 Safari/537.36"
     ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+}
+
+HEADERS_API = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    ),
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "ko-KR,ko;q=0.9",
 }
 
 
-def make_headers(clubid=None, articleid=None, cookie=""):
-    h = dict(HEADERS_BASE)
+def make_api_headers(clubid=None, articleid=None, cookie=""):
+    h = dict(HEADERS_API)
     if clubid and articleid:
         h["Referer"] = f"https://m.cafe.naver.com/ca-fe/web/cafes/{clubid}/articles/{articleid}"
     if cookie:
@@ -34,16 +45,17 @@ def make_headers(clubid=None, articleid=None, cookie=""):
 
 def expand_url(url, session):
     """naver.me 등 단축 URL을 실제 URL로 펼친다."""
-    if "naver.me" in url or "me.naver.com" in url:
+    if "naver.me" in url:
         try:
-            r = session.head(url, headers=HEADERS_BASE, allow_redirects=True, timeout=10)
+            r = session.get(
+                url,
+                headers=HEADERS_BASE,
+                allow_redirects=True,
+                timeout=15
+            )
             return r.url
-        except Exception:
-            try:
-                r = session.get(url, headers=HEADERS_BASE, allow_redirects=True, timeout=10)
-                return r.url
-            except Exception:
-                return url
+        except Exception as e:
+            return url
     return url
 
 
@@ -51,12 +63,19 @@ def resolve_clubid(cafe_name, session):
     if cafe_name in _clubid_cache:
         return _clubid_cache[cafe_name]
     try:
-        html = session.get(f"https://cafe.naver.com/{cafe_name}",
-                           headers=make_headers(), timeout=10).text
+        html = session.get(
+            f"https://cafe.naver.com/{cafe_name}",
+            headers=HEADERS_BASE,
+            timeout=10
+        ).text
     except Exception:
         return None
-    for p in [r'g_sClubId\s*=\s*["\'](\.d+)["\']', r'"cafeId"\s*:\s*"?(\d+)"?',
-              r'"clubId"\s*:\s*"?(\d+)"?', r'clubid=(\d+)']:
+    for p in [
+        r'"cafeId"\s*:\s*"?(\d+)"?',
+        r'"clubId"\s*:\s*"?(\d+)"?',
+        r'clubid=(\d+)',
+        r'g_sClubId\s*=\s*["\'](\.d+)["\']',
+    ]:
         m = re.search(p, html)
         if m:
             _clubid_cache[cafe_name] = m.group(1)
@@ -65,19 +84,24 @@ def resolve_clubid(cafe_name, session):
 
 
 def parse_url(url, session):
-    url = expand_url(url.strip(), session)
+    original = url.strip()
+    expanded = expand_url(original, session)
 
-    m = re.search(r'clubid=(\d+).*?articleid=(\d+)', url)
-    if m:
-        return m.group(1), m.group(2)
-    m = re.search(r'cafes/(\d+)/articles/(\d+)', url)
-    if m:
-        return m.group(1), m.group(2)
-    m = re.search(r'cafe\.naver\.com/([^/?]+)/(\d+)', url)
-    if m:
-        clubid = resolve_clubid(m.group(1), session)
-        return clubid, m.group(2)
-    return None, None
+    for u in [expanded, original]:
+        m = re.search(r'clubid=(\d+).*?articleid=(\d+)', u, re.IGNORECASE)
+        if m:
+            return m.group(1), m.group(2), expanded
+
+        m = re.search(r'cafes/(\d+)/articles/(\d+)', u)
+        if m:
+            return m.group(1), m.group(2), expanded
+
+        m = re.search(r'cafe\.naver\.com/([^/?#]+)/(\d+)', u)
+        if m:
+            clubid = resolve_clubid(m.group(1), session)
+            return clubid, m.group(2), expanded
+
+    return None, None, expanded
 
 
 def deep_find(obj, target_keys):
@@ -120,7 +144,7 @@ def fetch_and_extract(clubid, articleid, session, cookie=""):
         f"cafes/{clubid}/articles/{articleid}"
         f"?query=&menuId=0&boardType=L&useCafeId=true&requestFrom=A"
     )
-    r = session.get(api, headers=make_headers(clubid, articleid, cookie), timeout=10)
+    r = session.get(api, headers=make_api_headers(clubid, articleid, cookie), timeout=10)
     r.raise_for_status()
     data = r.json()
     read = deep_find(data, {"readCount", "viewCount", "readcount", "hit"})
@@ -137,23 +161,30 @@ def run_tracker(urls: list[str], cookie: str = "") -> list[dict]:
         url = url.strip()
         if not url or url.startswith("#"):
             continue
-        clubid, articleid = parse_url(url, session)
+        clubid, articleid, expanded = parse_url(url, session)
         if not (clubid and articleid):
-            rows.append({"date": today, "clubid": "", "articleid": "",
-                         "title": "URL 해석 실패", "read_count": "",
-                         "comment_count": "", "url": url, "error": "parse_fail"})
+            rows.append({
+                "date": today, "clubid": "", "articleid": "",
+                "title": "URL 해석 실패",
+                "read_count": "", "comment_count": "",
+                "url": url,
+                "error": f"parse_fail (expanded: {expanded})"
+            })
             continue
         try:
             title, read, comment = fetch_and_extract(clubid, articleid, session, cookie)
             rows.append({
                 "date": today, "clubid": clubid, "articleid": articleid,
-                "title": title or "", "read_count": read if read is not None else "",
+                "title": title or "",
+                "read_count": read if read is not None else "",
                 "comment_count": comment if comment is not None else "",
                 "url": url, "error": ""
             })
         except Exception as e:
-            rows.append({"date": today, "clubid": clubid, "articleid": articleid,
-                         "title": "", "read_count": "", "comment_count": "",
-                         "url": url, "error": str(e)})
+            rows.append({
+                "date": today, "clubid": clubid, "articleid": articleid,
+                "title": "", "read_count": "", "comment_count": "",
+                "url": url, "error": str(e)
+            })
         time.sleep(REQUEST_DELAY)
     return rows

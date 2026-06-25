@@ -5,12 +5,9 @@
 """
 
 import re
-import csv
 import time
-import json
 import requests
 from datetime import datetime
-from pathlib import Path
 
 REQUEST_DELAY = 1.5
 _clubid_cache = {}
@@ -35,6 +32,21 @@ def make_headers(clubid=None, articleid=None, cookie=""):
     return h
 
 
+def expand_url(url, session):
+    """naver.me 등 단축 URL을 실제 URL로 펼친다."""
+    if "naver.me" in url or "me.naver.com" in url:
+        try:
+            r = session.head(url, headers=HEADERS_BASE, allow_redirects=True, timeout=10)
+            return r.url
+        except Exception:
+            try:
+                r = session.get(url, headers=HEADERS_BASE, allow_redirects=True, timeout=10)
+                return r.url
+            except Exception:
+                return url
+    return url
+
+
 def resolve_clubid(cafe_name, session):
     if cafe_name in _clubid_cache:
         return _clubid_cache[cafe_name]
@@ -53,7 +65,8 @@ def resolve_clubid(cafe_name, session):
 
 
 def parse_url(url, session):
-    url = url.strip()
+    url = expand_url(url.strip(), session)
+
     m = re.search(r'clubid=(\d+).*?articleid=(\d+)', url)
     if m:
         return m.group(1), m.group(2)

@@ -5,45 +5,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>네이버 카페 어드민</title>
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Apple SD Gothic Neo', sans-serif; background: #f0f2f7; min-height: 100vh; }
-header { background: #1a1a2e; color: #fff; padding: 22px 36px; }
-header h1 { font-size: 1.3rem; font-weight: 700; color: #03c75a; }
-header p  { font-size: .82rem; color: rgba(255,255,255,.45); margin-top: 4px; }
-.wrap { max-width: 780px; margin: 48px auto; padding: 0 20px; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-.tool-card {
-  background: #fff; border-radius: 14px; padding: 32px 28px;
-  box-shadow: 0 2px 12px rgba(0,0,0,.07);
-  text-decoration: none; color: inherit;
-  display: flex; flex-direction: column; gap: 12px;
-  border: 2px solid transparent;
-  transition: border-color .18s, box-shadow .18s, transform .15s;
-}
-.tool-card:hover { border-color: #03c75a; box-shadow: 0 6px 24px rgba(3,199,90,.15); transform: translateY(-2px); }
-.tool-card .icon { font-size: 2.2rem; }
-.tool-card h2 { font-size: 1.1rem; font-weight: 700; }
-.tool-card p  { font-size: .85rem; color: #777; line-height: 1.6; }
-.tool-card .go { margin-top: auto; color: #03c75a; font-size: .85rem; font-weight: 600; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Apple SD Gothic Neo',sans-serif;background:#f0f2f7;min-height:100vh}
+header{background:#1a1a2e;color:#fff;padding:22px 36px}
+header h1{font-size:1.2rem;font-weight:700;color:#03c75a}
+header p{font-size:.75rem;color:rgba(255,255,255,.4);margin-top:3px}
+.wrap{max-width:860px;margin:44px auto;padding:0 20px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.tool-card{background:#fff;border-radius:14px;padding:28px 22px;box-shadow:0 2px 10px rgba(0,0,0,.07);text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:10px;border:2px solid transparent;transition:border-color .18s,box-shadow .18s,transform .15s}
+.tool-card:hover{border-color:#03c75a;box-shadow:0 6px 24px rgba(3,199,90,.15);transform:translateY(-2px)}
+.tool-card .icon{font-size:2rem}
+.tool-card h2{font-size:1rem;font-weight:700}
+.tool-card p{font-size:.82rem;color:#777;line-height:1.6}
+.tool-card .go{margin-top:auto;color:#03c75a;font-size:.82rem;font-weight:600}
 </style>
 </head>
 <body>
 <header>
   <h1>&#9752; 네이버 카페 어드민</h1>
-  <p>네이버 카페 수집 &amp; 분석 도구 세트</p>
+  <p>카페글 수집 &middot; 조회수 추적 &middot; 검색 순위</p>
 </header>
 <div class="wrap">
   <div class="grid">
     <a class="tool-card" href="/collect">
       <div class="icon">&#128269;</div>
       <h2>카페글 수집</h2>
-      <p>키워드로 네이버 통합검색을 열어 카페글만 모아 제목 / 카페이름 / 링크를 CSV로 저장합니다.</p>
+      <p>키워드로 통합검색 카페글 추출 → CSV</p>
       <div class="go">시작하기 &rarr;</div>
     </a>
     <a class="tool-card" href="/track">
       <div class="icon">&#128202;</div>
       <h2>조회수 추적</h2>
-      <p>주소를 넣으면 각 게시글의 조회수와 댓글 수를 확인하고 CSV로 저장합니다.</p>
+      <p>게시글 URL → 조회수/댓글 확인 → CSV</p>
+      <div class="go">시작하기 &rarr;</div>
+    </a>
+    <a class="tool-card" href="/rank">
+      <div class="icon">&#127942;</div>
+      <h2>검색 순위</h2>
+      <p>키워드 검색 → 카페글 30위 + 매치도 확인</p>
       <div class="go">시작하기 &rarr;</div>
     </a>
   </div>

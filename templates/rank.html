@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>검색 순위</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Apple SD Gothic Neo',sans-serif;background:#f0f2f7;min-height:100vh}
+header{background:#1a1a2e;color:#fff;padding:16px 28px;display:flex;align-items:center;gap:16px}
+header a{color:rgba(255,255,255,.5);text-decoration:none;font-size:.85rem}
+header a:hover{color:#fff}
+header h1{font-size:1rem;font-weight:700;color:#fff}
+.wrap{max-width:960px;margin:30px auto;padding:0 18px}
+.card{background:#fff;border-radius:12px;box-shadow:0 1px 8px rgba(0,0,0,.06);padding:24px;margin-bottom:18px}
+label.lbl{display:block;font-weight:600;margin-bottom:6px;font-size:.92rem}
+.hint{font-size:.78rem;color:#aaa;margin-bottom:9px}
+textarea{width:100%;height:90px;border:1.5px solid #e0e3ed;border-radius:8px;padding:10px 12px;font-size:.9rem;resize:vertical;outline:none;transition:border .18s;background:#fafbfd}
+textarea:focus{border-color:#03c75a;background:#fff}
+button.run{margin-top:14px;width:100%;padding:12px;background:#03c75a;color:#fff;font-size:.97rem;font-weight:700;border:none;border-radius:8px;cursor:pointer;transition:background .2s}
+button.run:hover{background:#02a84b}
+button.run:disabled{background:#b2dfcc;cursor:not-allowed}
+.sbar{display:none;padding:10px 14px;border-radius:8px;font-size:.87rem;margin-bottom:14px}
+.sbar.running{background:#fff8e1;color:#9a6e00;border:1px solid #ffe082}
+.sbar.done{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7}
+.sbar.error{background:#fce4ec;color:#c62828;border:1px solid #f48fb1}
+.block-title{font-size:.95rem;font-weight:700;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.badge{background:#03c75a;color:#fff;font-size:.7rem;padding:2px 9px;border-radius:20px;margin-left:6px}
+.dl-btn{display:inline-flex;align-items:center;gap:5px;background:#1976d2;color:#fff;font-size:.78rem;font-weight:600;padding:5px 13px;border-radius:6px;text-decoration:none;border:none;cursor:pointer}
+.dl-btn:hover{background:#1565c0}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{background:#f5f6fa;padding:8px 11px;text-align:left;font-weight:600;border-bottom:2px solid #e8eaf0;white-space:nowrap}
+td{padding:8px 11px;border-bottom:1px solid #f0f1f5;vertical-align:top;word-break:break-all}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f8fffb}
+td a{color:#1976d2;text-decoration:none}
+td a:hover{text-decoration:underline}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.score-bar{display:inline-block;height:8px;border-radius:4px;background:#03c75a;vertical-align:middle;margin-right:6px}
+.score-100{color:#2e7d32;font-weight:700}
+.score-hi{color:#1976d2}
+.score-lo{color:#aaa}
+.spinner{display:inline-block;width:14px;height:14px;vertical-align:middle;border:2.5px solid #c8e6c9;border-top-color:#03c75a;border-radius:50%;animation:spin .7s linear infinite;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <a href="/">&larr; 홈</a>
+  <h1>&#127942; 검색 순위</h1>
+</header>
+<div class="wrap">
+  <div class="card">
+    <label class="lbl">검색 키워드</label>
+    <p class="hint">한 줄에 하나씩 또는 콤마(,)로 구분 — 카페탭 30위까지 수집 + 매치도 표시</p>
+    <textarea id="kwInput" placeholder="수원한방병원 추천&#10;수원 교통사고 한의원"></textarea>
+    <button class="run" id="runBtn" onclick="startRank()">순위 확인 시작</button>
+  </div>
+  <div id="status" class="sbar"></div>
+  <div id="results"></div>
+</div>
+<script>
+let timer=null,curJob=null;
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function setStatus(t,m){
+  const el=document.getElementById('status');
+  el.className='sbar '+t;el.style.display='block';
+  el.innerHTML=(t==='running'?'<span class="spinner"></span>':'')+m;
+}
+async function startRank(){
+  const raw=document.getElementById('kwInput').value.trim();
+  if(!raw){alert('키워드를 입력하세요.');return;}
+  document.getElementById('runBtn').disabled=true;
+  document.getElementById('results').innerHTML='';
+  setStatus('running','검색 순위 확인 중… 잠시 기다려 주세요.');
+  const {job_id,error}=await(await fetch('/api/rank',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keywords:raw})})).json();
+  if(error){setStatus('error',error);document.getElementById('runBtn').disabled=false;return;}
+  curJob=job_id;
+  timer=setInterval(()=>poll(job_id),2500);
+}
+async function poll(job_id){
+  const job=await(await fetch('/api/status/'+job_id)).json();
+  if(job.status==='running'||job.status==='pending')return;
+  clearInterval(timer);
+  document.getElementById('runBtn').disabled=false;
+  if(job.status==='error'){setStatus('error','오류: '+job.error);return;}
+  const total=job.results.reduce((s,r)=>s+r.posts.length,0);
+  setStatus('done','완료! 콜수 '+total+'건 수집.');
+  render(job.results,job_id);
+}
+function scoreClass(s){if(s>=100)return'score-100';if(s>=50)return'score-hi';return'score-lo';}
+function render(results,job_id){
+  const wrap=document.getElementById('results');
+  wrap.innerHTML='';
+  results.forEach(r=>{
+    const b=document.createElement('div');b.className='card';
+    const dl='<button class="dl-btn" onclick="dl(\''+job_id+'\')">↓ CSV</button>';
+    const rows=r.posts.length===0
+      ?'<tr><td colspan="5" style="color:#ccc;padding:14px">결과 없음</td></tr>'
+      :r.posts.map(p=>{
+          const bar='<span class="score-bar" style="width:'+p.score+'px;max-width:80px"></span>';
+          return '<tr><td class="num">'+p.rank+'</td><td>'+bar+'<span class="'+scoreClass(p.score)+'">'+p.score+'%</span></td><td>'+esc(p.title)+'</td><td>'+esc(p.cafe)+'</td><td>'+(p.link?'<a href="'+esc(p.link)+'" target="_blank">바로가기</a>':'')+'</td></tr>';
+        }).join('');
+    b.innerHTML='<div class="block-title"><span>'+esc(r.keyword)+'<span class="badge">'+r.posts.length+'건</span></span>'+dl+'</div>'
+      +'<table><thead><tr><th>순위</th><th>매치도</th><th>제목</th><th>카페</th><th>링크</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    wrap.appendChild(b);
+  });
+}
+function dl(job_id){window.location='/api/rank/download?job_id='+job_id;}
+</script>
+</body>
+</html>

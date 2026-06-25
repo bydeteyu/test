@@ -27,10 +27,22 @@ def match_score(keyword: str, title: str) -> int:
     return round(matched / len(words) * 100)
 
 
+LOW_MEM_ARGS = [
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--single-process",
+    "--no-zygote",
+    "--disable-gpu",
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--js-flags=--max-old-space-size=256",
+]
+
+
 def fetch_rank_html(keyword: str) -> str:
     url = f"https://search.naver.com/search.naver?query={quote(keyword)}&where=article"
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, args=LOW_MEM_ARGS)
         page = browser.new_page(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -38,7 +50,7 @@ def fetch_rank_html(keyword: str) -> str:
             ),
             locale="ko-KR",
         )
-        page.goto(url, wait_until="networkidle", timeout=30000)
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
         for _ in range(5):
             page.mouse.wheel(0, 1200)
             time.sleep(0.5)

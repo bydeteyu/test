@@ -47,8 +47,18 @@ def build_url(keyword: str) -> str:
 
 def fetch_html(keyword: str, headless: bool) -> str:
     """통합검색 페이지를 브라우저로 렌더링해서 최종 HTML 반환."""
+    LOW_MEM_ARGS = [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--single-process",
+        "--no-zygote",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--js-flags=--max-old-space-size=256",
+    ]
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
+        browser = p.chromium.launch(headless=headless, args=LOW_MEM_ARGS)
         page = browser.new_page(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -56,8 +66,7 @@ def fetch_html(keyword: str, headless: bool) -> str:
             ),
             locale="ko-KR",
         )
-        page.goto(build_url(keyword), wait_until="networkidle", timeout=30000)
-        # 카페 영역이 lazy-load 되는 경우가 있어 살짝 스크롤
+        page.goto(build_url(keyword), wait_until="domcontentloaded", timeout=30000)
         for _ in range(3):
             page.mouse.wheel(0, 1500)
             time.sleep(0.6)

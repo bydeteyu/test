@@ -11,7 +11,6 @@ import random
 import requests
 from urllib.parse import quote
 from bs4 import BeautifulSoup
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Playwright(브라우저)는 메모리를 많이 써서 동시 실행 수를 낮게 잡는다.
 MAX_WORKERS = 2
@@ -126,49 +125,87 @@ def extract_related_from_html(html: str) -> list[str]:
     return list(dict.fromkeys(found))
 
 
-def _make_browser_page(pw):
-    browser = pw.chromium.launch(headless=True, args=LOW_MEM_ARGS)
-    page = browser.new_page(
-        user_agent=random.choice(USER_AGENTS),
-        locale="ko-KR",
-    )
-    return browser, page
-
-
-def get_naver_related(keyword) -> list[str]:
-    """Playwright로 검색 페이지를 렌더링해 '함께 많이 찾는'/연관검색어 추출."""
-    from playwright.sync_api import sync_playwright
+def _related_from_page(page, keyword) -> list[str]:
+    """이미 떠 있는 페이지를 재사용해 검색 후 '함께 많이 찾는'/연관검색어 추출."""
     url = f"https://search.naver.com/search.naver?query={quote(keyword)}"
-    browser = pw = None
     try:
-        pw = sync_playwright().start()
-        browser, page = _make_browser_page(pw)
         page.goto(url, wait_until="domcontentloaded", timeout=30000)
         # '함께 많이 찾는' 박스는 페이지 하단 → 스크롤로 로드 유도
         for _ in range(4):
             page.mouse.wheel(0, 1300)
-            time.sleep(0.5)
-        time.sleep(1)
-        html = page.content()
-        return extract_related_from_html(html)
+            time.sleep(0.4)
+        time.sleep(0.6)
+        return extract_related_from_html(page.content())
     except Exception:
         return []
-    finally:
+
+
+def _process_batch(targets, progress_cb, depth):
+    """
+    targets 키워드들을 MAX_WORKERS개 워커로 병렬 처리.
+    워커마다 브라우저를 '한 번만' 띄우고 페이지만 새로 열어 재사용한다.
+    반환: {keyword: [suggestions...]}
+    """
+    import threading
+    import queue as _queue
+    from playwright.sync_api import sync_playwright
+
+    q = _queue.Queue()
+    for kw in targets:
+        q.put(kw)
+
+    results = {}
+    lock = threading.Lock()
+    counter = {"done": 0}
+    total = len(targets)
+
+    def _worker():
+        pw = browser = None
         try:
-            if browser: browser.close()
-            if pw: pw.stop()
-        except Exception:
-            pass
+            pw = sync_playwright().start()
+            browser = pw.chromium.launch(headless=True, args=LOW_MEM_ARGS)
+            while True:
+                try:
+                    kw = q.get_nowait()
+                except _queue.Empty:
+                    break
+                # 자동완성 API (가벼움) + 브라우저로 함께 많이 찾는
+                ac = get_naver_autocomplete(kw)
+                related = []
+                page = None
+                try:
+                    page = browser.new_page(
+                        user_agent=random.choice(USER_AGENTS), locale="ko-KR")
+                    related = _related_from_page(page, kw)
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        if page: page.close()
+                    except Exception:
+                        pass
+                combined = list(dict.fromkeys(ac + related))
+                with lock:
+                    results[kw] = combined
+                    counter["done"] += 1
+                    if progress_cb:
+                        progress_cb(counter["done"], total, depth, kw)
+                time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+        finally:
+            try:
+                if browser: browser.close()
+                if pw: pw.stop()
+            except Exception:
+                pass
 
+    workers = [threading.Thread(target=_worker, daemon=True)
+               for _ in range(min(MAX_WORKERS, max(1, total)))]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
 
-# ───────────────────────── 통합 수집 ─────────────────────────
-def fetch_all_for_keyword(keyword):
-    """자동완성 + 함께 많이 찾는 합산 (순서 유지, 중복 제거)."""
-    ac = get_naver_autocomplete(keyword)
-    related = get_naver_related(keyword)
-    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
-    combined = list(dict.fromkeys(ac + related))
-    return keyword, combined
+    return results
 
 
 def run_autocomplete(seed_keyword, max_depth=2, progress_cb=None):
@@ -188,21 +225,14 @@ def run_autocomplete(seed_keyword, max_depth=2, progress_cb=None):
         if not targets:
             continue
 
-        next_level = set()
-        completed = 0
-        total = len(targets)
+        batch = _process_batch(targets, progress_cb, depth)
 
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-            futures = {pool.submit(fetch_all_for_keyword, kw): kw for kw in targets}
-            for fut in as_completed(futures):
-                keyword, suggestions = fut.result()
-                completed += 1
-                for s in suggestions:
-                    all_keywords.add(s)
-                    if s not in visited:
-                        next_level.add(s)
-                if progress_cb:
-                    progress_cb(completed, total, depth, keyword)
+        next_level = set()
+        for kw, suggestions in batch.items():
+            for s in suggestions:
+                all_keywords.add(s)
+                if s not in visited:
+                    next_level.add(s)
 
         current_level = next_level
         if depth < max_depth - 1 and next_level:

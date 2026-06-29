@@ -140,13 +140,27 @@ def diagnose_keyword(keyword) -> dict:
         "error": "",
     }
 
-    # 1) 자동완성 API
+    # 1) 자동완성 API (진단 시에는 raw 응답/에러를 직접 확인)
     try:
+        ac_url = "https://ac.search.naver.com/nx/ac"
+        ac_params = {
+            "q": keyword, "st": 100, "r_format": "json",
+            "r_enc": "UTF-8", "r_unicode": 0, "t_koreng": 1,
+            "run": 2, "rev": 4, "q_enc": "UTF-8",
+        }
+        ac_headers = {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Referer": "https://www.naver.com/",
+            "Accept": "*/*",
+            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        }
+        rr = requests.get(ac_url, params=ac_params, headers=ac_headers, timeout=REQUEST_TIMEOUT)
+        report["autocomplete_http_status"] = rr.status_code
         ac = get_naver_autocomplete(keyword)
         report["autocomplete_count"] = len(ac)
         report["autocomplete_sample"] = ac[:10]
     except Exception as e:
-        report["error"] += f"autocomplete: {e}; "
+        report["error"] += f"autocomplete: {type(e).__name__}: {e}; "
 
     # 2) 브라우저 렌더링 + 함께 많이 찾는
     pw = browser = None

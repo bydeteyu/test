@@ -10,6 +10,7 @@ import os
 import csv
 import uuid
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import StringIO
 from pathlib import Path
 
@@ -23,6 +24,7 @@ app = Flask(__name__)
 OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 JOBS: dict[str, dict] = {}
+COLLECT_WORKERS = 3  # 동시 처리 키워드 수 (Hobby 플랜 기준)
 
 
 # ── 페이지 ──
@@ -40,17 +42,40 @@ def page_rank(): return render_template("rank.html")
 
 
 # ── 카페글 수집 ──
+def _collect_one(kw):
+    """키워드 1개 수집 — 스레드풀에서 병렬 호출됨."""
+    html = fetch_html(kw, headless=True)
+    posts = extract_posts(html)
+    path = None
+    if posts:
+        path = str(save_csv(kw, posts, OUTPUT_DIR))
+    return kw, posts, path
+
 def _run_collect(job_id, keywords):
-    job = JOBS[job_id]; job["status"] = "running"
+    job = JOBS[job_id]
+    job.update({"status": "running", "total": len(keywords), "done_count": 0})
     all_results, files = [], []
-    try:
-        for kw in keywords:
-            html = fetch_html(kw, headless=True)
-            posts = extract_posts(html)
-            if posts:
-                path = save_csv(kw, posts, OUTPUT_DIR)
-                files.append(str(path))
+    lock = threading.Lock()
+
+    def _worker(kw):
+        try:
+            kw, posts, path = _collect_one(kw)
+        except Exception as e:
+            kw, posts, path = kw, [], None
+            with lock:
+                job.setdefault("errors", []).append(f"{kw}: {e}")
+        with lock:
             all_results.append({"keyword": kw, "posts": posts})
+            if path:
+                files.append(path)
+            job["done_count"] += 1
+
+    try:
+        with ThreadPoolExecutor(max_workers=COLLECT_WORKERS) as pool:
+            list(pool.map(_worker, keywords))
+        # 입력 순서로 정렬
+        order = {kw: i for i, kw in enumerate(keywords)}
+        all_results.sort(key=lambda r: order.get(r["keyword"], 0))
         job.update({"results": all_results, "files": files, "status": "done"})
     except Exception as e:
         job.update({"error": str(e), "status": "error"})
@@ -70,7 +95,12 @@ def api_search():
 def api_status(job_id):
     job = JOBS.get(job_id)
     if not job: abort(404)
-    return jsonify(job)
+    resp = dict(job)
+    # 진행률 계산
+    total = resp.get("total", 0)
+    done = resp.get("done_count", 0)
+    resp["progress"] = round(done / total * 100) if total else 0
+    return jsonify(resp)
 
 @app.route("/api/download")
 def api_download():
@@ -119,9 +149,25 @@ def api_track_download():
 
 # ── 검색 순위 ──
 def _run_rank(job_id, keywords):
-    job = JOBS[job_id]; job["status"] = "running"
+    job = JOBS[job_id]
+    job.update({"status": "running", "total": len(keywords), "done_count": 0})
+    results = []
+    lock = threading.Lock()
+
+    def _rank_worker(kw):
+        try:
+            res = run_rank_search([kw])[0]
+        except Exception as e:
+            res = {"keyword": kw, "posts": [{"rank": "-", "title": str(e), "cafe": "", "score": 0, "link": ""}]}
+        with lock:
+            results.append(res)
+            job["done_count"] += 1
+
     try:
-        results = run_rank_search(keywords)
+        with ThreadPoolExecutor(max_workers=COLLECT_WORKERS) as pool:
+            list(pool.map(_rank_worker, keywords))
+        order = {kw: i for i, kw in enumerate(keywords)}
+        results.sort(key=lambda r: order.get(r["keyword"], 0))
         job.update({"results": results, "status": "done"})
     except Exception as e:
         job.update({"error": str(e), "status": "error"})

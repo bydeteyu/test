@@ -38,6 +38,9 @@ td a:hover { text-decoration: underline; }
 .empty { color: #ccc; font-size: .87rem; padding: 14px 0; }
 .spinner { display: inline-block; width: 14px; height: 14px; vertical-align: middle; border: 2.5px solid #c8e6c9; border-top-color: #03c75a; border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.progress-wrap { margin-top: 8px; background: #e0e0e0; border-radius: 6px; height: 8px; overflow: hidden; }
+.progress-bar { height: 100%; background: #03c75a; border-radius: 6px; transition: width .4s; }
+.progress-text { font-size: .78rem; color: #666; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -53,6 +56,10 @@ td a:hover { text-decoration: underline; }
     <button class="run" id="runBtn" onclick="startCollect()">검색 시작</button>
   </div>
   <div id="status" class="sbar"></div>
+  <div id="progressWrap" style="display:none; margin-bottom:14px;">
+    <div class="progress-wrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+    <div class="progress-text" id="progressText"></div>
+  </div>
   <div id="results"></div>
 </div>
 <script>
@@ -68,13 +75,20 @@ async function startCollect() {
   if (!raw) { alert('키워드를 입력하세요.'); return; }
   document.getElementById('runBtn').disabled = true;
   document.getElementById('results').innerHTML = '';
-  setStatus('running', '수집 중입니다… 잠시 기다려 주세요.');
+  document.getElementById('progressWrap').style.display = 'none';
+  setStatus('running', '수집 중입니다… (3개씩 병렬 처리)');
   const { job_id, error } = await (await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({keywords: raw}) })).json();
   if (error) { setStatus('error', error); document.getElementById('runBtn').disabled=false; return; }
-  timer = setInterval(() => poll(job_id), 2500);
+  timer = setInterval(() => poll(job_id), 2000);
 }
 async function poll(job_id) {
   const job = await (await fetch('/api/status/'+job_id)).json();
+  // 진행률 업데이트
+  if (job.total > 0) {
+    document.getElementById('progressWrap').style.display = 'block';
+    document.getElementById('progressBar').style.width = job.progress + '%';
+    document.getElementById('progressText').textContent = job.done_count + ' / ' + job.total + '개 완료 (' + job.progress + '%)';
+  }
   if (job.status==='running'||job.status==='pending') return;
   clearInterval(timer);
   document.getElementById('runBtn').disabled = false;

@@ -24,7 +24,7 @@ app = Flask(__name__)
 OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 JOBS: dict[str, dict] = {}
-COLLECT_WORKERS = 3  # 동시 처리 키워드 수 (Hobby 플랜 기준)
+COLLECT_WORKERS = 2  # 동시 처리 키워드 수 (스레드 한계 고려)
 
 
 # ── 페이지 ──

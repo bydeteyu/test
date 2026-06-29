@@ -250,8 +250,8 @@ def fetch_via_browser(page, url: str):
     return title, read, comment
 
 
-TRACKER_API_WORKERS = 8   # API 호출 병렬 수 (HTTP I/O라 넉넉하게)
-TRACKER_PW_WORKERS  = 2   # Playwright 폴백 병렬 수 (메모리 보호)
+TRACKER_API_WORKERS = 4   # API 호출 병렬 수
+TRACKER_PW_WORKERS  = 1   # Playwright 폴백은 순차 처리 (메모리/스레드 보호)
 
 _PW_ARGS = [
     "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",

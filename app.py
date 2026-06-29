@@ -112,9 +112,15 @@ def api_download():
 
 # ── 조회수 추적 ──
 def _run_track(job_id, urls, cookie):
-    job = JOBS[job_id]; job["status"] = "running"
+    job = JOBS[job_id]
+    valid = [u.strip() for u in urls if u.strip() and not u.strip().startswith("#")]
+    job.update({"status": "running", "total": len(valid), "done_count": 0})
+
+    def _progress(done, total):
+        job["done_count"] = done
+
     try:
-        rows = run_tracker(urls, cookie)
+        rows = run_tracker(urls, cookie, progress_cb=_progress)
         job.update({"rows": rows, "status": "done"})
     except Exception as e:
         job.update({"error": str(e), "status": "error"})

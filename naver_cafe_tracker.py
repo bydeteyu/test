@@ -250,116 +250,145 @@ def fetch_via_browser(page, url: str):
     return title, read, comment
 
 
-def run_tracker(urls: list[str], cookie: str = "") -> list[dict]:
-    session = requests.Session()
-    today = datetime.now().strftime("%Y-%m-%d %H:%M")
-    rows = []
+TRACKER_API_WORKERS = 8   # API 호출 병렬 수 (HTTP I/O라 넉넉하게)
+TRACKER_PW_WORKERS  = 2   # Playwright 폴백 병렬 수 (메모리 보호)
 
-    # Playwright 브라우저는 폴백이 필요할 때만 lazy 하게 띄운다
-    _pw = {"ctx": None, "browser": None, "page": None}
+_PW_ARGS = [
+    "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+    "--disable-extensions", "--disable-background-networking",
+    "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+    "--disable-features=TranslateUI", "--js-flags=--max-old-space-size=512",
+]
 
-    def get_page():
-        if _pw["page"] is None:
-            from playwright.sync_api import sync_playwright
-            _pw["ctx"] = sync_playwright().start()
-            # 512MB 무료 인스턴스용 저메모리 플래그
-            _pw["browser"] = _pw["ctx"].chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--disable-extensions",
-                    "--disable-background-networking",
-                    "--disable-background-timer-throttling",
-                    "--disable-renderer-backgrounding",
-                    "--disable-features=TranslateUI",
-                    "--js-flags=--max-old-space-size=512",
-                ],
-            )
-            ctx = _pw["browser"].new_context(
-                user_agent=HEADERS_BROWSER["User-Agent"],
-                locale="ko-KR",
-            )
-            # 로그인 쿠키가 있으면 주입 → 회원전용 글 정상 노출
-            if cookie:
-                cookies = []
-                for part in cookie.split(";"):
-                    if "=" not in part:
-                        continue
-                    name, _, value = part.strip().partition("=")
-                    if name:
-                        cookies.append({
-                            "name": name, "value": value,
-                            "domain": ".naver.com", "path": "/",
-                        })
-                if cookies:
-                    try:
-                        ctx.add_cookies(cookies)
-                    except Exception:
-                        pass
-            _pw["page"] = ctx.new_page()
-        return _pw["page"]
 
-    def close_browser():
-        try:
-            if _pw["browser"]:
-                _pw["browser"].close()
-            if _pw["ctx"]:
-                _pw["ctx"].stop()
-        except Exception:
-            pass
-
-    try:
-        for url in urls:
-            url = url.strip()
-            if not url or url.startswith("#"):
+def _make_browser_page(cookie: str):
+    """독립 Playwright 컨텍스트+페이지 생성 (스레드별로 호출)."""
+    from playwright.sync_api import sync_playwright
+    pw  = sync_playwright().start()
+    browser = pw.chromium.launch(headless=True, args=_PW_ARGS)
+    ctx = browser.new_context(user_agent=HEADERS_BROWSER["User-Agent"], locale="ko-KR")
+    if cookie:
+        parsed = []
+        for part in cookie.split(";"):
+            if "=" not in part:
                 continue
-            clubid, articleid, expanded = parse_url(url, session)
-            if not (clubid and articleid):
-                rows.append({
-                    "date": today, "clubid": "", "articleid": "",
-                    "title": "URL 해석 실패",
-                    "read_count": "", "comment_count": "",
-                    "url": url,
-                    "error": f"parse_fail (expanded: {expanded})"
-                })
-                continue
-
-            title = read = comment = None
-            api_error = ""
+            name, _, value = part.strip().partition("=")
+            if name:
+                parsed.append({"name": name, "value": value,
+                               "domain": ".naver.com", "path": "/"})
+        if parsed:
             try:
-                title, read, comment = fetch_and_extract(
-                    clubid, articleid, session, cookie
-                )
+                ctx.add_cookies(parsed)
+            except Exception:
+                pass
+    page = ctx.new_page()
+    return pw, browser, page
+
+
+def run_tracker(urls: list[str], cookie: str = "",
+                progress_cb=None) -> list[dict]:
+    """
+    progress_cb(done, total): 진행 상황 콜백 (선택)
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    today = datetime.now().strftime("%Y-%m-%d %H:%M")
+    valid_urls = [u.strip() for u in urls if u.strip() and not u.strip().startswith("#")]
+    total = len(valid_urls)
+    rows_map: dict[str, dict] = {}
+    done_count = 0
+    lock = time.time  # 재사용 방지용 — 실제 lock은 아래에서
+    import threading as _th
+    lock = _th.Lock()
+    pw_semaphore = _th.Semaphore(TRACKER_PW_WORKERS)
+
+    # 1단계: URL 파싱 + API 호출 (병렬)
+    shared_session = requests.Session()
+
+    def _process_url(url):
+        session = requests.Session()  # 스레드별 독립 세션
+        clubid, articleid, expanded = parse_url(url, session)
+        if not (clubid and articleid):
+            return url, {
+                "date": today, "clubid": "", "articleid": "",
+                "title": "URL 해석 실패", "read_count": "", "comment_count": "",
+                "url": url, "error": f"parse_fail (expanded: {expanded})",
+                "_needs_browser": False,
+            }
+        title = read = comment = None
+        api_error = ""
+        try:
+            title, read, comment = fetch_and_extract(clubid, articleid, session, cookie)
+        except Exception as e:
+            api_error = str(e)
+
+        needs_browser = (read is None and comment is None)
+        return url, {
+            "date": today, "clubid": clubid, "articleid": articleid,
+            "title": title or "", "read_count": read, "comment_count": comment,
+            "url": url, "error": api_error,
+            "_needs_browser": needs_browser,
+            "_expanded": expanded,
+        }
+
+    with ThreadPoolExecutor(max_workers=TRACKER_API_WORKERS) as pool:
+        futures = {pool.submit(_process_url, u): u for u in valid_urls}
+        for fut in as_completed(futures):
+            url, row = fut.result()
+            rows_map[url] = row
+            with lock:
+                done_count += 1
+                if progress_cb:
+                    progress_cb(done_count, total)
+
+    # 2단계: API 실패 URL만 Playwright 폴백 (병렬 TRACKER_PW_WORKERS개)
+    browser_urls = [u for u in valid_urls if rows_map[u].get("_needs_browser")]
+
+    def _browser_fallback(url):
+        row = rows_map[url]
+        b_url = row.get("_expanded") or url
+        pw = browser = page = None
+        with pw_semaphore:
+            try:
+                pw, browser, page = _make_browser_page(cookie)
+                bt, br, bc = fetch_via_browser(page, b_url)
+                if not row["title"]:
+                    row["title"] = bt or ""
+                if br is not None:
+                    row["read_count"] = br
+                if bc is not None:
+                    row["comment_count"] = bc
             except Exception as e:
-                api_error = str(e)
-
-            # API 실패(403 등) 또는 숫자 못 찾음 → 브라우저 렌더링 폴백
-            if read is None and comment is None:
+                if not row["error"]:
+                    row["error"] = f"browser_fail: {e}"
+            finally:
                 try:
-                    b_url = expanded or url
-                    bt, br, bc = fetch_via_browser(get_page(), b_url)
-                    title = title or bt
-                    if br is not None:
-                        read = br
-                    if bc is not None:
-                        comment = bc
-                except Exception as e:
-                    if not api_error:
-                        api_error = f"browser_fail: {e}"
+                    if browser: browser.close()
+                    if pw: pw.stop()
+                except Exception:
+                    pass
+        with lock:
+            got = (row["read_count"] is not None) or (row["comment_count"] is not None)
+            if not got and not row["error"]:
+                row["error"] = "데이터 없음"
 
-            got = (read is not None) or (comment is not None)
-            rows.append({
-                "date": today, "clubid": clubid, "articleid": articleid,
-                "title": title or "",
-                "read_count": read if read is not None else "",
-                "comment_count": comment if comment is not None else "",
-                "url": url,
-                "error": "" if got else (api_error or "데이터 없음"),
-            })
-            time.sleep(REQUEST_DELAY)
-    finally:
-        close_browser()
+    if browser_urls:
+        with ThreadPoolExecutor(max_workers=TRACKER_PW_WORKERS) as pool:
+            list(pool.map(_browser_fallback, browser_urls))
 
-    return rows
+    # 입력 순서로 정렬 후 내부 키 제거
+    result = []
+    for url in valid_urls:
+        row = rows_map[url]
+        got = (row["read_count"] is not None) or (row["comment_count"] is not None)
+        result.append({
+            "date":          row["date"],
+            "clubid":        row["clubid"],
+            "articleid":     row["articleid"],
+            "title":         row["title"],
+            "read_count":    row["read_count"] if row["read_count"] is not None else "",
+            "comment_count": row["comment_count"] if row["comment_count"] is not None else "",
+            "url":           row["url"],
+            "error":         "" if got else row["error"],
+        })
+    return result

@@ -41,6 +41,9 @@ td.num { text-align: right; }
 .err-cell { color: #c62828; font-size: .78rem; }
 .spinner { display: inline-block; width: 14px; height: 14px; vertical-align: middle; border: 2.5px solid #c8e6c9; border-top-color: #03c75a; border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.progress-wrap { margin-top: 8px; background: #e0e0e0; border-radius: 6px; height: 8px; overflow: hidden; }
+.progress-bar { height: 100%; background: #03c75a; border-radius: 6px; transition: width .4s; }
+.progress-text { font-size: .78rem; color: #666; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -61,6 +64,10 @@ td.num { text-align: right; }
     <button class="run" id="runBtn" onclick="startTrack()">조회수 추적 시작</button>
   </div>
   <div id="status" class="sbar"></div>
+  <div id="progressWrap" style="display:none; margin-bottom:14px;">
+    <div class="progress-wrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+    <div class="progress-text" id="progressText"></div>
+  </div>
   <div id="results"></div>
 </div>
 <script>
@@ -77,14 +84,20 @@ async function startTrack() {
   const cookie = document.getElementById('cookieInput').value.trim();
   document.getElementById('runBtn').disabled = true;
   document.getElementById('results').innerHTML = '';
-  setStatus('running', '조회수 확인 중… URL 수에 따라 시간이 걸릴 수 있습니다.');
+  document.getElementById('progressWrap').style.display = 'none';
+  setStatus('running', '조회수 확인 중… (8개 병렬 처리)');
   const { job_id, error } = await (await fetch('/api/track', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({urls: raw, cookie}) })).json();
   if (error) { setStatus('error', error); document.getElementById('runBtn').disabled=false; return; }
   currentJob = job_id;
-  timer = setInterval(() => poll(job_id), 2500);
+  timer = setInterval(() => poll(job_id), 1500);
 }
 async function poll(job_id) {
   const job = await (await fetch('/api/status/'+job_id)).json();
+  if (job.total > 0) {
+    document.getElementById('progressWrap').style.display = 'block';
+    document.getElementById('progressBar').style.width = job.progress + '%';
+    document.getElementById('progressText').textContent = job.done_count + ' / ' + job.total + '개 완료 (' + job.progress + '%)';
+  }
   if (job.status==='running'||job.status==='pending') return;
   clearInterval(timer);
   document.getElementById('runBtn').disabled = false;

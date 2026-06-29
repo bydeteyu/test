@@ -268,12 +268,13 @@ def run_tracker(urls: list[str], cookie: str = "") -> list[dict]:
                 args=[
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
-                    "--single-process",
-                    "--no-zygote",
                     "--disable-gpu",
                     "--disable-extensions",
                     "--disable-background-networking",
-                    "--js-flags=--max-old-space-size=256",
+                    "--disable-background-timer-throttling",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=TranslateUI",
+                    "--js-flags=--max-old-space-size=512",
                 ],
             )
             ctx = _pw["browser"].new_context(

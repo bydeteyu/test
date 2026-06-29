@@ -50,12 +50,13 @@ def fetch_html(keyword: str, headless: bool) -> str:
     LOW_MEM_ARGS = [
         "--no-sandbox",
         "--disable-dev-shm-usage",
-        "--single-process",
-        "--no-zygote",
         "--disable-gpu",
         "--disable-extensions",
         "--disable-background-networking",
-        "--js-flags=--max-old-space-size=256",
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding",
+        "--disable-features=TranslateUI",
+        "--js-flags=--max-old-space-size=512",
     ]
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless, args=LOW_MEM_ARGS)

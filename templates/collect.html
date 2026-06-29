@@ -94,16 +94,15 @@ async function poll(job_id) {
   document.getElementById('runBtn').disabled = false;
   if (job.status==='error') { setStatus('error','오류: '+job.error); return; }
   const total = job.results.reduce((s,r)=>s+r.posts.length,0);
-  setStatus('done','완료! 총 '+total+'건 수집됨.');
+  const dlBtn = job.excel ? '<a class="dl-btn" style="float:right" href="/api/download?job_id='+job_id+'">&#8595; 엑셀 전체 다운로드</a>' : '';
+  setStatus('done','완료! 총 '+total+'건 수집됨. '+dlBtn);
   const wrap = document.getElementById('results');
   wrap.innerHTML = '';
   job.results.forEach(r => {
-    const file = job.files.find(f=>f.includes(r.keyword.replace(/[^\w가-힣]/g,'_')));
-    const dl = file ? '<a class="dl-btn" href="/api/download?path='+encodeURIComponent(file)+'">&#8595; CSV</a>' : '';
     const rows = r.posts.length===0 ? '<tr><td colspan="4" class="empty">결과 없음</td></tr>'
       : r.posts.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(p['제목'])+'</td><td>'+esc(p['카페이름'])+'</td><td><a href="'+esc(p['링크'])+'" target="_blank">바로가기</a></td></tr>').join('');
     const b = document.createElement('div'); b.className='card';
-    b.innerHTML = '<div class="block-title"><span>'+esc(r.keyword)+'<span class="badge">'+r.posts.length+'건</span></span>'+dl+'</div><table><thead><tr><th>#</th><th>제목</th><th>카페</th><th>링크</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    b.innerHTML = '<div class="block-title"><span>'+esc(r.keyword)+'<span class="badge">'+r.posts.length+'건</span></span></div><table><thead><tr><th>#</th><th>제목</th><th>카페</th><th>링크</th></tr></thead><tbody>'+rows+'</tbody></table>';
     wrap.appendChild(b);
   });
 }

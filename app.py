@@ -16,7 +16,7 @@ from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, send_file, abort, make_response
 
-from naver_cafe_collector import fetch_html, extract_posts, save_csv
+from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined
 from naver_cafe_tracker import run_tracker
 from naver_rank_search import run_rank_search
 
@@ -46,37 +46,33 @@ def _collect_one(kw):
     """키워드 1개 수집 — 스레드풀에서 병렬 호출됨."""
     html = fetch_html(kw, headless=True)
     posts = extract_posts(html)
-    path = None
-    if posts:
-        path = str(save_csv(kw, posts, OUTPUT_DIR))
-    return kw, posts, path
+    return kw, posts
 
 def _run_collect(job_id, keywords):
     job = JOBS[job_id]
     job.update({"status": "running", "total": len(keywords), "done_count": 0})
-    all_results, files = [], []
+    all_results = []
     lock = threading.Lock()
 
     def _worker(kw):
         try:
-            kw, posts, path = _collect_one(kw)
+            kw, posts = _collect_one(kw)
         except Exception as e:
-            kw, posts, path = kw, [], None
+            kw, posts = kw, []
             with lock:
                 job.setdefault("errors", []).append(f"{kw}: {e}")
         with lock:
             all_results.append({"keyword": kw, "posts": posts})
-            if path:
-                files.append(path)
             job["done_count"] += 1
 
     try:
         with ThreadPoolExecutor(max_workers=COLLECT_WORKERS) as pool:
             list(pool.map(_worker, keywords))
-        # 입력 순서로 정렬
         order = {kw: i for i, kw in enumerate(keywords)}
         all_results.sort(key=lambda r: order.get(r["keyword"], 0))
-        job.update({"results": all_results, "files": files, "status": "done"})
+        # 전체 키워드를 하나의 엑셀로 저장
+        excel_path = str(save_excel_combined(all_results, OUTPUT_DIR))
+        job.update({"results": all_results, "excel": excel_path, "status": "done"})
     except Exception as e:
         job.update({"error": str(e), "status": "error"})
 
@@ -104,11 +100,14 @@ def api_status(job_id):
 
 @app.route("/api/download")
 def api_download():
-    path = request.args.get("path", "")
-    p = Path(path).resolve()
+    job_id = request.args.get("job_id", "")
+    job = JOBS.get(job_id)
+    if not job or job.get("status") != "done": abort(404)
+    excel = job.get("excel", "")
+    p = Path(excel).resolve()
     if not str(p).startswith(str(OUTPUT_DIR.resolve())): abort(403)
     if not p.exists(): abort(404)
-    return send_file(p, as_attachment=True)
+    return send_file(p, as_attachment=True, download_name=p.name)
 
 
 # ── 조회수 추적 ──

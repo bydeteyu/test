@@ -95,19 +95,28 @@ def article_key(href: str):
     return (None, None)
 
 
-def find_cafe_name(anchor) -> str | None:
-    """글 링크의 조상 노드를 거슬러 올라가며 카페 홈 링크(=카페명) 탐색."""
+def find_cafe_info(anchor):
+    """글 링크 조상을 거슬러 카페 홈 링크에서 (카페명, 슬러그) 반환."""
     node = anchor
     for _ in range(7):
         node = node.parent
         if node is None:
             break
         for a in node.find_all("a", href=True):
-            if CAFE_HOME.search(a["href"]) and not article_key(a["href"])[0]:
+            m = CAFE_HOME.search(a["href"])
+            if m and not article_key(a["href"])[0]:
                 name = re.sub(r"\s+", " ", a.get_text(strip=True))
-                if name:
-                    return name
-    return None
+                slug = m.group(1)
+                if name and slug:
+                    return name, slug
+    return None, None
+
+
+def make_canonical_url(href: str, slug: str, article_id: str) -> str:
+    """'URL 복사' 형태: https://cafe.naver.com/{슬러그}/{글번호}"""
+    if slug and article_id:
+        return f"https://cafe.naver.com/{slug}/{article_id}"
+    return href if href.startswith("http") else "https://" + href
 
 
 def extract_posts(html: str) -> list[dict]:
@@ -115,18 +124,28 @@ def extract_posts(html: str) -> list[dict]:
     seen, posts = set(), []
 
     for a in soup.find_all("a", href=True):
-        key, slug = article_key(a["href"])
+        key, slug_from_url = article_key(a["href"])
         if not key:
             continue
         title = clean_title(a.get_text())
-        if not title or len(title) < 2:   # 썸네일 등 빈 링크 제외
+        if not title or len(title) < 2:
             continue
         if key in seen:
             continue
         seen.add(key)
 
-        cafe = find_cafe_name(a) or slug or "(확인필요)"
-        posts.append({"제목": title, "카페이름": cafe, "링크": a["href"]})
+        cafe_name, cafe_slug = find_cafe_info(a)
+
+        # 슬러그 결정: 구형 URL에서 직접 추출 or 카페 홈 링크에서 추출
+        slug = slug_from_url or cafe_slug or ""
+        # 글 번호 추출
+        m_new = ARTICLE_NEW.search(a["href"])
+        m_old = ARTICLE_OLD.search(a["href"])
+        article_id = m_new.group(2) if m_new else (m_old.group(2) if m_old else "")
+
+        canonical = make_canonical_url(a["href"], slug, article_id)
+        cafe = cafe_name or slug or "(확인필요)"
+        posts.append({"제목": title, "카페이름": cafe, "링크": canonical})
 
     return posts
 
@@ -154,6 +173,51 @@ def save_csv(keyword: str, posts: list[dict], out_dir: Path) -> Path:
         w = csv.DictWriter(f, fieldnames=["제목", "카페이름", "링크"])
         w.writeheader()
         w.writerows(posts)
+    return path
+
+
+def save_excel_combined(results: list[dict], out_dir: Path) -> Path:
+    """모든 키워드 결과를 시트 하나짜리 엑셀로 저장. 키워드 열 포함."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"카페글_수집_{datetime.now():%Y%m%d_%H%M}.xlsx"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "수집결과"
+
+    headers = ["키워드", "제목", "카페이름", "링크"]
+    header_fill = PatternFill("solid", fgColor="1a6e3c")
+    header_font = Font(bold=True, color="FFFFFF")
+
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    row = 2
+    for r in results:
+        kw = r["keyword"]
+        for p in r["posts"]:
+            ws.cell(row=row, column=1, value=kw)
+            ws.cell(row=row, column=2, value=p["제목"])
+            ws.cell(row=row, column=3, value=p["카페이름"])
+            # 링크는 하이퍼링크로
+            cell = ws.cell(row=row, column=4, value=p["링크"])
+            cell.hyperlink = p["링크"]
+            cell.font = Font(color="1565C0", underline="single")
+            row += 1
+
+    # 열 너비 자동 조정
+    col_widths = [20, 50, 30, 60]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    wb.save(path)
     return path
 
 

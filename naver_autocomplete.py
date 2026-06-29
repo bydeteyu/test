@@ -55,7 +55,18 @@ _SPECIAL_CHARS = set("[]{}◆♥«»【】~|·…“”\"")
 def _clean_kw(text: str) -> str:
     t = re.sub(r"\s+", " ", text).strip()
     t = _BADGE_RE.sub("", t).strip()
+    # 꼬리 말줄임(…, ...) 제거 — 네이버가 화면에서 줄인 흔적
+    t = re.sub(r"\s*(\.\.\.|…)\s*$", "", t).strip()
     return t
+
+
+def _link_text(a) -> str:
+    """링크의 풀네임 우선 추출: title/aria-label 속성 → 보이는 텍스트."""
+    for attr in ("title", "aria-label"):
+        v = a.get(attr)
+        if v and v.strip():
+            return _clean_kw(v)
+    return _clean_kw(a.get_text())
 
 
 def _valid_kw(text: str) -> bool:
@@ -63,7 +74,7 @@ def _valid_kw(text: str) -> bool:
     if not text:
         return False
     # 연관검색어는 보통 짧다. 너무 길면 게시글 제목/댓글로 간주.
-    if not (2 <= len(text) <= 25):
+    if not (2 <= len(text) <= 30):
         return False
     if _URL_RE.search(text):
         return False
@@ -137,7 +148,7 @@ def extract_related_from_html(html: str) -> list[str]:
             container = container.parent
         if chosen:
             for a in chosen.find_all("a"):
-                kw = _clean_kw(a.get_text())
+                kw = _link_text(a)
                 if _valid_kw(kw):
                     found.append(kw)
 
@@ -148,7 +159,7 @@ def extract_related_from_html(html: str) -> list[str]:
             "div.keyword_relate a", "div.relate_srch a",
         ]:
             for a in soup.select(sel):
-                kw = _clean_kw(a.get_text())
+                kw = _link_text(a)
                 if _valid_kw(kw):
                     found.append(kw)
             if found:

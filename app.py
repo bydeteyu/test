@@ -4,6 +4,7 @@
 /collect → 카페글 수집
 /track → 조회수 추적
 /rank → 검색 순위 + 매치도
+/suggest → 자동완성 키워드 수집
 """
 
 import os
@@ -19,6 +20,7 @@ from flask import Flask, render_template, request, jsonify, send_file, abort, ma
 from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined
 from naver_cafe_tracker import run_tracker
 from naver_rank_search import run_rank_search
+from naver_autocomplete import run_autocomplete
 
 app = Flask(__name__)
 OUTPUT_DIR = Path("output")
@@ -39,6 +41,9 @@ def page_track(): return render_template("track.html")
 
 @app.route("/rank")
 def page_rank(): return render_template("rank.html")
+
+@app.route("/suggest")
+def page_suggest(): return render_template("suggest.html")
 
 
 # ── 카페글 수집 ──
@@ -202,6 +207,49 @@ def api_rank_download():
             w.writerow({"keyword": r["keyword"], **{k: p.get(k, "") for k in ["rank","score","title","cafe","link"]}})
     output = make_response(si.getvalue().encode("utf-8-sig"))
     output.headers["Content-Disposition"] = "attachment; filename=rank_result.csv"
+    output.headers["Content-Type"] = "text/csv; charset=utf-8"
+    return output
+
+
+# ── 자동완성 키워드 수집 ──
+def _run_suggest(job_id, seed, max_depth):
+    job = JOBS[job_id]
+    job.update({"status": "running", "done_count": 0, "total": 0, "depth": 0})
+
+    def _progress(done, total, depth, last_kw):
+        job.update({"done_count": done, "total": total, "depth": depth, "last_kw": last_kw})
+
+    try:
+        keywords = run_autocomplete(seed, max_depth=max_depth, progress_cb=_progress)
+        job.update({"keywords": keywords, "status": "done"})
+    except Exception as e:
+        job.update({"error": str(e), "status": "error"})
+
+@app.route("/api/suggest", methods=["POST"])
+def api_suggest():
+    data = request.get_json(force=True)
+    seed = data.get("seed", "").strip()
+    if not seed:
+        return jsonify({"error": "시드 키워드를 입력하세요."}), 400
+    max_depth = min(int(data.get("max_depth", 2)), 3)
+    job_id = uuid.uuid4().hex
+    JOBS[job_id] = {"status": "pending", "keywords": [], "error": ""}
+    threading.Thread(target=_run_suggest, args=(job_id, seed, max_depth), daemon=True).start()
+    return jsonify({"job_id": job_id})
+
+@app.route("/api/suggest/download")
+def api_suggest_download():
+    job_id = request.args.get("job_id", "")
+    job = JOBS.get(job_id)
+    if not job or job["status"] != "done":
+        abort(404)
+    si = StringIO()
+    w = csv.writer(si)
+    w.writerow(["keyword"])
+    for kw in job["keywords"]:
+        w.writerow([kw])
+    output = make_response(si.getvalue().encode("utf-8-sig"))
+    output.headers["Content-Disposition"] = "attachment; filename=autocomplete_keywords.csv"
     output.headers["Content-Type"] = "text/csv; charset=utf-8"
     return output
 

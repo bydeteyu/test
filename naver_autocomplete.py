@@ -125,6 +125,63 @@ def extract_related_from_html(html: str) -> list[str]:
     return list(dict.fromkeys(found))
 
 
+def diagnose_keyword(keyword) -> dict:
+    """
+    단일 키워드를 동기 실행하며 각 단계의 상태를 리포트한다.
+    (네이버 접근/셀렉터 문제를 화면에서 바로 진단하기 위한 용도)
+    """
+    from playwright.sync_api import sync_playwright
+    report = {
+        "keyword": keyword,
+        "autocomplete_count": 0, "autocomplete_sample": [],
+        "related_count": 0, "related_sample": [],
+        "page_title": "", "html_len": 0,
+        "found_heading_text": False, "total_links_in_page": 0,
+        "error": "",
+    }
+
+    # 1) 자동완성 API
+    try:
+        ac = get_naver_autocomplete(keyword)
+        report["autocomplete_count"] = len(ac)
+        report["autocomplete_sample"] = ac[:10]
+    except Exception as e:
+        report["error"] += f"autocomplete: {e}; "
+
+    # 2) 브라우저 렌더링 + 함께 많이 찾는
+    pw = browser = None
+    try:
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch(headless=True, args=LOW_MEM_ARGS)
+        page = browser.new_page(user_agent=random.choice(USER_AGENTS), locale="ko-KR")
+        url = f"https://search.naver.com/search.naver?query={quote(keyword)}"
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        for _ in range(4):
+            page.mouse.wheel(0, 1300)
+            time.sleep(0.4)
+        time.sleep(0.8)
+        html = page.content()
+        report["page_title"] = page.title()
+        report["html_len"] = len(html)
+        soup = BeautifulSoup(html, "html.parser")
+        report["total_links_in_page"] = len(soup.find_all("a"))
+        report["found_heading_text"] = bool(
+            re.search(r"함께\s*많이\s*찾는", html) or re.search(r"연관\s*검색어", html))
+        related = extract_related_from_html(html)
+        report["related_count"] = len(related)
+        report["related_sample"] = related[:10]
+    except Exception as e:
+        report["error"] += f"browser: {e}; "
+    finally:
+        try:
+            if browser: browser.close()
+            if pw: pw.stop()
+        except Exception:
+            pass
+
+    return report
+
+
 def _related_from_page(page, keyword) -> list[str]:
     """이미 떠 있는 페이지를 재사용해 검색 후 '함께 많이 찾는'/연관검색어 추출."""
     url = f"https://search.naver.com/search.naver?query={quote(keyword)}"

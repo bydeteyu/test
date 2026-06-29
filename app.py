@@ -20,7 +20,7 @@ from flask import Flask, render_template, request, jsonify, send_file, abort, ma
 from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined
 from naver_cafe_tracker import run_tracker
 from naver_rank_search import run_rank_search
-from naver_autocomplete import run_autocomplete
+from naver_autocomplete import run_autocomplete, diagnose_keyword
 
 app = Flask(__name__)
 OUTPUT_DIR = Path("output")
@@ -236,6 +236,16 @@ def api_suggest():
     JOBS[job_id] = {"status": "pending", "keywords": [], "error": ""}
     threading.Thread(target=_run_suggest, args=(job_id, seed, max_depth), daemon=True).start()
     return jsonify({"job_id": job_id})
+
+@app.route("/api/suggest/debug")
+def api_suggest_debug():
+    kw = request.args.get("kw", "").strip()
+    if not kw:
+        return jsonify({"error": "kw 파라미터를 입력하세요. 예: /api/suggest/debug?kw=수원암요양병원"}), 400
+    try:
+        return jsonify(diagnose_keyword(kw))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/suggest/download")
 def api_suggest_download():

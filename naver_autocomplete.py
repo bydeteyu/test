@@ -40,6 +40,17 @@ LOW_MEM_ARGS = [
 # 키워드 정제: 끝에 붙는 안내 배지/아이콘 텍스트 제거
 _BADGE_RE = re.compile(r"(요즘\s*인기|인기|광고|검색)\s*$")
 
+# 잡음 제거용 패턴
+_URL_RE = re.compile(r"(https?://|www\.|\.com|\.co\.kr|\.kr|\.io|\.net|\.org|/)", re.I)
+_NUMERIC_RE = re.compile(r"^[\d,.\s년월일주시간개]+$")     # 숫자/날짜/기간만으로 구성
+_DATE_RE = re.compile(r"^\d{4}([.\-/]\d{1,2}){0,2}\.?$")    # 2026 / 2026.06.29.
+_JUNK_WORDS = (
+    "열기", "더보기", "바로가기", "저장", "가이드", "신고", "도움말",
+    "Keep", "OpenStreetMap", "지도", "길찾기", "전화", "예약", "공유",
+)
+# 게시글 제목/카페명에 흔한 특수문자 (연관검색어엔 거의 없음)
+_SPECIAL_CHARS = set("[]{}◆♥«»【】~|·…“”\"")
+
 
 def _clean_kw(text: str) -> str:
     t = re.sub(r"\s+", " ", text).strip()
@@ -48,7 +59,23 @@ def _clean_kw(text: str) -> str:
 
 
 def _valid_kw(text: str) -> bool:
-    return bool(text) and 2 <= len(text) <= 50
+    """연관검색어/자동완성처럼 보이는 짧은 검색어만 통과."""
+    if not text:
+        return False
+    # 연관검색어는 보통 짧다. 너무 길면 게시글 제목/댓글로 간주.
+    if not (2 <= len(text) <= 25):
+        return False
+    if _URL_RE.search(text):
+        return False
+    if _NUMERIC_RE.match(text):
+        return False
+    if _DATE_RE.match(text):
+        return False
+    if any(text.endswith(w) or w in text for w in _JUNK_WORDS):
+        return False
+    if any(c in _SPECIAL_CHARS for c in text):
+        return False
+    return True
 
 
 # ───────────────────────── 자동완성 (API) ─────────────────────────
@@ -92,28 +119,33 @@ def extract_related_from_html(html: str) -> list[str]:
     found = []
 
     # 1) 헤딩 텍스트 기반 박스 탐색 ('함께 많이 찾는', '연관 검색어')
+    #    헤딩에서 위로 올라가되, '딱 그 박스'만 잡도록 링크 수가
+    #    적당한(2~20개) 가장 작은 조상만 채택한다. (페이지 전체를 긁지 않도록)
     heading_pat = re.compile(r"(함께\s*많이\s*찾는|연관\s*검색어)")
     for node in soup.find_all(string=heading_pat):
-        # 헤딩에서 위로 올라가며 링크가 여러 개 있는 컨테이너를 찾는다
         container = node.parent
+        chosen = None
         for _ in range(6):
             if container is None:
                 break
             links = container.find_all("a")
-            if len(links) >= 2:
-                for a in links:
-                    kw = _clean_kw(a.get_text())
-                    if _valid_kw(kw):
-                        found.append(kw)
-                break
+            n = len(links)
+            if 2 <= n <= 20:
+                chosen = container  # 계속 올라가며 마지막으로 맞는 박스 갱신
+            elif n > 20:
+                break               # 너무 커지면 중단 (전체 섹션)
             container = container.parent
+        if chosen:
+            for a in chosen.find_all("a"):
+                kw = _clean_kw(a.get_text())
+                if _valid_kw(kw):
+                    found.append(kw)
 
-    # 2) 클래스 기반 보조 셀렉터 (네이버 구조 변경 대비)
+    # 2) 클래스 기반 보조 셀렉터 (헤딩 탐색 실패 시에만, 좁은 셀렉터만)
     if not found:
         for sel in [
             "div.related_srch a", "ul.related_srch a",
             "div.keyword_relate a", "div.relate_srch a",
-            "div[class*='related'] a",
         ]:
             for a in soup.select(sel):
                 kw = _clean_kw(a.get_text())

@@ -239,6 +239,19 @@ def api_suggest():
     threading.Thread(target=_run_suggest, args=(job_id, keywords), daemon=True).start()
     return jsonify({"job_id": job_id})
 
+@app.route("/api/suggest/envcheck")
+def api_suggest_envcheck():
+    """환경변수 주입 여부만 확인 (값은 노출하지 않음)."""
+    def info(name):
+        v = os.environ.get(name, "")
+        return {"set": bool(v.strip()), "length": len(v.strip())}
+    return jsonify({
+        "NAVER_AD_API_KEY": info("NAVER_AD_API_KEY"),
+        "NAVER_AD_SECRET_KEY": info("NAVER_AD_SECRET_KEY"),
+        "NAVER_AD_CUSTOMER_ID": info("NAVER_AD_CUSTOMER_ID"),
+        "credentials_ready": credentials_ready(),
+    })
+
 @app.route("/api/suggest/download")
 def api_suggest_download():
     job_id = request.args.get("job_id", "")

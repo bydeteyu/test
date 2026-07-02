@@ -20,7 +20,7 @@ from flask import Flask, render_template, request, jsonify, send_file, abort, ma
 from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined
 from naver_cafe_tracker import run_tracker
 from naver_rank_search import run_rank_search
-from naver_autocomplete import run_autocomplete, diagnose_keyword
+from naver_keywordtool import run_keywordtool, credentials_ready
 
 app = Flask(__name__)
 OUTPUT_DIR = Path("output")
@@ -211,41 +211,33 @@ def api_rank_download():
     return output
 
 
-# ── 자동완성 키워드 수집 ──
-def _run_suggest(job_id, seed, max_depth):
+# ── 연관 키워드 + 검색량 조회 (검색광고 API) ──
+def _run_suggest(job_id, keywords):
     job = JOBS[job_id]
-    job.update({"status": "running", "done_count": 0, "total": 0, "depth": 0})
+    job.update({"status": "running", "done_count": 0, "total": len(keywords)})
 
-    def _progress(done, total, depth, last_kw):
-        job.update({"done_count": done, "total": total, "depth": depth, "last_kw": last_kw})
+    def _progress(done, total):
+        job.update({"done_count": done, "total": total})
 
     try:
-        keywords = run_autocomplete(seed, max_depth=max_depth, progress_cb=_progress)
-        job.update({"keywords": keywords, "status": "done"})
+        rows, errors = run_keywordtool(keywords, progress_cb=_progress)
+        job.update({"rows": rows, "errors": errors, "status": "done"})
     except Exception as e:
         job.update({"error": str(e), "status": "error"})
 
 @app.route("/api/suggest", methods=["POST"])
 def api_suggest():
+    if not credentials_ready():
+        return jsonify({"error": "검색광고 API 인증정보(환경변수)가 설정되지 않았습니다."}), 400
     data = request.get_json(force=True)
-    seed = data.get("seed", "").strip()
-    if not seed:
-        return jsonify({"error": "시드 키워드를 입력하세요."}), 400
-    max_depth = min(int(data.get("max_depth", 2)), 3)
+    raw = data.get("seed", "") or data.get("keywords", "")
+    keywords = [k.strip() for k in raw.replace("\n", ",").split(",") if k.strip()]
+    if not keywords:
+        return jsonify({"error": "키워드를 입력하세요."}), 400
     job_id = uuid.uuid4().hex
-    JOBS[job_id] = {"status": "pending", "keywords": [], "error": ""}
-    threading.Thread(target=_run_suggest, args=(job_id, seed, max_depth), daemon=True).start()
+    JOBS[job_id] = {"status": "pending", "rows": [], "error": ""}
+    threading.Thread(target=_run_suggest, args=(job_id, keywords), daemon=True).start()
     return jsonify({"job_id": job_id})
-
-@app.route("/api/suggest/debug")
-def api_suggest_debug():
-    kw = request.args.get("kw", "").strip()
-    if not kw:
-        return jsonify({"error": "kw 파라미터를 입력하세요. 예: /api/suggest/debug?kw=수원암요양병원"}), 400
-    try:
-        return jsonify(diagnose_keyword(kw))
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/suggest/download")
 def api_suggest_download():
@@ -255,11 +247,11 @@ def api_suggest_download():
         abort(404)
     si = StringIO()
     w = csv.writer(si)
-    w.writerow(["keyword"])
-    for kw in job["keywords"]:
-        w.writerow([kw])
+    w.writerow(["키워드", "PC검색량", "모바일검색량", "총검색량", "경쟁정도"])
+    for r in job["rows"]:
+        w.writerow([r["keyword"], r["pc"], r["mobile"], r["total"], r["comp"]])
     output = make_response(si.getvalue().encode("utf-8-sig"))
-    output.headers["Content-Disposition"] = "attachment; filename=autocomplete_keywords.csv"
+    output.headers["Content-Disposition"] = "attachment; filename=keyword_volume.csv"
     output.headers["Content-Type"] = "text/csv; charset=utf-8"
     return output
 

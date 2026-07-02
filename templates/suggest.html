@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>자동완성 키워드 수집</title>
+<title>연관 키워드 + 검색량</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Apple SD Gothic Neo', sans-serif; background: #f0f2f7; min-height: 100vh; }
@@ -11,16 +11,13 @@ header { background: #1a1a2e; color: #fff; padding: 16px 28px; display: flex; al
 header a { color: rgba(255,255,255,.5); text-decoration: none; font-size: .85rem; }
 header a:hover { color: #fff; }
 header h1 { font-size: 1rem; font-weight: 700; color: #fff; }
-.wrap { max-width: 860px; margin: 32px auto; padding: 0 18px; }
+.wrap { max-width: 920px; margin: 32px auto; padding: 0 18px; }
 .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06); padding: 24px; margin-bottom: 20px; }
 label.lbl { display: block; font-weight: 600; margin-bottom: 6px; font-size: .92rem; }
 .hint { font-size: .78rem; color: #aaa; margin-bottom: 9px; }
-input[type=text] { width: 100%; border: 1.5px solid #e0e3ed; border-radius: 8px; padding: 10px 12px; font-size: .9rem; outline: none; transition: border .18s; background: #fafbfd; }
-input[type=text]:focus { border-color: #03c75a; background: #fff; }
-.row { display: flex; gap: 12px; align-items: flex-end; margin-top: 14px; }
-.sel-wrap { display: flex; flex-direction: column; gap: 6px; }
-select { border: 1.5px solid #e0e3ed; border-radius: 8px; padding: 10px 12px; font-size: .9rem; outline: none; background: #fafbfd; cursor: pointer; }
-button.run { flex: 1; padding: 11px; background: #03c75a; color: #fff; font-size: .97rem; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; transition: background .2s; }
+textarea { width: 100%; height: 100px; border: 1.5px solid #e0e3ed; border-radius: 8px; padding: 10px 12px; font-size: .9rem; resize: vertical; outline: none; transition: border .18s; background: #fafbfd; }
+textarea:focus { border-color: #03c75a; background: #fff; }
+button.run { margin-top: 14px; width: 100%; padding: 12px; background: #03c75a; color: #fff; font-size: .97rem; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; transition: background .2s; }
 button.run:hover { background: #02a84b; }
 button.run:disabled { background: #b2dfcc; cursor: not-allowed; }
 .sbar { display: none; padding: 10px 14px; border-radius: 8px; font-size: .87rem; margin-bottom: 14px; }
@@ -31,8 +28,16 @@ button.run:disabled { background: #b2dfcc; cursor: not-allowed; }
 .badge { background: #03c75a; color: #fff; font-size: .7rem; padding: 2px 9px; border-radius: 20px; margin-left: 6px; }
 .dl-btn { display: inline-flex; align-items: center; gap: 5px; background: #1976d2; color: #fff; font-size: .78rem; font-weight: 600; padding: 5px 13px; border-radius: 6px; text-decoration: none; border: none; cursor: pointer; }
 .dl-btn:hover { background: #1565c0; }
-.kw-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.kw-tag { background: #f0f8ff; border: 1px solid #bbd6f5; border-radius: 20px; padding: 4px 12px; font-size: .83rem; color: #1565c0; }
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+th { background: #f5f6fa; padding: 8px 11px; text-align: left; font-weight: 600; border-bottom: 2px solid #e8eaf0; white-space: nowrap; cursor: pointer; user-select: none; }
+th.num, td.num { text-align: right; }
+td { padding: 8px 11px; border-bottom: 1px solid #f0f1f5; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8fffb; }
+.comp { display: inline-block; padding: 1px 8px; border-radius: 12px; font-size: .74rem; font-weight: 600; }
+.comp.높음 { background: #fdecea; color: #c62828; }
+.comp.중간 { background: #fff4e0; color: #b26a00; }
+.comp.낮음 { background: #e8f5e9; color: #2e7d32; }
 .spinner { display: inline-block; width: 14px; height: 14px; vertical-align: middle; border: 2.5px solid #c8e6c9; border-top-color: #03c75a; border-radius: 50%; animation: spin .7s linear infinite; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .progress-wrap { margin-top: 8px; background: #e0e0e0; border-radius: 6px; height: 8px; overflow: hidden; }
@@ -45,29 +50,19 @@ button.run:disabled { background: #b2dfcc; cursor: not-allowed; }
 <body>
 <header>
   <a href="/">&larr; 홈</a>
-  <h1>&#128161; 자동완성 키워드 수집</h1>
+  <h1>&#128200; 연관 키워드 + 검색량</h1>
 </header>
 <div class="wrap">
   <div class="card">
     <div class="info-box">
-      <b>작동 방식</b>: 입력한 키워드의 네이버 <b>자동완성</b> + <b>함께 많이 찾는</b> 결과를 모두 수집하고, 그 결과를 다시 검색해 연관 키워드를 확장합니다.<br>
-      <b>깊이 1</b>: 시드 키워드 1개 → 자동완성 + 함께 많이 찾는 수집 (약 20~40초, 브라우저 렌더링)<br>
-      <b>깊이 2</b>: 깊이 1 결과를 다시 검색 → 연관 키워드 대량 수집 (수 분 소요)
+      <b>네이버 검색광고 API</b>로 입력한 키워드의 <b>연관 키워드</b>와
+      <b>월간 검색량(PC/모바일)</b>, <b>경쟁정도</b>를 조회합니다.<br>
+      키워드는 여러 개 입력 가능하며, 각 키워드마다 수백 개의 연관 키워드가 나올 수 있습니다.
     </div>
-    <label class="lbl">시드 키워드</label>
-    <p class="hint">자동완성을 탐색할 시작 키워드</p>
-    <input type="text" id="seedInput" placeholder="예: 수원한방병원" />
-    <div class="row">
-      <div class="sel-wrap">
-        <label class="lbl" style="margin-bottom:4px">탐색 깊이</label>
-        <select id="depthSelect">
-          <option value="1" selected>깊이 1 (권장)</option>
-          <option value="2">깊이 2 (느림)</option>
-          <option value="3">깊이 3 (매우 느림)</option>
-        </select>
-      </div>
-      <button class="run" id="runBtn" onclick="startSuggest()">키워드 수집 시작</button>
-    </div>
+    <label class="lbl">키워드</label>
+    <p class="hint">한 줄에 하나씩 또는 콤마(,)로 구분</p>
+    <textarea id="kwInput" placeholder="컬리케일&#10;수원 한방병원"></textarea>
+    <button class="run" id="runBtn" onclick="startSuggest()">검색량 조회 시작</button>
   </div>
   <div id="status" class="sbar"></div>
   <div id="progressWrap" style="display:none; margin-bottom:14px;">
@@ -77,7 +72,7 @@ button.run:disabled { background: #b2dfcc; cursor: not-allowed; }
   <div id="results"></div>
 </div>
 <script>
-let timer = null;
+let timer = null, currentRows = [], sortKey = 'total', sortAsc = false;
 function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function setStatus(t, m) {
   const el = document.getElementById('status');
@@ -85,20 +80,18 @@ function setStatus(t, m) {
   el.innerHTML = (t==='running' ? '<span class="spinner"></span>' : '') + m;
 }
 async function startSuggest() {
-  const seed = document.getElementById('seedInput').value.trim();
-  if (!seed) { alert('시드 키워드를 입력하세요.'); return; }
-  const depth = parseInt(document.getElementById('depthSelect').value);
+  const raw = document.getElementById('kwInput').value.trim();
+  if (!raw) { alert('키워드를 입력하세요.'); return; }
   document.getElementById('runBtn').disabled = true;
   document.getElementById('results').innerHTML = '';
   document.getElementById('progressWrap').style.display = 'none';
-  setStatus('running', '자동완성 키워드 수집 중…');
+  setStatus('running', '검색량 조회 중…');
   const { job_id, error } = await (await fetch('/api/suggest', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({seed, max_depth: depth})
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({keywords: raw})
   })).json();
   if (error) { setStatus('error', error); document.getElementById('runBtn').disabled = false; return; }
-  timer = setInterval(() => poll(job_id), 2000);
+  timer = setInterval(() => poll(job_id), 1500);
 }
 async function poll(job_id) {
   const job = await (await fetch('/api/status/' + job_id)).json();
@@ -106,28 +99,44 @@ async function poll(job_id) {
     const pct = Math.round(job.done_count / job.total * 100);
     document.getElementById('progressWrap').style.display = 'block';
     document.getElementById('progressBar').style.width = pct + '%';
-    const depthLabel = job.depth !== undefined ? ` | 깊이 ${job.depth}` : '';
-    const lastKw = job.last_kw ? ` | 마지막: "${esc(job.last_kw)}"` : '';
     document.getElementById('progressText').textContent =
-      job.done_count + ' / ' + job.total + '개 완료 (' + pct + '%)' + depthLabel + lastKw;
-    setStatus('running', `자동완성 키워드 수집 중… (깊이 ${job.depth ?? 0} 진행 중)`);
+      job.done_count + ' / ' + job.total + '개 키워드 조회 (' + pct + '%)';
   }
   if (job.status === 'running' || job.status === 'pending') return;
   clearInterval(timer);
   document.getElementById('runBtn').disabled = false;
   if (job.status === 'error') { setStatus('error', '오류: ' + job.error); return; }
-  const cnt = (job.keywords || []).length;
-  setStatus('done', '완료! 총 ' + cnt + '개 키워드 수집됨.');
-  const wrap = document.getElementById('results');
-  wrap.innerHTML = '';
-  if (!cnt) return;
-  const b = document.createElement('div'); b.className = 'card';
-  const dl = '<button class="dl-btn" onclick="dl(\'' + job_id + '\')">&#8595; CSV 다운로드</button>';
-  const tags = job.keywords.map(k => '<span class="kw-tag">' + esc(k) + '</span>').join('');
-  b.innerHTML = '<div class="block-title"><span>수집 결과<span class="badge">' + cnt + '개</span></span>' + dl + '</div><div class="kw-grid">' + tags + '</div>';
-  wrap.appendChild(b);
+  currentRows = job.rows || [];
+  window._jid = job_id;
+  setStatus('done', '완료! 연관 키워드 ' + currentRows.length + '개 조회됨.');
+  render(job_id);
 }
-function dl(job_id) { window.location = '/api/suggest/download?job_id=' + job_id; }
+function compClass(c) { return (c==='높음'||c==='중간'||c==='낮음') ? c : ''; }
+function render(job_id) {
+  const wrap = document.getElementById('results');
+  if (!currentRows.length) { wrap.innerHTML = ''; return; }
+  const rows = [...currentRows].sort((a,b)=>{
+    const va=a[sortKey], vb=b[sortKey];
+    if (typeof va==='number') return sortAsc ? va-vb : vb-va;
+    return sortAsc ? String(va).localeCompare(vb) : String(vb).localeCompare(va);
+  });
+  const dl = '<button class="dl-btn" onclick="dl(\'' + job_id + '\')">&#8595; CSV 다운로드</button>';
+  const trs = rows.map((r,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(r.keyword)+'</td>'+
+    '<td class="num">'+Number(r.pc).toLocaleString()+'</td>'+
+    '<td class="num">'+Number(r.mobile).toLocaleString()+'</td>'+
+    '<td class="num"><b>'+Number(r.total).toLocaleString()+'</b></td>'+
+    '<td><span class="comp '+compClass(r.comp)+'">'+esc(r.comp)+'</span></td></tr>').join('');
+  wrap.innerHTML = '<div class="card"><div class="block-title"><span>연관 키워드<span class="badge">'+
+    rows.length+'개</span></span>'+dl+'</div>'+
+    '<table><thead><tr><th>#</th>'+
+    '<th onclick="setSort(\'keyword\')">키워드</th>'+
+    '<th class="num" onclick="setSort(\'pc\')">PC검색량</th>'+
+    '<th class="num" onclick="setSort(\'mobile\')">모바일검색량</th>'+
+    '<th class="num" onclick="setSort(\'total\')">총검색량</th>'+
+    '<th onclick="setSort(\'comp\')">경쟁정도</th></tr></thead><tbody>'+trs+'</tbody></table></div>';
+}
+function setSort(k) { if (sortKey===k) sortAsc=!sortAsc; else { sortKey=k; sortAsc=false; } render(window._jid); }
+function dl(job_id) { window._jid = job_id; window.location = '/api/suggest/download?job_id=' + job_id; }
 </script>
 </body>
 </html>

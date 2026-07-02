@@ -72,7 +72,9 @@ def get_related_keywords(hint_keywords):
     params = {"hintKeywords": hint, "showDetail": 1}
 
     res = requests.get(BASE_URL + uri, headers=headers, params=params, timeout=15)
-    res.raise_for_status()
+    if res.status_code != 200:
+        # 네이버가 돌려주는 실제 오류 메시지를 그대로 전달
+        raise RuntimeError(f"HTTP {res.status_code}: {res.text[:300]}")
     return res.json().get("keywordList", [])
 
 

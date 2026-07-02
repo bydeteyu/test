@@ -108,7 +108,13 @@ async function poll(job_id) {
   if (job.status === 'error') { setStatus('error', '오류: ' + job.error); return; }
   currentRows = job.rows || [];
   window._jid = job_id;
-  setStatus('done', '완료! 연관 키워드 ' + currentRows.length + '개 조회됨.');
+  const errs = job.errors || [];
+  if (!currentRows.length && errs.length) {
+    setStatus('error', '조회 실패: ' + errs.map(esc).join(' | '));
+  } else {
+    setStatus('done', '완료! 연관 키워드 ' + currentRows.length + '개 조회됨.'
+      + (errs.length ? ' (일부 오류: ' + esc(errs[0]) + ')' : ''));
+  }
   render(job_id);
 }
 function compClass(c) { return (c==='높음'||c==='중간'||c==='낮음') ? c : ''; }

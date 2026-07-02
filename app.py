@@ -252,6 +252,33 @@ def api_suggest_envcheck():
         "credentials_ready": credentials_ready(),
     })
 
+@app.route("/api/suggest/rawdebug")
+def api_suggest_rawdebug():
+    """네이버 keywordstool 원본 응답을 그대로 반환 (진단용)."""
+    import time as _t, requests as _rq
+    from naver_keywordtool import (BASE_URL, API_KEY, SECRET_KEY, CUSTOMER_ID,
+                                   make_signature)
+    kw = request.args.get("kw", "컬리케일").strip()
+    uri = "/keywordstool"
+    ts = str(int(_t.time() * 1000))
+    sig = make_signature(ts, "GET", uri, SECRET_KEY)
+    headers = {"X-Timestamp": ts, "X-API-KEY": API_KEY,
+               "X-Customer": CUSTOMER_ID, "X-Signature": sig}
+    params = {"hintKeywords": kw.replace(" ", ""), "showDetail": 1}
+    try:
+        r = _rq.get(BASE_URL + uri, headers=headers, params=params, timeout=15)
+        body = r.text
+        return jsonify({
+            "http_status": r.status_code,
+            "customer_id_used": CUSTOMER_ID,
+            "api_key_len": len(API_KEY),
+            "secret_key_len": len(SECRET_KEY),
+            "request_url": r.url,
+            "response_body": body[:2000],
+        })
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
 @app.route("/api/suggest/download")
 def api_suggest_download():
     job_id = request.args.get("job_id", "")

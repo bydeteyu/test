@@ -122,10 +122,10 @@ async function poll(job_id) {
   const wrap = document.getElementById('results');
   wrap.innerHTML = '';
   job.results.forEach(r => {
-    const rows = r.posts.length===0 ? '<tr><td colspan="4" class="empty">결과 없음</td></tr>'
-      : r.posts.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(p['제목'])+'</td><td>'+esc(p['카페이름'])+'</td><td><a href="'+esc(p['링크'])+'" target="_blank">바로가기</a></td></tr>').join('');
+    const rows = r.posts.length===0 ? '<tr><td colspan="5" class="empty">결과 없음</td></tr>'
+      : r.posts.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(p['제목'])+'</td><td>'+esc(p['카페이름'])+'</td><td>'+esc(p['작성일']||'-')+'</td><td><a href="'+esc(p['링크'])+'" target="_blank">바로가기</a></td></tr>').join('');
     const b = document.createElement('div'); b.className='card';
-    b.innerHTML = '<div class="block-title"><span>'+esc(r.keyword)+'<span class="badge">'+r.posts.length+'건</span></span></div><table><thead><tr><th>#</th><th>제목</th><th>카페</th><th>링크</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    b.innerHTML = '<div class="block-title"><span>'+esc(r.keyword)+'<span class="badge">'+r.posts.length+'건</span></span></div><table><thead><tr><th>#</th><th>제목</th><th>카페</th><th>작성일</th><th>링크</th></tr></thead><tbody>'+rows+'</tbody></table>';
     wrap.appendChild(b);
   });
 }

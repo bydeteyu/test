@@ -112,6 +112,31 @@ def find_cafe_info(anchor):
     return None, None
 
 
+# 검색결과에 나타나는 작성일 형태:
+#   2024.05.01. / 2024.05.01 / 3일 전 / 1시간 전 / 2주 전 / 어제 / 방금 전
+_DATE_RE = re.compile(
+    r"(\d{4}\.\d{1,2}\.\d{1,2}\.?"          # 2024.05.01.
+    r"|\d{1,2}\.\d{1,2}\.?"                 # 05.01.
+    r"|(?:방금|어제|그저께)\s*전?"
+    r"|\d+\s*(?:분|시간|일|주|개월|달|년)\s*전)"
+)
+
+
+def find_date(anchor):
+    """글 링크 주변(조상)에서 작성일/상대시간 텍스트를 찾아 반환."""
+    node = anchor
+    for _ in range(6):
+        node = node.parent
+        if node is None:
+            break
+        # 날짜는 보통 짧은 span/em 안에 있음 → 텍스트 전체에서 패턴 검색
+        text = node.get_text(" ", strip=True)
+        m = _DATE_RE.search(text)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
 def make_canonical_url(href: str, slug: str, article_id: str) -> str:
     """'URL 복사' 형태: https://cafe.naver.com/{슬러그}/{글번호}"""
     if slug and article_id:
@@ -145,7 +170,8 @@ def extract_posts(html: str) -> list[dict]:
 
         canonical = make_canonical_url(a["href"], slug, article_id)
         cafe = cafe_name or slug or "(확인필요)"
-        posts.append({"제목": title, "카페이름": cafe, "링크": canonical})
+        date = find_date(a)
+        posts.append({"제목": title, "카페이름": cafe, "작성일": date, "링크": canonical})
 
     return posts
 
@@ -170,7 +196,7 @@ def save_csv(keyword: str, posts: list[dict], out_dir: Path) -> Path:
     safe = re.sub(r"[^\w가-힣]+", "_", keyword).strip("_")
     path = out_dir / f"카페글_{safe}_{datetime.now():%Y%m%d_%H%M}.csv"
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=["제목", "카페이름", "링크"])
+        w = csv.DictWriter(f, fieldnames=["제목", "카페이름", "작성일", "링크"], extrasaction="ignore")
         w.writeheader()
         w.writerows(posts)
     return path
@@ -189,7 +215,7 @@ def save_excel_combined(results: list[dict], out_dir: Path) -> Path:
     ws = wb.active
     ws.title = "수집결과"
 
-    headers = ["키워드", "제목", "카페이름", "링크"]
+    headers = ["키워드", "제목", "카페이름", "작성일", "링크"]
     header_fill = PatternFill("solid", fgColor="1a6e3c")
     header_font = Font(bold=True, color="FFFFFF")
 
@@ -206,14 +232,15 @@ def save_excel_combined(results: list[dict], out_dir: Path) -> Path:
             ws.cell(row=row, column=1, value=kw)
             ws.cell(row=row, column=2, value=p["제목"])
             ws.cell(row=row, column=3, value=p["카페이름"])
+            ws.cell(row=row, column=4, value=p.get("작성일", ""))
             # 링크는 하이퍼링크로
-            cell = ws.cell(row=row, column=4, value=p["링크"])
+            cell = ws.cell(row=row, column=5, value=p["링크"])
             cell.hyperlink = p["링크"]
             cell.font = Font(color="1565C0", underline="single")
             row += 1
 
     # 열 너비 자동 조정
-    col_widths = [20, 50, 30, 60]
+    col_widths = [20, 50, 30, 16, 60]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 

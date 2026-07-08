@@ -76,13 +76,33 @@ async function startCollect() {
   document.getElementById('runBtn').disabled = true;
   document.getElementById('results').innerHTML = '';
   document.getElementById('progressWrap').style.display = 'none';
-  setStatus('running', '수집 중입니다… (3개씩 병렬 처리)');
-  const { job_id, error } = await (await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({keywords: raw}) })).json();
+  setStatus('running', '수집 중입니다… (2개씩 병렬 처리)');
+  let job_id, error;
+  try {
+    const res = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({keywords: raw}) });
+    if (!res.ok) throw new Error('서버 응답 오류 ('+res.status+')');
+    ({ job_id, error } = await res.json());
+  } catch (e) {
+    setStatus('error', '요청 실패: '+e.message+' — 잠시 후 다시 시도해 주세요.');
+    document.getElementById('runBtn').disabled=false; return;
+  }
   if (error) { setStatus('error', error); document.getElementById('runBtn').disabled=false; return; }
   timer = setInterval(() => poll(job_id), 2000);
 }
 async function poll(job_id) {
-  const job = await (await fetch('/api/status/'+job_id)).json();
+  let res;
+  try { res = await fetch('/api/status/'+job_id); }
+  catch (e) { return; }  // 일시적 네트워크 오류 → 다음 폴링에서 재시도
+  if (res.status === 404) {
+    clearInterval(timer);
+    document.getElementById('runBtn').disabled = false;
+    setStatus('error', '작업 정보를 찾을 수 없습니다. 키워드가 많으면 서버 메모리 초과로 재시작될 수 있습니다. 키워드 수를 10개 이하로 줄여 다시 시도해 주세요.');
+    return;
+  }
+  if (!res.ok) { return; }
+  let job;
+  try { job = await res.json(); }
+  catch (e) { return; }
   // 진행률 업데이트
   if (job.total > 0) {
     document.getElementById('progressWrap').style.display = 'block';
@@ -92,7 +112,10 @@ async function poll(job_id) {
   if (job.status==='running'||job.status==='pending') return;
   clearInterval(timer);
   document.getElementById('runBtn').disabled = false;
-  if (job.status==='error') { setStatus('error','오류: '+job.error); return; }
+  if (job.status==='error') {
+    const msg = job.error || (job.errors && job.errors.join(' | ')) || '알 수 없는 오류';
+    setStatus('error','오류: '+msg); return;
+  }
   const total = job.results.reduce((s,r)=>s+r.posts.length,0);
   const dlBtn = job.excel ? '<a class="dl-btn" style="float:right" href="/api/download?job_id='+job_id+'">&#8595; 엑셀 전체 다운로드</a>' : '';
   setStatus('done','완료! 총 '+total+'건 수집됨. '+dlBtn);

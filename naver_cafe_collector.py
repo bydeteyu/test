@@ -60,21 +60,23 @@ def fetch_html(keyword: str, headless: bool) -> str:
     ]
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless, args=LOW_MEM_ARGS)
-        page = browser.new_page(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            ),
-            locale="ko-KR",
-        )
-        page.goto(build_url(keyword), wait_until="domcontentloaded", timeout=30000)
-        for _ in range(3):
-            page.mouse.wheel(0, 1500)
-            time.sleep(0.6)
-        time.sleep(1)
-        html = page.content()
-        browser.close()
-    return html
+        try:
+            page = browser.new_page(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="ko-KR",
+            )
+            page.goto(build_url(keyword), wait_until="domcontentloaded", timeout=30000)
+            for _ in range(3):
+                page.mouse.wheel(0, 1500)
+                time.sleep(0.6)
+            time.sleep(1)
+            return page.content()
+        finally:
+            # goto/wheel 중 예외가 나도 브라우저 프로세스가 남지 않도록 항상 정리한다.
+            browser.close()
 
 
 def clean_title(text: str) -> str:

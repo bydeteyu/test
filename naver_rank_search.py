@@ -44,21 +44,22 @@ def fetch_rank_html(keyword: str) -> str:
     url = f"https://search.naver.com/search.naver?query={quote(keyword)}&where=article"
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=LOW_MEM_ARGS)
-        page = browser.new_page(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            ),
-            locale="ko-KR",
-        )
-        page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        for _ in range(5):
-            page.mouse.wheel(0, 1200)
-            time.sleep(0.5)
-        time.sleep(1)
-        html = page.content()
-        browser.close()
-    return html
+        try:
+            page = browser.new_page(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="ko-KR",
+            )
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            for _ in range(5):
+                page.mouse.wheel(0, 1200)
+                time.sleep(0.5)
+            time.sleep(1)
+            return page.content()
+        finally:
+            browser.close()
 
 
 ARTICLE_NEW = re.compile(r"cafe\.naver\.com/f-e/cafes/(\d+)/articles/(\d+)")

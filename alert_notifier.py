@@ -5,6 +5,7 @@ import os
 import requests
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://test-production-cc54.up.railway.app")
 
 
 def slack_ready() -> bool:
@@ -14,6 +15,7 @@ def slack_ready() -> bool:
 def build_digest_text(date_str: str, results: list[dict]) -> str:
     """results: [{'keyword': str, 'posts': [{'제목','카페이름','링크',...}], 'error': str|None}, ...]"""
     total_hits = sum(len(r["posts"]) for r in results if not r.get("error"))
+    keywords_url = f"{APP_BASE_URL.rstrip('/')}/keywords"
     lines = [f"*네이버 카페글 노출 알림 ({date_str})*", f"총 {len(results)}개 키워드 확인 · {total_hits}건 노출\n"]
 
     for r in results:
@@ -29,7 +31,8 @@ def build_digest_text(date_str: str, results: list[dict]) -> str:
         for p in posts[:5]:
             lines.append(f"    • <{p['링크']}|{p['제목']}> ({p['카페이름']})")
         if len(posts) > 5:
-            lines.append(f"    …외 {len(posts) - 5}건")
+            more = len(posts) - 5
+            lines.append(f"    …외 {more}건 · <{keywords_url}|전체 보러가기>")
     return "\n".join(lines)
 
 

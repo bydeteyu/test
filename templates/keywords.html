@@ -40,6 +40,14 @@ button.run:disabled { background: #90caf9; cursor: not-allowed; }
 ul.posts { margin: 4px 0 0 18px; font-size: .84rem; }
 ul.posts li { margin-bottom: 3px; }
 ul.posts a { color: #1976d2; text-decoration: none; }
+.bulk-toggle { background: none; color: #1976d2; font-size: .8rem; font-weight: 600; padding: 6px 0; }
+textarea#bulkInput { display: none; width: 100%; height: 100px; border: 1.5px solid #e0e3ed; border-radius: 8px; padding: 10px 12px; font-size: .87rem; resize: vertical; outline: none; background: #fafbfd; margin-top: 8px; }
+textarea#bulkInput:focus { border-color: #03c75a; background: #fff; }
+button.bulk-add { display: none; margin-top: 8px; padding: 9px 16px; background: #03c75a; color: #fff; font-size: .87rem; }
+button.bulk-add:hover { background: #02a84b; }
+.progress-wrap { margin-top: 10px; background: #e0e0e0; border-radius: 6px; height: 8px; overflow: hidden; display: none; }
+.progress-bar { height: 100%; background: #1976d2; border-radius: 6px; transition: width .4s; }
+.progress-text { font-size: .78rem; color: #666; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -55,6 +63,9 @@ ul.posts a { color: #1976d2; text-decoration: none; }
       <input type="text" id="kwInput" placeholder="예: 수원한방병원 추천" onkeydown="if(event.key==='Enter')addKeyword()">
       <button class="add" onclick="addKeyword()">추가</button>
     </div>
+    <button class="bulk-toggle" id="bulkToggle" onclick="toggleBulk()">+ 여러 개 한번에 붙여넣기</button>
+    <textarea id="bulkInput" placeholder="한 줄에 하나씩 또는 콤마(,)로 구분&#10;수원한방병원 추천&#10;수원 교통사고 한의원"></textarea>
+    <button class="bulk-add" id="bulkAddBtn" onclick="addBulkKeywords()">일괄 추가</button>
     <div class="chips" id="chips"></div>
     <div class="empty" id="emptyMsg" style="display:none;">등록된 감시 키워드가 없습니다.</div>
   </div>
@@ -63,6 +74,8 @@ ul.posts a { color: #1976d2; text-decoration: none; }
     <div class="status-line" id="slackStatus"></div>
     <div class="status-line" id="lastRunLine"></div>
     <button class="run" id="runBtn" onclick="runNow()">지금 바로 확인</button>
+    <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+    <div class="progress-text" id="progressText"></div>
     <div id="status" class="sbar"></div>
     <div id="results"></div>
   </div>
@@ -102,6 +115,30 @@ async function addKeyword() {
 
 async function removeKeyword(keyword) {
   await fetch('/api/keywords/' + encodeURIComponent(keyword), { method: 'DELETE' });
+  loadKeywords();
+}
+
+function toggleBulk() {
+  const box = document.getElementById('bulkInput');
+  const btn = document.getElementById('bulkAddBtn');
+  const shown = box.style.display === 'block';
+  box.style.display = shown ? 'none' : 'block';
+  btn.style.display = shown ? 'none' : 'inline-block';
+}
+
+async function addBulkKeywords() {
+  const box = document.getElementById('bulkInput');
+  const raw = box.value.trim();
+  if (!raw) return;
+  const res = await fetch('/api/keywords/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keywords: raw }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || '일괄 추가 실패'); return; }
+  box.value = '';
+  toggleBulk();
   loadKeywords();
 }
 
@@ -156,9 +193,14 @@ let timer = null;
 async function runNow() {
   const btn = document.getElementById('runBtn');
   const status = document.getElementById('status');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressText = document.getElementById('progressText');
   btn.disabled = true;
   status.className = 'sbar running';
-  status.textContent = '확인 중입니다…';
+  status.textContent = '확인 중입니다… (안정성을 위해 키워드를 하나씩 순차 확인합니다. 키워드가 많으면 오래 걸릴 수 있어요)';
+  progressWrap.style.display = 'block';
+  document.getElementById('progressBar').style.width = '0%';
+  progressText.textContent = '';
   let job_id, error;
   try {
     const res = await fetch('/api/alert/run-now', { method: 'POST' });
@@ -168,6 +210,7 @@ async function runNow() {
     status.className = 'sbar error';
     status.textContent = '오류: ' + e.message;
     btn.disabled = false;
+    progressWrap.style.display = 'none';
     return;
   }
   timer = setInterval(() => pollAlert(job_id), 2000);
@@ -177,9 +220,19 @@ async function pollAlert(job_id) {
   const res = await fetch('/api/alert/status/' + job_id);
   if (!res.ok) return;
   const job = await res.json();
+
+  const total = job.total || 0;
+  const done = job.done_count || 0;
+  if (total > 0) {
+    const pct = Math.round((done / total) * 100);
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('progressText').textContent = `${done} / ${total}개 확인 (${pct}%)`;
+  }
+
   if (job.status !== 'done') return;
   clearInterval(timer);
   document.getElementById('runBtn').disabled = false;
+  document.getElementById('progressWrap').style.display = 'none';
   const status = document.getElementById('status');
   status.className = 'sbar done';
   status.textContent = `완료! 키워드 ${job.keywords_checked}개 확인, ${job.total_hits}건 노출` +

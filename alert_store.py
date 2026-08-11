@@ -57,6 +57,20 @@ def add_keyword(keyword: str) -> list[str]:
         return keywords
 
 
+def add_keywords(new_keywords: list[str]) -> list[str]:
+    """여러 키워드를 한번에 병합(중복 제거, 기존 순서 유지 + 새 항목은 뒤에 추가)."""
+    with _lock:
+        keywords = _read()
+        existing = set(keywords)
+        for k in new_keywords:
+            k = k.strip()
+            if k and k not in existing:
+                keywords.append(k)
+                existing.add(k)
+        _save(keywords)
+        return keywords
+
+
 def remove_keyword(keyword: str) -> list[str]:
     with _lock:
         keywords = [k for k in _read() if k != keyword]

@@ -337,9 +337,23 @@ def api_keywords_delete(keyword):
     keywords = alert_store.remove_keyword(keyword)
     return jsonify({"keywords": keywords})
 
-def _run_manual_alert(job_id):
-    result = run_alert_check(notify=True)
-    JOBS[job_id] = {**result, "status": "done"}
+@app.route("/api/keywords/bulk", methods=["POST"])
+def api_keywords_bulk():
+    data = request.get_json(force=True)
+    raw = data.get("keywords", "")
+    new_keywords = [k.strip() for k in raw.replace("\n", ",").split(",") if k.strip()]
+    if not new_keywords:
+        return jsonify({"error": "키워드를 입력하세요."}), 400
+    before = len(alert_store.list_keywords())
+    keywords = alert_store.add_keywords(new_keywords)
+    return jsonify({"keywords": keywords, "added": len(keywords) - before})
+
+def _run_manual_alert(job_id, keywords):
+    def _progress(done, total):
+        JOBS[job_id].update({"done_count": done, "total": total})
+
+    result = run_alert_check(keywords, notify=True, progress_cb=_progress)
+    JOBS[job_id] = {**result, "done_count": len(keywords), "total": len(keywords), "status": "done"}
 
 @app.route("/api/alert/run-now", methods=["POST"])
 def api_alert_run_now():
@@ -347,8 +361,8 @@ def api_alert_run_now():
     if not keywords:
         return jsonify({"error": "감시 키워드가 없습니다. 먼저 키워드를 추가하세요."}), 400
     job_id = uuid.uuid4().hex
-    JOBS[job_id] = {"status": "running"}
-    threading.Thread(target=_run_manual_alert, args=(job_id,), daemon=True).start()
+    JOBS[job_id] = {"status": "running", "done_count": 0, "total": len(keywords)}
+    threading.Thread(target=_run_manual_alert, args=(job_id, keywords), daemon=True).start()
     return jsonify({"job_id": job_id})
 
 @app.route("/api/alert/status/<job_id>")

@@ -48,6 +48,23 @@ button.bulk-add:hover { background: #02a84b; }
 .progress-wrap { margin-top: 10px; background: #e0e0e0; border-radius: 6px; height: 8px; overflow: hidden; display: none; }
 .progress-bar { height: 100%; background: #1976d2; border-radius: 6px; transition: width .4s; }
 .progress-text { font-size: .78rem; color: #666; margin-top: 4px; }
+
+.mon-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.mon-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1.5px solid #eceef4; border-radius: 10px; text-decoration: none; color: inherit; }
+.mon-item:hover { border-color: #1976d2; }
+.mon-item.active { border-color: #1976d2; background: #f3f8ff; }
+.mon-item .name { font-weight: 700; font-size: .92rem; }
+.mon-item .meta { font-size: .78rem; color: #888; margin-top: 2px; }
+.mon-item .del { background: none; color: #c62828; font-size: .78rem; padding: 4px 8px; }
+.badge-slack { display: inline-block; font-size: .68rem; padding: 1px 7px; border-radius: 10px; margin-left: 6px; }
+.badge-slack.on { background: #e8f5e9; color: #2e7d32; }
+.badge-slack.off { background: #fbe9e7; color: #b71c1c; }
+.new-mon-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.new-mon-row input { flex: 1; min-width: 160px; }
+
+details.hist-item { border: 1px solid #eee; border-radius: 8px; padding: 8px 12px; margin-top: 8px; }
+details.hist-item summary { cursor: pointer; font-size: .85rem; font-weight: 600; }
+details.hist-item summary .muted { font-weight: 400; color: #888; }
 </style>
 </head>
 <body>
@@ -57,35 +74,123 @@ button.bulk-add:hover { background: #02a84b; }
 </header>
 <div class="wrap">
   <div class="card">
-    <label class="lbl">감시 키워드</label>
-    <p class="hint">매일 오전 10시(KST)에 이 키워드들로 네이버 통합검색을 확인해 카페글 노출 여부를 슬랙으로 보내드립니다.</p>
-    <div class="row">
-      <input type="text" id="kwInput" placeholder="예: 수원한방병원 추천" onkeydown="if(event.key==='Enter')addKeyword()">
-      <button class="add" onclick="addKeyword()">추가</button>
+    <label class="lbl">모니터 목록</label>
+    <p class="hint">모니터마다 감시 키워드와 슬랙 알림 채널을 따로 관리할 수 있습니다. 매일 오전 10시(KST)에 모니터별로 순서대로 자동 확인합니다.</p>
+    <div class="mon-list" id="monList"></div>
+    <div class="empty" id="monEmpty" style="display:none;">등록된 모니터가 없습니다. 아래에서 새로 만들어주세요.</div>
+    <div class="new-mon-row">
+      <input type="text" id="newMonName" placeholder="새 모니터 이름 (예: 사업장A)">
+      <input type="text" id="newMonWebhook" placeholder="슬랙 웹훅 URL (선택, 비워두면 기본 채널 사용)">
+      <button class="add" onclick="createMonitor()">모니터 추가</button>
     </div>
-    <button class="bulk-toggle" id="bulkToggle" onclick="toggleBulk()">+ 여러 개 한번에 붙여넣기</button>
-    <textarea id="bulkInput" placeholder="한 줄에 하나씩 또는 콤마(,)로 구분&#10;수원한방병원 추천&#10;수원 교통사고 한의원"></textarea>
-    <button class="bulk-add" id="bulkAddBtn" onclick="addBulkKeywords()">일괄 추가</button>
-    <div class="chips" id="chips"></div>
-    <div class="empty" id="emptyMsg" style="display:none;">등록된 감시 키워드가 없습니다.</div>
   </div>
 
-  <div class="card">
-    <div class="status-line" id="slackStatus"></div>
-    <div class="status-line" id="lastRunLine"></div>
-    <button class="run" id="runBtn" onclick="runNow()">지금 바로 확인</button>
-    <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
-    <div class="progress-text" id="progressText"></div>
-    <div id="status" class="sbar"></div>
-    <div id="results"></div>
+  <div id="detail" style="display:none;">
+    <div class="card">
+      <label class="lbl" id="detailTitle">감시 키워드</label>
+      <div class="status-line" id="webhookLine"></div>
+      <div class="row" style="margin-top:8px;">
+        <input type="text" id="webhookInput" placeholder="슬랙 웹훅 URL (비워두면 기본 채널 사용)">
+        <button class="add" onclick="saveWebhook()">저장</button>
+      </div>
+
+      <div class="row" style="margin-top:16px;">
+        <input type="text" id="kwInput" placeholder="예: 수원한방병원 추천" onkeydown="if(event.key==='Enter')addKeyword()">
+        <button class="add" onclick="addKeyword()">추가</button>
+      </div>
+      <button class="bulk-toggle" id="bulkToggle" onclick="toggleBulk()">+ 여러 개 한번에 붙여넣기</button>
+      <textarea id="bulkInput" placeholder="한 줄에 하나씩 또는 콤마(,)로 구분&#10;수원한방병원 추천&#10;수원 교통사고 한의원"></textarea>
+      <button class="bulk-add" id="bulkAddBtn" onclick="addBulkKeywords()">일괄 추가</button>
+      <div class="chips" id="chips"></div>
+      <div class="empty" id="emptyMsg" style="display:none;">등록된 감시 키워드가 없습니다.</div>
+    </div>
+
+    <div class="card">
+      <button class="run" id="runBtn" onclick="runNow()">지금 바로 확인</button>
+      <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+      <div class="progress-text" id="progressText"></div>
+      <div id="status" class="sbar"></div>
+      <div id="results"></div>
+    </div>
+
+    <div class="card">
+      <label class="lbl">실행 히스토리 (최근 30회)</label>
+      <div id="historyList"></div>
+      <div class="empty" id="historyEmpty" style="display:none;">아직 실행 기록이 없습니다.</div>
+    </div>
   </div>
 </div>
 
 <script>
 function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+const params = new URLSearchParams(location.search);
+let currentMonitorId = params.get('monitor') || null;
+
+async function loadMonitors() {
+  const res = await fetch('/api/monitors');
+  const data = await res.json();
+  const list = document.getElementById('monList');
+  const empty = document.getElementById('monEmpty');
+  list.innerHTML = '';
+  if (!data.monitors.length) {
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+    data.monitors.forEach(m => {
+      const el = document.createElement('a');
+      el.href = '/keywords?monitor=' + encodeURIComponent(m.id);
+      el.className = 'mon-item' + (m.id === currentMonitorId ? ' active' : '');
+      const lastLine = m.last_run ? `마지막 확인: ${esc(m.last_run.ran_at)} · 노출 ${m.last_run.total_hits}건` : '아직 실행 안함';
+      const slackBadge = m.slack_configured
+        ? `<span class="badge-slack on">슬랙 ${m.has_own_webhook ? '전용' : '기본'}</span>`
+        : `<span class="badge-slack off">슬랙 미설정</span>`;
+      el.innerHTML = `
+        <div>
+          <span class="name">${esc(m.name)}${slackBadge}</span>
+          <div class="meta">키워드 ${m.keyword_count}개 · ${lastLine}</div>
+        </div>
+        <button class="del" onclick="event.preventDefault(); deleteMonitor('${m.id}', '${esc(m.name).replace(/'/g,"\\'")}')">삭제</button>
+      `;
+      list.appendChild(el);
+    });
+  }
+
+  if (currentMonitorId && !data.monitors.some(m => m.id === currentMonitorId)) {
+    currentMonitorId = null;
+    document.getElementById('detail').style.display = 'none';
+  }
+}
+
+async function createMonitor() {
+  const nameInput = document.getElementById('newMonName');
+  const webhookInput = document.getElementById('newMonWebhook');
+  const name = nameInput.value.trim();
+  if (!name) { alert('모니터 이름을 입력하세요.'); return; }
+  const res = await fetch('/api/monitors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, slack_webhook_url: webhookInput.value.trim() }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || '생성 실패'); return; }
+  nameInput.value = '';
+  webhookInput.value = '';
+  location.href = '/keywords?monitor=' + encodeURIComponent(data.monitor.id);
+}
+
+async function deleteMonitor(id, name) {
+  if (!confirm(`"${name}" 모니터를 삭제하시겠습니까? 키워드와 실행 기록이 모두 사라집니다.`)) return;
+  await fetch('/api/monitors/' + encodeURIComponent(id), { method: 'DELETE' });
+  if (id === currentMonitorId) {
+    location.href = '/keywords';
+  } else {
+    loadMonitors();
+  }
+}
+
 async function loadKeywords() {
-  const res = await fetch('/api/keywords');
+  const res = await fetch(`/api/monitors/${currentMonitorId}/keywords`);
   const data = await res.json();
   const chips = document.getElementById('chips');
   const empty = document.getElementById('emptyMsg');
@@ -104,18 +209,20 @@ async function addKeyword() {
   const input = document.getElementById('kwInput');
   const keyword = input.value.trim();
   if (!keyword) return;
-  await fetch('/api/keywords', {
+  await fetch(`/api/monitors/${currentMonitorId}/keywords`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keyword }),
   });
   input.value = '';
   loadKeywords();
+  loadMonitors();
 }
 
 async function removeKeyword(keyword) {
-  await fetch('/api/keywords/' + encodeURIComponent(keyword), { method: 'DELETE' });
+  await fetch(`/api/monitors/${currentMonitorId}/keywords/` + encodeURIComponent(keyword), { method: 'DELETE' });
   loadKeywords();
+  loadMonitors();
 }
 
 function toggleBulk() {
@@ -130,7 +237,7 @@ async function addBulkKeywords() {
   const box = document.getElementById('bulkInput');
   const raw = box.value.trim();
   if (!raw) return;
-  const res = await fetch('/api/keywords/bulk', {
+  const res = await fetch(`/api/monitors/${currentMonitorId}/keywords/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keywords: raw }),
@@ -140,6 +247,18 @@ async function addBulkKeywords() {
   box.value = '';
   toggleBulk();
   loadKeywords();
+  loadMonitors();
+}
+
+async function saveWebhook() {
+  const input = document.getElementById('webhookInput');
+  await fetch(`/api/monitors/${currentMonitorId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slack_webhook_url: input.value.trim() }),
+  });
+  loadMonitorDetail();
+  loadMonitors();
 }
 
 function renderResults(results) {
@@ -172,20 +291,57 @@ function renderResults(results) {
   wrap.appendChild(block);
 }
 
-async function loadLast() {
-  const res = await fetch('/api/alert/last');
+function renderHistory(history) {
+  const list = document.getElementById('historyList');
+  const empty = document.getElementById('historyEmpty');
+  list.innerHTML = '';
+  if (!history.length) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  history.forEach((run, idx) => {
+    const d = document.createElement('details');
+    d.className = 'hist-item';
+    if (idx === 0) d.open = true;
+    const notifyNote = run.notified ? '슬랙 전송됨' : (run.notify_error ? `전송 안됨(${esc(run.notify_error)})` : '');
+    d.innerHTML = `<summary>${esc(run.ran_at)} <span class="muted">· 키워드 ${run.keywords_checked}개 · 노출 ${run.total_hits}건${notifyNote ? ' · ' + notifyNote : ''}</span></summary>`;
+    const body = document.createElement('div');
+    body.style.marginTop = '8px';
+    run.results.forEach(r => {
+      const row = document.createElement('div');
+      row.style.fontSize = '.83rem';
+      row.style.marginTop = '6px';
+      if (r.error) {
+        row.innerHTML = `⚠️ <b>${esc(r.keyword)}</b> — 확인 실패: ${esc(r.error)}`;
+      } else if (!r.posts.length) {
+        row.innerHTML = `⬜ <b>${esc(r.keyword)}</b> — 노출 없음`;
+      } else {
+        const links = r.posts.map(p => `<a href="${esc(p['링크'])}" target="_blank" style="color:#1976d2;text-decoration:none;">${esc(p['제목'])}</a> (${esc(p['카페이름'])})`).join('<br>');
+        row.innerHTML = `✅ <b>${esc(r.keyword)}</b> — ${r.posts.length}건<br><span style="margin-left:14px;">${links}</span>`;
+      }
+      body.appendChild(row);
+    });
+    d.appendChild(body);
+    list.appendChild(d);
+  });
+}
+
+async function loadMonitorDetail() {
+  const res = await fetch('/api/monitors');
   const data = await res.json();
-  document.getElementById('slackStatus').innerHTML = data.slack_configured
-    ? '슬랙 연동: <b>설정됨</b>'
-    : '슬랙 연동: <b>미설정</b> (SLACK_WEBHOOK_URL 환경변수를 등록하면 자동 전송됩니다)';
-  const last = data.last_run;
-  if (last) {
-    document.getElementById('lastRunLine').innerHTML =
-      `마지막 확인: <b>${esc(last.ran_at)}</b> · 키워드 ${last.keywords_checked}개 · 노출 ${last.total_hits}건` +
-      (last.notified ? ' · 슬랙 전송됨' : (last.notify_error ? ` · 전송 안됨(${esc(last.notify_error)})` : ''));
-    renderResults(last.results || []);
-  } else {
-    document.getElementById('lastRunLine').textContent = '아직 실행된 기록이 없습니다.';
+  const m = data.monitors.find(x => x.id === currentMonitorId);
+  if (!m) { document.getElementById('detail').style.display = 'none'; return; }
+
+  document.getElementById('detail').style.display = 'block';
+  document.getElementById('detailTitle').textContent = `${m.name} — 감시 키워드`;
+  document.getElementById('webhookLine').innerHTML = m.slack_configured
+    ? `슬랙 연동: <b>${m.has_own_webhook ? '이 모니터 전용 채널' : '기본 채널(SLACK_WEBHOOK_URL)'}</b>`
+    : '슬랙 연동: <b>미설정</b> — 아래에 웹훅 URL을 등록하세요.';
+  document.getElementById('webhookInput').value = m.slack_webhook_url || '';
+
+  const hRes = await fetch(`/api/monitors/${currentMonitorId}/history`);
+  const hData = await hRes.json();
+  renderHistory(hData.history || []);
+  if (hData.history && hData.history.length) {
+    renderResults(hData.history[0].results || []);
   }
 }
 
@@ -203,7 +359,7 @@ async function runNow() {
   progressText.textContent = '';
   let job_id, error;
   try {
-    const res = await fetch('/api/alert/run-now', { method: 'POST' });
+    const res = await fetch(`/api/monitors/${currentMonitorId}/run-now`, { method: 'POST' });
     ({ job_id, error } = await res.json());
     if (!res.ok) throw new Error(error || '요청 실패');
   } catch (e) {
@@ -238,11 +394,15 @@ async function pollAlert(job_id) {
   status.textContent = `완료! 키워드 ${job.keywords_checked}개 확인, ${job.total_hits}건 노출` +
     (job.notified ? ' · 슬랙 전송됨' : (job.notify_error ? ` · 전송 안됨(${job.notify_error})` : ''));
   renderResults(job.results || []);
-  loadLast();
+  loadMonitorDetail();
+  loadMonitors();
 }
 
-loadKeywords();
-loadLast();
+loadMonitors();
+if (currentMonitorId) {
+  loadKeywords();
+  loadMonitorDetail();
+}
 </script>
 </body>
 </html>

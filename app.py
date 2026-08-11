@@ -5,7 +5,7 @@
 /track → 조회수 추적
 /rank → 검색 순위 + 매치도
 /suggest → 자동완성 키워드 수집
-/keywords → 노출 알림 감시 키워드 관리 (매일 10시 자동 확인 + 슬랙 전송)
+/keywords → 노출 알림 모니터 관리 (모니터별 키워드/슬랙 웹훅, 매일 10시 자동 확인)
 """
 
 import os
@@ -20,8 +20,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from flask import Flask, render_template, request, jsonify, send_file, abort, make_response
 
-import alert_store
-from alert_job import KST, run_alert_check
+import monitor_store
+from alert_job import KST, run_alert_check, run_all_monitors
+from alert_notifier import resolve_webhook_url
 from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined
 from naver_cafe_tracker import run_tracker
 from naver_rank_search import run_rank_search
@@ -34,15 +35,9 @@ JOBS: dict[str, dict] = {}
 COLLECT_WORKERS = 2  # 동시 처리 키워드 수 (스레드 한계 고려)
 
 
-def _run_daily_alert_job():
-    keywords = alert_store.list_keywords()
-    if keywords:
-        run_alert_check(keywords, notify=True)
-
-
 _scheduler = BackgroundScheduler(timezone=KST)
 _scheduler.add_job(
-    _run_daily_alert_job,
+    run_all_monitors,
     CronTrigger(hour=10, minute=0, timezone=KST),
     id="daily_cafe_alert",
     replace_existing=True,
@@ -320,49 +315,91 @@ def api_suggest_download():
     return output
 
 
-# ── 카페글 노출 알림 (매일 10시 자동 확인) ──
-@app.route("/api/keywords", methods=["GET", "POST"])
-def api_keywords():
+# ── 카페글 노출 알림 (매일 10시 자동 확인, 모니터 여러 개 가능) ──
+def _monitor_summary(m):
+    last = monitor_store.get_latest_run(m["id"])
+    return {
+        "id": m["id"],
+        "name": m["name"],
+        "slack_webhook_url": m.get("slack_webhook_url", ""),
+        "has_own_webhook": bool(m.get("slack_webhook_url", "").strip()),
+        "slack_configured": bool(resolve_webhook_url(m.get("slack_webhook_url", ""))),
+        "keyword_count": len(m.get("keywords", [])),
+        "last_run": {"ran_at": last["ran_at"], "total_hits": last["total_hits"]} if last else None,
+    }
+
+def _get_monitor_or_404(monitor_id):
+    m = monitor_store.get_monitor(monitor_id)
+    if not m:
+        abort(404)
+    return m
+
+@app.route("/api/monitors", methods=["GET", "POST"])
+def api_monitors():
     if request.method == "GET":
-        return jsonify({"keywords": alert_store.list_keywords()})
+        return jsonify({"monitors": [_monitor_summary(m) for m in monitor_store.list_monitors()]})
+    data = request.get_json(force=True)
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "모니터 이름을 입력하세요."}), 400
+    m = monitor_store.create_monitor(name, data.get("slack_webhook_url", ""))
+    return jsonify({"monitor": _monitor_summary(m)})
+
+@app.route("/api/monitors/<monitor_id>", methods=["PATCH", "DELETE"])
+def api_monitor_detail(monitor_id):
+    _get_monitor_or_404(monitor_id)
+    if request.method == "DELETE":
+        monitor_store.delete_monitor(monitor_id)
+        return jsonify({"ok": True})
+    data = request.get_json(force=True)
+    m = monitor_store.update_monitor(monitor_id, data.get("name"), data.get("slack_webhook_url"))
+    return jsonify({"monitor": _monitor_summary(m)})
+
+@app.route("/api/monitors/<monitor_id>/keywords", methods=["GET", "POST"])
+def api_monitor_keywords(monitor_id):
+    m = _get_monitor_or_404(monitor_id)
+    if request.method == "GET":
+        return jsonify({"keywords": m["keywords"]})
     data = request.get_json(force=True)
     keyword = (data.get("keyword") or "").strip()
     if not keyword:
         return jsonify({"error": "키워드를 입력하세요."}), 400
-    keywords = alert_store.add_keyword(keyword)
+    keywords = monitor_store.add_keyword(monitor_id, keyword)
     return jsonify({"keywords": keywords})
 
-@app.route("/api/keywords/<path:keyword>", methods=["DELETE"])
-def api_keywords_delete(keyword):
-    keywords = alert_store.remove_keyword(keyword)
-    return jsonify({"keywords": keywords})
-
-@app.route("/api/keywords/bulk", methods=["POST"])
-def api_keywords_bulk():
+@app.route("/api/monitors/<monitor_id>/keywords/bulk", methods=["POST"])
+def api_monitor_keywords_bulk(monitor_id):
+    _get_monitor_or_404(monitor_id)
     data = request.get_json(force=True)
     raw = data.get("keywords", "")
     new_keywords = [k.strip() for k in raw.replace("\n", ",").split(",") if k.strip()]
     if not new_keywords:
         return jsonify({"error": "키워드를 입력하세요."}), 400
-    before = len(alert_store.list_keywords())
-    keywords = alert_store.add_keywords(new_keywords)
-    return jsonify({"keywords": keywords, "added": len(keywords) - before})
+    keywords = monitor_store.add_keywords(monitor_id, new_keywords)
+    return jsonify({"keywords": keywords})
 
-def _run_manual_alert(job_id, keywords):
+@app.route("/api/monitors/<monitor_id>/keywords/<path:keyword>", methods=["DELETE"])
+def api_monitor_keywords_delete(monitor_id, keyword):
+    _get_monitor_or_404(monitor_id)
+    keywords = monitor_store.remove_keyword(monitor_id, keyword)
+    return jsonify({"keywords": keywords})
+
+def _run_manual_alert(job_id, monitor, keywords):
     def _progress(done, total):
         JOBS[job_id].update({"done_count": done, "total": total})
 
-    result = run_alert_check(keywords, notify=True, progress_cb=_progress)
+    result = run_alert_check(monitor, keywords, notify=True, progress_cb=_progress)
     JOBS[job_id] = {**result, "done_count": len(keywords), "total": len(keywords), "status": "done"}
 
-@app.route("/api/alert/run-now", methods=["POST"])
-def api_alert_run_now():
-    keywords = alert_store.list_keywords()
+@app.route("/api/monitors/<monitor_id>/run-now", methods=["POST"])
+def api_monitor_run_now(monitor_id):
+    m = _get_monitor_or_404(monitor_id)
+    keywords = m["keywords"]
     if not keywords:
         return jsonify({"error": "감시 키워드가 없습니다. 먼저 키워드를 추가하세요."}), 400
     job_id = uuid.uuid4().hex
     JOBS[job_id] = {"status": "running", "done_count": 0, "total": len(keywords)}
-    threading.Thread(target=_run_manual_alert, args=(job_id, keywords), daemon=True).start()
+    threading.Thread(target=_run_manual_alert, args=(job_id, m, keywords), daemon=True).start()
     return jsonify({"job_id": job_id})
 
 @app.route("/api/alert/status/<job_id>")
@@ -372,11 +409,11 @@ def api_alert_status(job_id):
         abort(404)
     return jsonify(job)
 
-@app.route("/api/alert/last")
-def api_alert_last():
+@app.route("/api/monitors/<monitor_id>/history")
+def api_monitor_history(monitor_id):
+    _get_monitor_or_404(monitor_id)
     return jsonify({
-        "last_run": alert_store.load_last_run(),
-        "slack_configured": bool(os.environ.get("SLACK_WEBHOOK_URL", "").strip()),
+        "history": monitor_store.get_history(monitor_id),
         "next_run_kst": "매일 10:00 (Asia/Seoul)",
     })
 

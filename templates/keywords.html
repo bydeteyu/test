@@ -370,7 +370,7 @@ async function runNow() {
   const progressText = document.getElementById('progressText');
   btn.disabled = true;
   status.className = 'sbar running';
-  status.textContent = '확인 중입니다… (안정성을 위해 키워드를 하나씩 순차 확인합니다. 키워드가 많으면 오래 걸릴 수 있어요)';
+  status.textContent = '확인 중입니다… (키워드 2개씩 병렬 확인. 키워드가 많으면 시간이 걸릴 수 있어요)';
   progressWrap.style.display = 'block';
   document.getElementById('progressBar').style.width = '0%';
   progressText.textContent = '';

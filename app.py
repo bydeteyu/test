@@ -4,7 +4,8 @@
 /collect → 카페글 수집
 /track → 조회수 추적
 /rank → 검색 순위 + 매치도
-/suggest → 자동완성 키워드 수집
+/suggest → 연관 키워드 + 검색량 (검색광고 API)
+/autocomplete → 자동완성 기반 파생 키워드 수집
 /keywords → 노출 알림 모니터 관리 (모니터별 키워드/슬랙 웹훅, 매일 10시 자동 확인)
 """
 
@@ -24,6 +25,7 @@ from flask import Flask, render_template, request, jsonify, send_file, abort, ma
 import monitor_store
 from alert_job import KST, run_alert_check
 from alert_notifier import resolve_webhook_url
+from naver_autocomplete import run_autocomplete
 from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined
 from naver_cafe_tracker import run_tracker
 from naver_rank_search import run_rank_search
@@ -92,6 +94,9 @@ def page_rank(): return render_template("rank.html")
 
 @app.route("/suggest")
 def page_suggest(): return render_template("suggest.html")
+
+@app.route("/autocomplete")
+def page_autocomplete(): return render_template("autocomplete.html")
 
 @app.route("/keywords")
 def page_keywords(): return render_template("keywords.html")
@@ -343,6 +348,67 @@ def api_suggest_download():
         w.writerow([r["keyword"], r["pc"], r["mobile"], r["total"], r["comp"]])
     output = make_response(si.getvalue().encode("utf-8-sig"))
     output.headers["Content-Disposition"] = "attachment; filename=keyword_volume.csv"
+    output.headers["Content-Type"] = "text/csv; charset=utf-8"
+    return output
+
+
+# ── 자동완성 기반 파생 키워드 수집 ──
+def _run_autocomplete_job(job_id, seeds, depth):
+    job = JOBS[job_id]
+    job.update({"status": "running", "seed_total": len(seeds), "seed_done": 0, "results": {}, "errors": []})
+
+    for seed in seeds:
+        def _progress(d, done, total, collected, _seed=seed):
+            job["progress"] = {"seed": _seed, "depth": d, "done": done, "total": total, "collected": collected}
+
+        try:
+            job["results"][seed] = run_autocomplete(seed, max_depth=depth, progress_cb=_progress)
+        except Exception as e:
+            job["results"][seed] = []
+            job["errors"].append(f"{seed}: {e}")
+        job["seed_done"] += 1
+
+    job["status"] = "done"
+
+@app.route("/api/autocomplete", methods=["POST"])
+def api_autocomplete():
+    data = request.get_json(force=True)
+    raw = data.get("keywords", "")
+    seeds = [k.strip() for k in raw.replace("\n", ",").split(",") if k.strip()]
+    if not seeds:
+        return jsonify({"error": "키워드를 입력하세요."}), 400
+    try:
+        depth = int(data.get("depth", 2))
+    except (TypeError, ValueError):
+        depth = 2
+    depth = max(1, min(depth, 2))  # 노이즈 폭증 방지 — 2단계까지만 허용
+
+    job_id = uuid.uuid4().hex
+    JOBS[job_id] = {"status": "pending"}
+    threading.Thread(target=_run_autocomplete_job, args=(job_id, seeds, depth), daemon=True).start()
+    return jsonify({"job_id": job_id})
+
+@app.route("/api/autocomplete/status/<job_id>")
+def api_autocomplete_status(job_id):
+    job = JOBS.get(job_id)
+    if not job:
+        abort(404)
+    return jsonify(job)
+
+@app.route("/api/autocomplete/download")
+def api_autocomplete_download():
+    job_id = request.args.get("job_id", "")
+    job = JOBS.get(job_id)
+    if not job or job.get("status") != "done":
+        abort(404)
+    si = StringIO()
+    w = csv.writer(si)
+    w.writerow(["시드 키워드", "파생 키워드", "단계", "상위 키워드"])
+    for seed, rows in job["results"].items():
+        for r in rows:
+            w.writerow([seed, r["keyword"], r["depth"], r["parent"]])
+    output = make_response(si.getvalue().encode("utf-8-sig"))
+    output.headers["Content-Disposition"] = "attachment; filename=autocomplete_keywords.csv"
     output.headers["Content-Type"] = "text/csv; charset=utf-8"
     return output
 

@@ -95,17 +95,20 @@ def article_key(href: str):
     return (None, None)
 
 
-# 카페 홈 링크 중에는 "새 창 열림" 같은 스크린리더 전용 안내 문구만 담긴
-# 아이콘/버튼 링크도 있다. 카페명으로 그 문구가 잡히지 않도록 걸러낸다.
-HIDDEN_LABEL_RE = re.compile(r"^(새\s*창\s*열림|동영상\s*재생|바로가기|더보기)$")
+# "새 창 열림" 같은 스크린리더 전용 안내 문구가 카페명/제목에 섞여 나올 수
+# 있다. 별도 .blind 태그로 감싸져 있으면 decompose로 제거되지만, 그냥 텍스트
+# 뒤에 이어붙어 나오는 경우도 있어 문자열 어디에 있든 제거해야 한다.
+HIDDEN_LABEL_RE = re.compile(r"새\s*창\s*열림|동영상\s*재생|바로가기|더보기")
 
 
 def _anchor_visible_text(a) -> str:
-    """앵커의 보이는 텍스트만 추출한다 (.blind 등 숨김 라벨 제외)."""
+    """앵커의 보이는 텍스트만 추출한다 (.blind 등 숨김 라벨 + 알려진 안내 문구 제외)."""
     clone = BeautifulSoup(str(a), "html.parser")
     for hidden in clone.select(".blind, [aria-hidden='true']"):
         hidden.decompose()
-    return re.sub(r"\s+", " ", clone.get_text(strip=True)).strip()
+    text = clone.get_text(" ", strip=True)
+    text = HIDDEN_LABEL_RE.sub("", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def find_cafe_info(anchor):
@@ -119,7 +122,7 @@ def find_cafe_info(anchor):
             m = CAFE_HOME.search(a["href"])
             if m and not article_key(a["href"])[0]:
                 name = _anchor_visible_text(a)
-                if not name or HIDDEN_LABEL_RE.match(name):
+                if not name:
                     continue
                 slug = m.group(1)
                 if name and slug:
@@ -166,7 +169,7 @@ def extract_posts(html: str) -> list[dict]:
         key, slug_from_url = article_key(a["href"])
         if not key:
             continue
-        title = clean_title(a.get_text())
+        title = clean_title(_anchor_visible_text(a))
         if not title or len(title) < 2:
             continue
         if key in seen:

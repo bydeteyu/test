@@ -5,6 +5,7 @@
 /track → 조회수 추적
 /rank → 검색 순위 + 매치도
 /suggest → 자동완성 키워드 수집
+/keywords → 노출 알림 감시 키워드 관리 (매일 10시 자동 확인 + 슬랙 전송)
 """
 
 import os
@@ -15,8 +16,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import StringIO
 from pathlib import Path
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from flask import Flask, render_template, request, jsonify, send_file, abort, make_response
 
+import alert_store
+from alert_job import KST, run_alert_check
 from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined
 from naver_cafe_tracker import run_tracker
 from naver_rank_search import run_rank_search
@@ -27,6 +32,22 @@ OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 JOBS: dict[str, dict] = {}
 COLLECT_WORKERS = 2  # 동시 처리 키워드 수 (스레드 한계 고려)
+
+
+def _run_daily_alert_job():
+    keywords = alert_store.list_keywords()
+    if keywords:
+        run_alert_check(keywords, notify=True)
+
+
+_scheduler = BackgroundScheduler(timezone=KST)
+_scheduler.add_job(
+    _run_daily_alert_job,
+    CronTrigger(hour=10, minute=0, timezone=KST),
+    id="daily_cafe_alert",
+    replace_existing=True,
+)
+_scheduler.start()
 
 
 # ── 페이지 ──
@@ -44,6 +65,9 @@ def page_rank(): return render_template("rank.html")
 
 @app.route("/suggest")
 def page_suggest(): return render_template("suggest.html")
+
+@app.route("/keywords")
+def page_keywords(): return render_template("keywords.html")
 
 
 # ── 카페글 수집 ──
@@ -294,6 +318,53 @@ def api_suggest_download():
     output.headers["Content-Disposition"] = "attachment; filename=keyword_volume.csv"
     output.headers["Content-Type"] = "text/csv; charset=utf-8"
     return output
+
+
+# ── 카페글 노출 알림 (매일 10시 자동 확인) ──
+@app.route("/api/keywords", methods=["GET", "POST"])
+def api_keywords():
+    if request.method == "GET":
+        return jsonify({"keywords": alert_store.list_keywords()})
+    data = request.get_json(force=True)
+    keyword = (data.get("keyword") or "").strip()
+    if not keyword:
+        return jsonify({"error": "키워드를 입력하세요."}), 400
+    keywords = alert_store.add_keyword(keyword)
+    return jsonify({"keywords": keywords})
+
+@app.route("/api/keywords/<path:keyword>", methods=["DELETE"])
+def api_keywords_delete(keyword):
+    keywords = alert_store.remove_keyword(keyword)
+    return jsonify({"keywords": keywords})
+
+def _run_manual_alert(job_id):
+    result = run_alert_check(notify=True)
+    JOBS[job_id] = {**result, "status": "done"}
+
+@app.route("/api/alert/run-now", methods=["POST"])
+def api_alert_run_now():
+    keywords = alert_store.list_keywords()
+    if not keywords:
+        return jsonify({"error": "감시 키워드가 없습니다. 먼저 키워드를 추가하세요."}), 400
+    job_id = uuid.uuid4().hex
+    JOBS[job_id] = {"status": "running"}
+    threading.Thread(target=_run_manual_alert, args=(job_id,), daemon=True).start()
+    return jsonify({"job_id": job_id})
+
+@app.route("/api/alert/status/<job_id>")
+def api_alert_status(job_id):
+    job = JOBS.get(job_id)
+    if not job:
+        abort(404)
+    return jsonify(job)
+
+@app.route("/api/alert/last")
+def api_alert_last():
+    return jsonify({
+        "last_run": alert_store.load_last_run(),
+        "slack_configured": bool(os.environ.get("SLACK_WEBHOOK_URL", "").strip()),
+        "next_run_kst": "매일 10:00 (Asia/Seoul)",
+    })
 
 
 if __name__ == "__main__":

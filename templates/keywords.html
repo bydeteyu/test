@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>카페글 노출 알림</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Apple SD Gothic Neo', sans-serif; background: #f0f2f7; min-height: 100vh; }
+header { background: #1a1a2e; color: #fff; padding: 16px 28px; display: flex; align-items: center; gap: 16px; }
+header a { color: rgba(255,255,255,.5); text-decoration: none; font-size: .85rem; }
+header a:hover { color: #fff; }
+header h1 { font-size: 1rem; font-weight: 700; color: #fff; }
+.wrap { max-width: 860px; margin: 32px auto; padding: 0 18px; }
+.card { background: #fff; border-radius: 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06); padding: 24px; margin-bottom: 20px; }
+label.lbl { display: block; font-weight: 600; margin-bottom: 6px; font-size: .92rem; }
+.hint { font-size: .78rem; color: #aaa; margin-bottom: 9px; }
+.row { display: flex; gap: 8px; }
+input[type=text] { flex: 1; border: 1.5px solid #e0e3ed; border-radius: 8px; padding: 10px 12px; font-size: .9rem; outline: none; background: #fafbfd; }
+input[type=text]:focus { border-color: #03c75a; background: #fff; }
+button { border: none; border-radius: 8px; cursor: pointer; font-weight: 700; }
+button.add { padding: 0 18px; background: #03c75a; color: #fff; font-size: .9rem; }
+button.add:hover { background: #02a84b; }
+button.run { margin-top: 14px; width: 100%; padding: 12px; background: #1976d2; color: #fff; font-size: .97rem; }
+button.run:hover { background: #1565c0; }
+button.run:disabled { background: #90caf9; cursor: not-allowed; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: #f0f4ff; color: #24408e; border-radius: 20px; padding: 6px 8px 6px 14px; font-size: .84rem; }
+.chip button { background: none; color: #8792ad; font-size: 1rem; line-height: 1; padding: 2px 6px; border-radius: 50%; }
+.chip button:hover { background: #dde4f5; color: #24408e; }
+.empty { color: #ccc; font-size: .87rem; padding: 6px 0; }
+.status-line { font-size: .82rem; color: #666; margin-bottom: 4px; }
+.status-line b { color: #333; }
+.sbar { display: none; padding: 10px 14px; border-radius: 8px; font-size: .87rem; margin-top: 12px; }
+.sbar.running { display: block; background: #fff8e1; color: #9a6e00; border: 1px solid #ffe082; }
+.sbar.done    { display: block; background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+.sbar.error   { display: block; background: #fce4ec; color: #c62828; border: 1px solid #f48fb1; }
+.result-block { margin-top: 14px; }
+.result-kw { font-weight: 700; font-size: .9rem; margin-top: 10px; }
+ul.posts { margin: 4px 0 0 18px; font-size: .84rem; }
+ul.posts li { margin-bottom: 3px; }
+ul.posts a { color: #1976d2; text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">&larr; 홈</a>
+  <h1>&#128276; 카페글 노출 알림</h1>
+</header>
+<div class="wrap">
+  <div class="card">
+    <label class="lbl">감시 키워드</label>
+    <p class="hint">매일 오전 10시(KST)에 이 키워드들로 네이버 통합검색을 확인해 카페글 노출 여부를 슬랙으로 보내드립니다.</p>
+    <div class="row">
+      <input type="text" id="kwInput" placeholder="예: 수원한방병원 추천" onkeydown="if(event.key==='Enter')addKeyword()">
+      <button class="add" onclick="addKeyword()">추가</button>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="empty" id="emptyMsg" style="display:none;">등록된 감시 키워드가 없습니다.</div>
+  </div>
+
+  <div class="card">
+    <div class="status-line" id="slackStatus"></div>
+    <div class="status-line" id="lastRunLine"></div>
+    <button class="run" id="runBtn" onclick="runNow()">지금 바로 확인</button>
+    <div id="status" class="sbar"></div>
+    <div id="results"></div>
+  </div>
+</div>
+
+<script>
+function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function loadKeywords() {
+  const res = await fetch('/api/keywords');
+  const data = await res.json();
+  const chips = document.getElementById('chips');
+  const empty = document.getElementById('emptyMsg');
+  chips.innerHTML = '';
+  if (!data.keywords.length) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  data.keywords.forEach(kw => {
+    const el = document.createElement('span');
+    el.className = 'chip';
+    el.innerHTML = `${esc(kw)} <button onclick="removeKeyword('${esc(kw).replace(/'/g,"\\'")}')">&times;</button>`;
+    chips.appendChild(el);
+  });
+}
+
+async function addKeyword() {
+  const input = document.getElementById('kwInput');
+  const keyword = input.value.trim();
+  if (!keyword) return;
+  await fetch('/api/keywords', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keyword }),
+  });
+  input.value = '';
+  loadKeywords();
+}
+
+async function removeKeyword(keyword) {
+  await fetch('/api/keywords/' + encodeURIComponent(keyword), { method: 'DELETE' });
+  loadKeywords();
+}
+
+function renderResults(results) {
+  const wrap = document.getElementById('results');
+  wrap.innerHTML = '';
+  const block = document.createElement('div');
+  block.className = 'result-block';
+  results.forEach(r => {
+    const h = document.createElement('div');
+    if (r.error) {
+      h.className = 'result-kw';
+      h.textContent = `⚠️ ${r.keyword} — 확인 실패: ${r.error}`;
+      block.appendChild(h);
+      return;
+    }
+    h.className = 'result-kw';
+    h.textContent = (r.posts.length ? '✅ ' : '⬜ ') + r.keyword + ' — ' + r.posts.length + '건 노출';
+    block.appendChild(h);
+    if (r.posts.length) {
+      const ul = document.createElement('ul');
+      ul.className = 'posts';
+      r.posts.forEach(p => {
+        const li = document.createElement('li');
+        li.innerHTML = `<a href="${esc(p['링크'])}" target="_blank">${esc(p['제목'])}</a> (${esc(p['카페이름'])})`;
+        ul.appendChild(li);
+      });
+      block.appendChild(ul);
+    }
+  });
+  wrap.appendChild(block);
+}
+
+async function loadLast() {
+  const res = await fetch('/api/alert/last');
+  const data = await res.json();
+  document.getElementById('slackStatus').innerHTML = data.slack_configured
+    ? '슬랙 연동: <b>설정됨</b>'
+    : '슬랙 연동: <b>미설정</b> (SLACK_WEBHOOK_URL 환경변수를 등록하면 자동 전송됩니다)';
+  const last = data.last_run;
+  if (last) {
+    document.getElementById('lastRunLine').innerHTML =
+      `마지막 확인: <b>${esc(last.ran_at)}</b> · 키워드 ${last.keywords_checked}개 · 노출 ${last.total_hits}건` +
+      (last.notified ? ' · 슬랙 전송됨' : (last.notify_error ? ` · 전송 안됨(${esc(last.notify_error)})` : ''));
+    renderResults(last.results || []);
+  } else {
+    document.getElementById('lastRunLine').textContent = '아직 실행된 기록이 없습니다.';
+  }
+}
+
+let timer = null;
+async function runNow() {
+  const btn = document.getElementById('runBtn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  status.className = 'sbar running';
+  status.textContent = '확인 중입니다…';
+  let job_id, error;
+  try {
+    const res = await fetch('/api/alert/run-now', { method: 'POST' });
+    ({ job_id, error } = await res.json());
+    if (!res.ok) throw new Error(error || '요청 실패');
+  } catch (e) {
+    status.className = 'sbar error';
+    status.textContent = '오류: ' + e.message;
+    btn.disabled = false;
+    return;
+  }
+  timer = setInterval(() => pollAlert(job_id), 2000);
+}
+
+async function pollAlert(job_id) {
+  const res = await fetch('/api/alert/status/' + job_id);
+  if (!res.ok) return;
+  const job = await res.json();
+  if (job.status !== 'done') return;
+  clearInterval(timer);
+  document.getElementById('runBtn').disabled = false;
+  const status = document.getElementById('status');
+  status.className = 'sbar done';
+  status.textContent = `완료! 키워드 ${job.keywords_checked}개 확인, ${job.total_hits}건 노출` +
+    (job.notified ? ' · 슬랙 전송됨' : (job.notify_error ? ` · 전송 안됨(${job.notify_error})` : ''));
+  renderResults(job.results || []);
+  loadLast();
+}
+
+loadKeywords();
+loadLast();
+</script>
+</body>
+</html>

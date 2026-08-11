@@ -70,6 +70,19 @@ def is_article(href):
     return bool(ARTICLE_NEW.search(href) or ARTICLE_OLD.search(href))
 
 
+# 카페 홈 링크 중에는 "새 창 열림" 같은 스크린리더 전용 안내 문구만 담긴
+# 아이콘/버튼 링크도 있다. 카페명으로 그 문구가 잡히지 않도록 걸러낸다.
+HIDDEN_LABEL_RE = re.compile(r"^(새\s*창\s*열림|동영상\s*재생|바로가기|더보기)$")
+
+
+def _anchor_visible_text(a) -> str:
+    """앵커의 보이는 텍스트만 추출한다 (.blind 등 숨김 라벨 제외)."""
+    clone = BeautifulSoup(str(a), "html.parser")
+    for hidden in clone.select(".blind, [aria-hidden='true']"):
+        hidden.decompose()
+    return re.sub(r"\s+", " ", clone.get_text(strip=True)).strip()
+
+
 def find_cafe_name(anchor):
     node = anchor
     for _ in range(8):
@@ -78,8 +91,8 @@ def find_cafe_name(anchor):
             break
         for a in node.find_all("a", href=True):
             if CAFE_HOME.search(a["href"]) and not is_article(a["href"]):
-                name = re.sub(r"\s+", " ", a.get_text(strip=True))
-                if name:
+                name = _anchor_visible_text(a)
+                if name and not HIDDEN_LABEL_RE.match(name):
                     return name
     return None
 

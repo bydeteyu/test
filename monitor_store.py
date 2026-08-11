@@ -36,8 +36,21 @@ LEGACY_KEYWORDS_FILE = DATA_DIR / "alert_keywords.json"
 LEGACY_LAST_RUN_FILE = DATA_DIR / "alert_last_run.json"
 
 MAX_HISTORY = 30
+DEFAULT_SCHEDULE_TIME = "10:00"
 
 _lock = threading.Lock()
+
+
+def normalize_schedule_time(value: str) -> str:
+    """'H:MM' 형태를 검증/정규화. 잘못됐으면 기본값(10:00)으로."""
+    try:
+        hour_str, minute_str = value.strip().split(":")
+        hour, minute = int(hour_str), int(minute_str)
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return f"{hour:02d}:{minute:02d}"
+    except (ValueError, AttributeError):
+        pass
+    return DEFAULT_SCHEDULE_TIME
 
 
 def _ensure_dirs():
@@ -59,6 +72,7 @@ def _migrate_legacy_if_needed():
         "name": "모니터 1",
         "slack_webhook_url": "",  # 비어있으면 전역 SLACK_WEBHOOK_URL로 폴백 (기존 동작 유지)
         "keywords": legacy_keywords,
+        "schedule_time": DEFAULT_SCHEDULE_TIME,  # 구버전은 항상 10시 고정이었음
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     _write_monitors([monitor])
@@ -100,13 +114,14 @@ def get_monitor(monitor_id: str) -> dict | None:
         return None
 
 
-def create_monitor(name: str, slack_webhook_url: str = "") -> dict:
+def create_monitor(name: str, slack_webhook_url: str = "", schedule_time: str = DEFAULT_SCHEDULE_TIME) -> dict:
     name = name.strip() or "새 모니터"
     monitor = {
         "id": uuid.uuid4().hex[:12],
         "name": name,
         "slack_webhook_url": slack_webhook_url.strip(),
         "keywords": [],
+        "schedule_time": normalize_schedule_time(schedule_time),
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     with _lock:
@@ -116,7 +131,12 @@ def create_monitor(name: str, slack_webhook_url: str = "") -> dict:
     return monitor
 
 
-def update_monitor(monitor_id: str, name: str | None = None, slack_webhook_url: str | None = None) -> dict | None:
+def update_monitor(
+    monitor_id: str,
+    name: str | None = None,
+    slack_webhook_url: str | None = None,
+    schedule_time: str | None = None,
+) -> dict | None:
     with _lock:
         monitors = _read_monitors()
         updated = None
@@ -126,6 +146,8 @@ def update_monitor(monitor_id: str, name: str | None = None, slack_webhook_url: 
                     m["name"] = name.strip()
                 if slack_webhook_url is not None:
                     m["slack_webhook_url"] = slack_webhook_url.strip()
+                if schedule_time is not None:
+                    m["schedule_time"] = normalize_schedule_time(schedule_time)
                 updated = m
                 break
         if updated:
@@ -211,6 +233,11 @@ def append_history(monitor_id: str, run_summary: dict) -> None:
         if len(history) > MAX_HISTORY:
             history = history[-MAX_HISTORY:]
         _write_history(monitor_id, history)
+
+
+def clear_history(monitor_id: str) -> None:
+    with _lock:
+        _write_history(monitor_id, [])
 
 
 def get_history(monitor_id: str) -> list[dict]:

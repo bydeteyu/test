@@ -18,10 +18,11 @@ from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.jobstores.base import JobLookupError
 from flask import Flask, render_template, request, jsonify, send_file, abort, make_response
 
 import monitor_store
-from alert_job import KST, run_alert_check, run_all_monitors
+from alert_job import KST, run_alert_check
 from alert_notifier import resolve_webhook_url
 from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined
 from naver_cafe_tracker import run_tracker
@@ -34,15 +35,46 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 JOBS: dict[str, dict] = {}
 COLLECT_WORKERS = 2  # 동시 처리 키워드 수 (스레드 한계 고려)
 
+# 모니터 실행은 스케줄이든 수동("지금 바로 확인")이든 이 락을 거쳐야 한다 —
+# 시간대가 다른 모니터끼리도 우연히 겹치면 동시에 Playwright를 띄우지 않도록.
+_run_lock = threading.Lock()
+
+
+def _monitor_job_id(monitor_id):
+    return f"monitor_{monitor_id}"
+
+
+def _run_scheduled_monitor(monitor_id):
+    m = monitor_store.get_monitor(monitor_id)
+    if not m or not m.get("keywords"):
+        return
+    with _run_lock:
+        run_alert_check(m, notify=True)
+
+
+def _schedule_monitor(monitor):
+    schedule_time = monitor.get("schedule_time") or monitor_store.DEFAULT_SCHEDULE_TIME
+    hour, minute = (int(x) for x in schedule_time.split(":"))
+    _scheduler.add_job(
+        _run_scheduled_monitor,
+        CronTrigger(hour=hour, minute=minute, timezone=KST),
+        id=_monitor_job_id(monitor["id"]),
+        replace_existing=True,
+        args=[monitor["id"]],
+    )
+
+
+def _unschedule_monitor(monitor_id):
+    try:
+        _scheduler.remove_job(_monitor_job_id(monitor_id))
+    except JobLookupError:
+        pass
+
 
 _scheduler = BackgroundScheduler(timezone=KST)
-_scheduler.add_job(
-    run_all_monitors,
-    CronTrigger(hour=10, minute=0, timezone=KST),
-    id="daily_cafe_alert",
-    replace_existing=True,
-)
 _scheduler.start()
+for _m in monitor_store.list_monitors():
+    _schedule_monitor(_m)
 
 
 # ── 페이지 ──
@@ -324,6 +356,7 @@ def _monitor_summary(m):
         "slack_webhook_url": m.get("slack_webhook_url", ""),
         "has_own_webhook": bool(m.get("slack_webhook_url", "").strip()),
         "slack_configured": bool(resolve_webhook_url(m.get("slack_webhook_url", ""))),
+        "schedule_time": m.get("schedule_time") or monitor_store.DEFAULT_SCHEDULE_TIME,
         "keyword_count": len(m.get("keywords", [])),
         "last_run": {"ran_at": last["ran_at"], "total_hits": last["total_hits"]} if last else None,
     }
@@ -342,7 +375,8 @@ def api_monitors():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "모니터 이름을 입력하세요."}), 400
-    m = monitor_store.create_monitor(name, data.get("slack_webhook_url", ""))
+    m = monitor_store.create_monitor(name, data.get("slack_webhook_url", ""), data.get("schedule_time", monitor_store.DEFAULT_SCHEDULE_TIME))
+    _schedule_monitor(m)
     return jsonify({"monitor": _monitor_summary(m)})
 
 @app.route("/api/monitors/<monitor_id>", methods=["PATCH", "DELETE"])
@@ -350,9 +384,11 @@ def api_monitor_detail(monitor_id):
     _get_monitor_or_404(monitor_id)
     if request.method == "DELETE":
         monitor_store.delete_monitor(monitor_id)
+        _unschedule_monitor(monitor_id)
         return jsonify({"ok": True})
     data = request.get_json(force=True)
-    m = monitor_store.update_monitor(monitor_id, data.get("name"), data.get("slack_webhook_url"))
+    m = monitor_store.update_monitor(monitor_id, data.get("name"), data.get("slack_webhook_url"), data.get("schedule_time"))
+    _schedule_monitor(m)
     return jsonify({"monitor": _monitor_summary(m)})
 
 @app.route("/api/monitors/<monitor_id>/keywords", methods=["GET", "POST"])
@@ -388,7 +424,8 @@ def _run_manual_alert(job_id, monitor, keywords):
     def _progress(done, total):
         JOBS[job_id].update({"done_count": done, "total": total})
 
-    result = run_alert_check(monitor, keywords, notify=True, progress_cb=_progress)
+    with _run_lock:
+        result = run_alert_check(monitor, keywords, notify=True, progress_cb=_progress)
     JOBS[job_id] = {**result, "done_count": len(keywords), "total": len(keywords), "status": "done"}
 
 @app.route("/api/monitors/<monitor_id>/run-now", methods=["POST"])
@@ -409,12 +446,15 @@ def api_alert_status(job_id):
         abort(404)
     return jsonify(job)
 
-@app.route("/api/monitors/<monitor_id>/history")
+@app.route("/api/monitors/<monitor_id>/history", methods=["GET", "DELETE"])
 def api_monitor_history(monitor_id):
-    _get_monitor_or_404(monitor_id)
+    m = _get_monitor_or_404(monitor_id)
+    if request.method == "DELETE":
+        monitor_store.clear_history(monitor_id)
+        return jsonify({"ok": True})
     return jsonify({
         "history": monitor_store.get_history(monitor_id),
-        "next_run_kst": "매일 10:00 (Asia/Seoul)",
+        "next_run_kst": f"매일 {m.get('schedule_time') or monitor_store.DEFAULT_SCHEDULE_TIME} (Asia/Seoul)",
     })
 
 

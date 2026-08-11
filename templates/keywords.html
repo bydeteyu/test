@@ -75,12 +75,13 @@ details.hist-item summary .muted { font-weight: 400; color: #888; }
 <div class="wrap">
   <div class="card">
     <label class="lbl">모니터 목록</label>
-    <p class="hint">모니터마다 감시 키워드와 슬랙 알림 채널을 따로 관리할 수 있습니다. 매일 오전 10시(KST)에 모니터별로 순서대로 자동 확인합니다.</p>
+    <p class="hint">모니터마다 감시 키워드·슬랙 알림 채널·확인 시각을 따로 관리할 수 있습니다. 각자 정해진 시각(KST)에 자동 확인하며, 시각이 겹치더라도 안정성을 위해 동시에 실행하지 않고 순서대로 처리합니다.</p>
     <div class="mon-list" id="monList"></div>
     <div class="empty" id="monEmpty" style="display:none;">등록된 모니터가 없습니다. 아래에서 새로 만들어주세요.</div>
     <div class="new-mon-row">
       <input type="text" id="newMonName" placeholder="새 모니터 이름 (예: 사업장A)">
       <input type="text" id="newMonWebhook" placeholder="슬랙 웹훅 URL (선택, 비워두면 기본 채널 사용)">
+      <input type="time" id="newMonTime" value="10:00" style="flex:0 0 110px;">
       <button class="add" onclick="createMonitor()">모니터 추가</button>
     </div>
   </div>
@@ -91,8 +92,10 @@ details.hist-item summary .muted { font-weight: 400; color: #888; }
       <div class="status-line" id="webhookLine"></div>
       <div class="row" style="margin-top:8px;">
         <input type="text" id="webhookInput" placeholder="슬랙 웹훅 URL (비워두면 기본 채널 사용)">
+        <input type="time" id="scheduleInput" style="flex:0 0 110px;">
         <button class="add" onclick="saveWebhook()">저장</button>
       </div>
+      <div class="hint" style="margin-top:6px;">매일 이 시각(KST)에 자동으로 확인해 슬랙으로 보냅니다.</div>
 
       <div class="row" style="margin-top:16px;">
         <input type="text" id="kwInput" placeholder="예: 수원한방병원 추천" onkeydown="if(event.key==='Enter')addKeyword()">
@@ -114,7 +117,10 @@ details.hist-item summary .muted { font-weight: 400; color: #888; }
     </div>
 
     <div class="card">
-      <label class="lbl">실행 히스토리 (최근 30회)</label>
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <label class="lbl" style="margin-bottom:0;">실행 히스토리 (최근 30회)</label>
+        <button class="del" style="background:none; color:#c62828; font-size:.8rem; font-weight:600; padding:4px 8px;" onclick="clearHistory()">히스토리 초기화</button>
+      </div>
       <div id="historyList"></div>
       <div class="empty" id="historyEmpty" style="display:none;">아직 실행 기록이 없습니다.</div>
     </div>
@@ -148,7 +154,7 @@ async function loadMonitors() {
       el.innerHTML = `
         <div>
           <span class="name">${esc(m.name)}${slackBadge}</span>
-          <div class="meta">키워드 ${m.keyword_count}개 · ${lastLine}</div>
+          <div class="meta">매일 ${esc(m.schedule_time)} · 키워드 ${m.keyword_count}개 · ${lastLine}</div>
         </div>
         <button class="del" onclick="event.preventDefault(); deleteMonitor('${m.id}', '${esc(m.name).replace(/'/g,"\\'")}')">삭제</button>
       `;
@@ -165,12 +171,13 @@ async function loadMonitors() {
 async function createMonitor() {
   const nameInput = document.getElementById('newMonName');
   const webhookInput = document.getElementById('newMonWebhook');
+  const timeInput = document.getElementById('newMonTime');
   const name = nameInput.value.trim();
   if (!name) { alert('모니터 이름을 입력하세요.'); return; }
   const res = await fetch('/api/monitors', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, slack_webhook_url: webhookInput.value.trim() }),
+    body: JSON.stringify({ name, slack_webhook_url: webhookInput.value.trim(), schedule_time: timeInput.value || '10:00' }),
   });
   const data = await res.json();
   if (!res.ok) { alert(data.error || '생성 실패'); return; }
@@ -251,12 +258,23 @@ async function addBulkKeywords() {
 }
 
 async function saveWebhook() {
-  const input = document.getElementById('webhookInput');
+  const webhookInput = document.getElementById('webhookInput');
+  const scheduleInput = document.getElementById('scheduleInput');
   await fetch(`/api/monitors/${currentMonitorId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ slack_webhook_url: input.value.trim() }),
+    body: JSON.stringify({
+      slack_webhook_url: webhookInput.value.trim(),
+      schedule_time: scheduleInput.value || '10:00',
+    }),
   });
+  loadMonitorDetail();
+  loadMonitors();
+}
+
+async function clearHistory() {
+  if (!confirm('이 모니터의 실행 히스토리를 모두 삭제하시겠습니까? 되돌릴 수 없습니다.')) return;
+  await fetch(`/api/monitors/${currentMonitorId}/history`, { method: 'DELETE' });
   loadMonitorDetail();
   loadMonitors();
 }
@@ -336,13 +354,12 @@ async function loadMonitorDetail() {
     ? `슬랙 연동: <b>${m.has_own_webhook ? '이 모니터 전용 채널' : '기본 채널(SLACK_WEBHOOK_URL)'}</b>`
     : '슬랙 연동: <b>미설정</b> — 아래에 웹훅 URL을 등록하세요.';
   document.getElementById('webhookInput').value = m.slack_webhook_url || '';
+  document.getElementById('scheduleInput').value = m.schedule_time || '10:00';
 
   const hRes = await fetch(`/api/monitors/${currentMonitorId}/history`);
   const hData = await hRes.json();
   renderHistory(hData.history || []);
-  if (hData.history && hData.history.length) {
-    renderResults(hData.history[0].results || []);
-  }
+  renderResults((hData.history && hData.history.length) ? (hData.history[0].results || []) : []);
 }
 
 let timer = null;

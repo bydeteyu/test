@@ -11,8 +11,10 @@
 저메모리 인스턴스에서) 메모리 부족으로 죽을 위험이 커지고, 네이버
 쪽에서 짧은 시간에 몰린 요청을 차단할 위험도 커지기 때문. 키워드가
 많으면 그만큼 전체 실행 시간이 길어지는 건 감수한다. 일시적인 실패는
-바로 포기하지 않고 재시도한다. 모니터가 여러 개일 때도 마찬가지로
-모니터끼리도 동시에 돌리지 않고 하나씩 처리한다.
+바로 포기하지 않고 재시도한다. 모니터는 각자 자기 스케줄(app.py에
+모니터별 cron job으로 등록됨)에 맞춰 따로 실행되지만, 두 모니터의
+스케줄이 겹치더라도 실제로 동시에 돌지 않도록 app.py 쪽에서 전역
+락으로 직렬화한다.
 
 주의: '통합검색'에서 실제로 노출되는 카페글만 뽑는 것이지, 블로그/뉴스
 등과 뒤섞인 정확한 '몇 번째 노출'인지까지는 계산하지 않는다 — 노출
@@ -32,7 +34,6 @@ KST = ZoneInfo("Asia/Seoul")
 MAX_ATTEMPTS = 3           # 키워드 하나당 최대 시도 횟수
 RETRY_DELAY_SECONDS = 8    # 재시도 전 대기
 BETWEEN_KEYWORD_DELAY_SECONDS = 3   # 키워드 사이 대기 (네이버 차단/서버 부하 방지)
-BETWEEN_MONITOR_DELAY_SECONDS = 5   # 모니터 사이 대기
 
 
 def _check_keyword(keyword: str) -> dict:
@@ -90,13 +91,3 @@ def run_alert_check(monitor: dict, keywords: list[str] | None = None, notify: bo
 
     monitor_store.append_history(monitor["id"], summary)
     return summary
-
-
-def run_all_monitors(notify: bool = True) -> None:
-    """등록된 모든 모니터를 하나씩 순차 확인 (매일 자동 실행용)."""
-    monitors = monitor_store.list_monitors()
-    for i, m in enumerate(monitors):
-        if m.get("keywords"):
-            run_alert_check(m, notify=notify)
-        if i < len(monitors) - 1:
-            time.sleep(BETWEEN_MONITOR_DELAY_SECONDS)

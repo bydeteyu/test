@@ -96,9 +96,17 @@ def _read_monitors() -> list[dict]:
         return []
 
 
+def _atomic_write(path: Path, text: str):
+    """임시 파일에 쓰고 os.replace로 교체 — 쓰는 도중 프로세스가 죽어도(메모리
+    부족으로 강제 종료되는 경우 등) 원본 파일이 반쯤 쓰인 채로 깨지지 않는다."""
+    tmp_path = path.with_suffix(path.suffix + f".tmp{os.getpid()}")
+    tmp_path.write_text(text, encoding="utf-8")
+    os.replace(tmp_path, path)
+
+
 def _write_monitors(monitors: list[dict]):
     _ensure_dirs()
-    MONITORS_FILE.write_text(json.dumps(monitors, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write(MONITORS_FILE, json.dumps(monitors, ensure_ascii=False, indent=2))
 
 
 def list_monitors() -> list[dict]:
@@ -220,9 +228,7 @@ def _read_history(monitor_id: str) -> list[dict]:
 
 def _write_history(monitor_id: str, history: list[dict]):
     _ensure_dirs()
-    _history_file(monitor_id).write_text(
-        json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    _atomic_write(_history_file(monitor_id), json.dumps(history, ensure_ascii=False, indent=2))
 
 
 def append_history(monitor_id: str, run_summary: dict) -> None:

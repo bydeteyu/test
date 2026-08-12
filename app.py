@@ -60,12 +60,19 @@ def _monitor_job_id(monitor_id):
     return f"monitor_{monitor_id}"
 
 
+RUN_LOCK_TIMEOUT = 600  # 초. 이전 실행이 이보다 오래 안 끝나면(어딘가 멈춘 것으로 보고) 포기하고 넘어간다
+
+
 def _run_scheduled_monitor(monitor_id):
     m = monitor_store.get_monitor(monitor_id)
     if not m or not m.get("keywords"):
         return
-    with _run_lock:
+    if not _run_lock.acquire(timeout=RUN_LOCK_TIMEOUT):
+        return  # 다른 실행이 너무 오래 걸리고 있음 — 이번 회차는 건너뜀 (스레드가 무한정 쌓이는 것 방지)
+    try:
         run_alert_check(m, notify=True)
+    finally:
+        _run_lock.release()
 
 
 def _schedule_monitor(monitor):
@@ -504,8 +511,13 @@ def _run_manual_alert(job_id, monitor, keywords):
     def _progress(done, total):
         JOBS[job_id].update({"done_count": done, "total": total})
 
-    with _run_lock:
+    if not _run_lock.acquire(timeout=RUN_LOCK_TIMEOUT):
+        JOBS[job_id] = {"status": "error", "error": "다른 모니터 확인이 너무 오래 걸리고 있어 이번 요청은 취소했습니다. 잠시 후 다시 시도해주세요."}
+        return
+    try:
         result = run_alert_check(monitor, keywords, notify=True, progress_cb=_progress)
+    finally:
+        _run_lock.release()
     JOBS[job_id] = {**result, "done_count": len(keywords), "total": len(keywords), "status": "done"}
 
 @app.route("/api/monitors/<monitor_id>/run-now", methods=["POST"])

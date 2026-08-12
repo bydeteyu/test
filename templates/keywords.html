@@ -410,6 +410,15 @@ async function pollAlert(job_id) {
     document.getElementById('progressText').textContent = `${done} / ${total}개 확인 (${pct}%)`;
   }
 
+  if (job.status === 'error') {
+    clearInterval(timer);
+    document.getElementById('runBtn').disabled = false;
+    document.getElementById('progressWrap').style.display = 'none';
+    const status = document.getElementById('status');
+    status.className = 'sbar error';
+    status.textContent = '오류: ' + (job.error || '알 수 없는 오류');
+    return;
+  }
   if (job.status !== 'done') return;
   clearInterval(timer);
   document.getElementById('runBtn').disabled = false;

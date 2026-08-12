@@ -11,6 +11,7 @@
 
 import os
 import csv
+import re
 import uuid
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -522,6 +523,27 @@ def api_monitor_history(monitor_id):
         "history": monitor_store.get_history(monitor_id),
         "next_run_kst": f"매일 {m.get('schedule_time') or monitor_store.DEFAULT_SCHEDULE_TIME} (Asia/Seoul)",
     })
+
+@app.route("/api/monitors/<monitor_id>/history/download")
+def api_monitor_history_download(monitor_id):
+    m = _get_monitor_or_404(monitor_id)
+    si = StringIO()
+    w = csv.writer(si)
+    w.writerow(["실행일시", "키워드", "노출여부", "제목", "카페이름", "작성일", "링크", "오류"])
+    for run in monitor_store.get_history(monitor_id):
+        for r in run["results"]:
+            if r.get("error"):
+                w.writerow([run["ran_at"], r["keyword"], "확인실패", "", "", "", "", r["error"]])
+            elif not r["posts"]:
+                w.writerow([run["ran_at"], r["keyword"], "노출없음", "", "", "", "", ""])
+            else:
+                for p in r["posts"]:
+                    w.writerow([run["ran_at"], r["keyword"], "노출", p["제목"], p["카페이름"], p.get("작성일", ""), p["링크"], ""])
+    output = make_response(si.getvalue().encode("utf-8-sig"))
+    safe_name = re.sub(r"[^\w가-힣]+", "_", m["name"]).strip("_") or monitor_id
+    output.headers["Content-Disposition"] = f"attachment; filename=alert_history_{safe_name}.csv"
+    output.headers["Content-Type"] = "text/csv; charset=utf-8"
+    return output
 
 
 if __name__ == "__main__":

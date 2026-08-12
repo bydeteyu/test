@@ -117,9 +117,12 @@ details.hist-item summary .muted { font-weight: 400; color: #888; }
     </div>
 
     <div class="card">
-      <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
         <label class="lbl" style="margin-bottom:0;">실행 히스토리 (최근 30회)</label>
-        <button class="del" style="background:none; color:#c62828; font-size:.8rem; font-weight:600; padding:4px 8px;" onclick="clearHistory()">히스토리 초기화</button>
+        <div style="display:flex; gap:6px;">
+          <a class="dl-btn" id="historyDlBtn" href="#" style="display:inline-flex; align-items:center; gap:5px; background:#1976d2; color:#fff; font-size:.78rem; font-weight:600; padding:5px 13px; border-radius:6px; text-decoration:none;">&#8595; 엑셀(CSV) 다운로드</a>
+          <button class="del" style="background:none; color:#c62828; font-size:.8rem; font-weight:600; padding:4px 8px;" onclick="clearHistory()">히스토리 초기화</button>
+        </div>
       </div>
       <div id="historyList"></div>
       <div class="empty" id="historyEmpty" style="display:none;">아직 실행 기록이 없습니다.</div>
@@ -300,7 +303,8 @@ function renderResults(results) {
       ul.className = 'posts';
       r.posts.forEach(p => {
         const li = document.createElement('li');
-        li.innerHTML = `<a href="${esc(p['링크'])}" target="_blank">${esc(p['제목'])}</a> (${esc(p['카페이름'])})`;
+        const dateNote = p['작성일'] ? ` · ${esc(p['작성일'])}` : '';
+        li.innerHTML = `<a href="${esc(p['링크'])}" target="_blank">${esc(p['제목'])}</a> (${esc(p['카페이름'])}${dateNote})`;
         ul.appendChild(li);
       });
       block.appendChild(ul);
@@ -332,7 +336,10 @@ function renderHistory(history) {
       } else if (!r.posts.length) {
         row.innerHTML = `⬜ <b>${esc(r.keyword)}</b> — 노출 없음`;
       } else {
-        const links = r.posts.map(p => `<a href="${esc(p['링크'])}" target="_blank" style="color:#1976d2;text-decoration:none;">${esc(p['제목'])}</a> (${esc(p['카페이름'])})`).join('<br>');
+        const links = r.posts.map(p => {
+          const dateNote = p['작성일'] ? ` · ${esc(p['작성일'])}` : '';
+          return `<a href="${esc(p['링크'])}" target="_blank" style="color:#1976d2;text-decoration:none;">${esc(p['제목'])}</a> (${esc(p['카페이름'])}${dateNote})`;
+        }).join('<br>');
         row.innerHTML = `✅ <b>${esc(r.keyword)}</b> — ${r.posts.length}건<br><span style="margin-left:14px;">${links}</span>`;
       }
       body.appendChild(row);
@@ -355,6 +362,7 @@ async function loadMonitorDetail() {
     : '슬랙 연동: <b>미설정</b> — 아래에 웹훅 URL을 등록하세요.';
   document.getElementById('webhookInput').value = m.slack_webhook_url || '';
   document.getElementById('scheduleInput').value = m.schedule_time || '10:00';
+  document.getElementById('historyDlBtn').href = `/api/monitors/${currentMonitorId}/history/download`;
 
   const hRes = await fetch(`/api/monitors/${currentMonitorId}/history`);
   const hData = await hRes.json();

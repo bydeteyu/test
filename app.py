@@ -17,6 +17,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import StringIO
 from pathlib import Path
+from urllib.parse import quote
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -37,6 +38,18 @@ OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 JOBS: dict[str, dict] = {}
 COLLECT_WORKERS = 2  # 동시 처리 키워드 수 (스레드 한계 고려)
+
+
+def _attachment_header(filename: str) -> str:
+    """한글 등 비ASCII 파일명이 포함된 Content-Disposition 헤더를 안전하게 만든다.
+
+    HTTP 헤더는 latin-1만 담을 수 있어서, 한글을 filename=에 그대로 넣으면
+    서버가 응답을 보내는 시점에 UnicodeEncodeError로 죽는다(요청 자체가
+    아무 응답 없이 실패해서 클릭해도 반응이 없는 것처럼 보임). RFC 6266대로
+    ASCII 대체 이름 + filename*=UTF-8''(퍼센트 인코딩) 둘 다 넣는다.
+    """
+    ascii_fallback = re.sub(r"[^\w.-]", "_", filename.encode("ascii", "ignore").decode("ascii")) or "download"
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
 
 # 모니터 실행은 스케줄이든 수동("지금 바로 확인")이든 이 락을 거쳐야 한다 —
 # 시간대가 다른 모니터끼리도 우연히 겹치면 동시에 Playwright를 띄우지 않도록.
@@ -541,7 +554,7 @@ def api_monitor_history_download(monitor_id):
                     w.writerow([run["ran_at"], r["keyword"], "노출", p["제목"], p["카페이름"], p.get("작성일", ""), p["링크"], ""])
     output = make_response(si.getvalue().encode("utf-8-sig"))
     safe_name = re.sub(r"[^\w가-힣]+", "_", m["name"]).strip("_") or monitor_id
-    output.headers["Content-Disposition"] = f"attachment; filename=alert_history_{safe_name}.csv"
+    output.headers["Content-Disposition"] = _attachment_header(f"alert_history_{safe_name}.csv")
     output.headers["Content-Type"] = "text/csv; charset=utf-8"
     return output
 

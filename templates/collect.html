@@ -41,6 +41,7 @@ td a:hover { text-decoration: underline; }
 .progress-wrap { margin-top: 8px; background: #e0e0e0; border-radius: 6px; height: 8px; overflow: hidden; }
 .progress-bar { height: 100%; background: #03c75a; border-radius: 6px; transition: width .4s; }
 .progress-text { font-size: .78rem; color: #666; margin-top: 4px; }
+.date-fresh { color: #d32f2f; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -65,6 +66,34 @@ td a:hover { text-decoration: underline; }
 <script>
 let timer = null;
 function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// 작성일이 1주일 이내(오늘 포함)면 true. "3일 전"/"1주 전" 같은 상대 표현과
+// "2026.07.15." 같은 절대 날짜 둘 다 처리한다.
+function isWithinAWeek(dateStr) {
+  if (!dateStr) return false;
+  const s = dateStr.trim();
+  if (/^(방금|어제|그저께)/.test(s)) return true;
+  let m = s.match(/^(\d+)\s*분\s*전/); if (m) return true;
+  m = s.match(/^(\d+)\s*시간\s*전/); if (m) return true;
+  m = s.match(/^(\d+)\s*일\s*전/); if (m) return parseInt(m[1], 10) <= 7;
+  m = s.match(/^(\d+)\s*주\s*전/); if (m) return parseInt(m[1], 10) <= 1;
+  m = s.match(/^(\d+)\s*(개월|달|년)\s*전/); if (m) return false;
+  m = s.match(/^(\d{4})\.\s?(\d{1,2})\.\s?(\d{1,2})\.?/);
+  if (m) {
+    const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = (todayMidnight - d) / 86400000;
+    return diffDays >= -1 && diffDays <= 7;
+  }
+  return false;
+}
+
+function dateHtml(dateStr) {
+  if (!dateStr) return '-';
+  const cls = isWithinAWeek(dateStr) ? ' class="date-fresh"' : '';
+  return `<span${cls}>${esc(dateStr)}</span>`;
+}
 function setStatus(t, m) {
   const el = document.getElementById('status');
   el.className = 'sbar ' + t; el.style.display = 'block';
@@ -123,7 +152,7 @@ async function poll(job_id) {
   wrap.innerHTML = '';
   job.results.forEach(r => {
     const rows = r.posts.length===0 ? '<tr><td colspan="5" class="empty">결과 없음</td></tr>'
-      : r.posts.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(p['제목'])+'</td><td>'+esc(p['카페이름'])+'</td><td>'+esc(p['작성일']||'-')+'</td><td><a href="'+esc(p['링크'])+'" target="_blank">바로가기</a></td></tr>').join('');
+      : r.posts.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(p['제목'])+'</td><td>'+esc(p['카페이름'])+'</td><td>'+dateHtml(p['작성일'])+'</td><td><a href="'+esc(p['링크'])+'" target="_blank">바로가기</a></td></tr>').join('');
     const b = document.createElement('div'); b.className='card';
     b.innerHTML = '<div class="block-title"><span>'+esc(r.keyword)+'<span class="badge">'+r.posts.length+'건</span></span></div><table><thead><tr><th>#</th><th>제목</th><th>카페</th><th>작성일</th><th>링크</th></tr></thead><tbody>'+rows+'</tbody></table>';
     wrap.appendChild(b);

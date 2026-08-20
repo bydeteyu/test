@@ -65,6 +65,7 @@ button.bulk-add:hover { background: #02a84b; }
 details.hist-item { border: 1px solid #eee; border-radius: 8px; padding: 8px 12px; margin-top: 8px; }
 details.hist-item summary { cursor: pointer; font-size: .85rem; font-weight: 600; }
 details.hist-item summary .muted { font-weight: 400; color: #888; }
+.date-fresh { color: #d32f2f; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -132,6 +133,34 @@ details.hist-item summary .muted { font-weight: 400; color: #888; }
 
 <script>
 function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// 작성일이 1주일 이내(오늘 포함)면 true. "3일 전"/"1주 전" 같은 상대 표현과
+// "2026.07.15." 같은 절대 날짜 둘 다 처리한다.
+function isWithinAWeek(dateStr) {
+  if (!dateStr) return false;
+  const s = dateStr.trim();
+  if (/^(방금|어제|그저께)/.test(s)) return true;
+  let m = s.match(/^(\d+)\s*분\s*전/); if (m) return true;
+  m = s.match(/^(\d+)\s*시간\s*전/); if (m) return true;
+  m = s.match(/^(\d+)\s*일\s*전/); if (m) return parseInt(m[1], 10) <= 7;
+  m = s.match(/^(\d+)\s*주\s*전/); if (m) return parseInt(m[1], 10) <= 1;
+  m = s.match(/^(\d+)\s*(개월|달|년)\s*전/); if (m) return false;
+  m = s.match(/^(\d{4})\.\s?(\d{1,2})\.\s?(\d{1,2})\.?/);
+  if (m) {
+    const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = (todayMidnight - d) / 86400000;
+    return diffDays >= -1 && diffDays <= 7;
+  }
+  return false;
+}
+
+function dateHtml(dateStr) {
+  if (!dateStr) return '';
+  const cls = isWithinAWeek(dateStr) ? ' class="date-fresh"' : '';
+  return `<span${cls}>${esc(dateStr)}</span>`;
+}
 
 const params = new URLSearchParams(location.search);
 let currentMonitorId = params.get('monitor') || null;
@@ -303,7 +332,7 @@ function renderResults(results) {
       ul.className = 'posts';
       r.posts.forEach(p => {
         const li = document.createElement('li');
-        const dateNote = p['작성일'] ? ` · ${esc(p['작성일'])}` : '';
+        const dateNote = p['작성일'] ? ` · ${dateHtml(p['작성일'])}` : '';
         li.innerHTML = `<a href="${esc(p['링크'])}" target="_blank">${esc(p['제목'])}</a> (${esc(p['카페이름'])}${dateNote})`;
         ul.appendChild(li);
       });
@@ -337,7 +366,7 @@ function renderHistory(history) {
         row.innerHTML = `⬜ <b>${esc(r.keyword)}</b> — 노출 없음`;
       } else {
         const links = r.posts.map(p => {
-          const dateNote = p['작성일'] ? ` · ${esc(p['작성일'])}` : '';
+          const dateNote = p['작성일'] ? ` · ${dateHtml(p['작성일'])}` : '';
           return `<a href="${esc(p['링크'])}" target="_blank" style="color:#1976d2;text-decoration:none;">${esc(p['제목'])}</a> (${esc(p['카페이름'])}${dateNote})`;
         }).join('<br>');
         row.innerHTML = `✅ <b>${esc(r.keyword)}</b> — ${r.posts.length}건<br><span style="margin-left:14px;">${links}</span>`;

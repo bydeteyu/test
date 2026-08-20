@@ -136,29 +136,22 @@ function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;'
 
 // 작성일이 1주일 이내(오늘 포함)면 true. "3일 전"/"1주 전" 같은 상대 표현과
 // "2026.07.15." 같은 절대 날짜 둘 다 처리한다.
-function isWithinAWeek(dateStr) {
+// 네이버는 대략 1주일 이내인 글만 "N일 전"(또는 그보다 짧은 단위)으로 표시하고,
+// 그보다 오래되면 "N주 전"/"N개월 전"/절대 날짜로 자동 전환한다. 그래서 날짜를
+// 직접 계산하지 않고 "며칠 전" 형식인지만 보면 된다 — "N일 전"까지만 빨간색.
+function isFreshDate(dateStr) {
   if (!dateStr) return false;
   const s = dateStr.trim();
   if (/^(방금|어제|그저께)/.test(s)) return true;
-  let m = s.match(/^(\d+)\s*분\s*전/); if (m) return true;
-  m = s.match(/^(\d+)\s*시간\s*전/); if (m) return true;
-  m = s.match(/^(\d+)\s*일\s*전/); if (m) return parseInt(m[1], 10) <= 7;
-  m = s.match(/^(\d+)\s*주\s*전/); if (m) return parseInt(m[1], 10) <= 1;
-  m = s.match(/^(\d+)\s*(개월|달|년)\s*전/); if (m) return false;
-  m = s.match(/^(\d{4})\.\s?(\d{1,2})\.\s?(\d{1,2})\.?/);
-  if (m) {
-    const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
-    const now = new Date();
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const diffDays = (todayMidnight - d) / 86400000;
-    return diffDays >= -1 && diffDays <= 7;
-  }
+  if (/^\d+\s*분\s*전/.test(s)) return true;
+  if (/^\d+\s*시간\s*전/.test(s)) return true;
+  if (/^\d+\s*일\s*전/.test(s)) return true;
   return false;
 }
 
 function dateHtml(dateStr) {
   if (!dateStr) return '';
-  const cls = isWithinAWeek(dateStr) ? ' class="date-fresh"' : '';
+  const cls = isFreshDate(dateStr) ? ' class="date-fresh"' : '';
   return `<span${cls}>${esc(dateStr)}</span>`;
 }
 

@@ -201,7 +201,10 @@ async function loadMonitors() {
           <span class="name">${esc(m.name)}${slackBadge}</span>
           <div class="meta">${esc(m.schedule_label || ('매일 '+m.schedule_time))} · 키워드 ${m.keyword_count}개 · ${lastLine}</div>
         </div>
-        <button class="del" onclick="event.preventDefault(); deleteMonitor('${m.id}', '${esc(m.name).replace(/'/g,"\\'")}')">삭제</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="backup" onclick="event.preventDefault(); event.stopPropagation(); backupMonitor('${m.id}')" style="background:#1976d2; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:.8rem; font-weight:600; cursor:pointer;">백업</button>
+          <button class="del" onclick="event.preventDefault(); event.stopPropagation(); deleteMonitor('${m.id}', '${esc(m.name).replace(/'/g,"\\'")}')">삭제</button>
+        </div>
       `;
       list.appendChild(el);
     });
@@ -240,6 +243,11 @@ async function deleteMonitor(id, name) {
   } else {
     loadMonitors();
   }
+}
+
+function backupMonitor(id) {
+  // 실행 히스토리(최근 30회) 엑셀(CSV) 다운로드
+  window.location = `/api/monitors/${encodeURIComponent(id)}/history/download`;
 }
 
 async function loadKeywords() {

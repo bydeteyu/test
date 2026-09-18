@@ -37,6 +37,8 @@ LEGACY_LAST_RUN_FILE = DATA_DIR / "alert_last_run.json"
 
 MAX_HISTORY = 30
 DEFAULT_SCHEDULE_TIME = "10:00"
+DEFAULT_SCHEDULE_DAY = "daily"          # "daily" 또는 요일(mon~sun)
+VALID_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 _lock = threading.Lock()
 
@@ -51,6 +53,17 @@ def normalize_schedule_time(value: str) -> str:
     except (ValueError, AttributeError):
         pass
     return DEFAULT_SCHEDULE_TIME
+
+
+def normalize_schedule_day(value: str) -> str:
+    """'daily' 또는 요일(mon~sun)만 허용. 그 외에는 daily."""
+    try:
+        v = value.strip().lower()
+    except AttributeError:
+        return DEFAULT_SCHEDULE_DAY
+    if v in VALID_DAYS or v == "daily":
+        return v
+    return DEFAULT_SCHEDULE_DAY
 
 
 def _ensure_dirs():
@@ -73,6 +86,7 @@ def _migrate_legacy_if_needed():
         "slack_webhook_url": "",  # 비어있으면 전역 SLACK_WEBHOOK_URL로 폴백 (기존 동작 유지)
         "keywords": legacy_keywords,
         "schedule_time": DEFAULT_SCHEDULE_TIME,  # 구버전은 항상 10시 고정이었음
+        "schedule_day": DEFAULT_SCHEDULE_DAY,
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     _write_monitors([monitor])
@@ -122,7 +136,7 @@ def get_monitor(monitor_id: str) -> dict | None:
         return None
 
 
-def create_monitor(name: str, slack_webhook_url: str = "", schedule_time: str = DEFAULT_SCHEDULE_TIME) -> dict:
+def create_monitor(name: str, slack_webhook_url: str = "", schedule_time: str = DEFAULT_SCHEDULE_TIME, schedule_day: str = DEFAULT_SCHEDULE_DAY) -> dict:
     name = name.strip() or "새 모니터"
     monitor = {
         "id": uuid.uuid4().hex[:12],
@@ -130,6 +144,7 @@ def create_monitor(name: str, slack_webhook_url: str = "", schedule_time: str = 
         "slack_webhook_url": slack_webhook_url.strip(),
         "keywords": [],
         "schedule_time": normalize_schedule_time(schedule_time),
+        "schedule_day": normalize_schedule_day(schedule_day),
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
     with _lock:
@@ -144,6 +159,7 @@ def update_monitor(
     name: str | None = None,
     slack_webhook_url: str | None = None,
     schedule_time: str | None = None,
+    schedule_day: str | None = None,
 ) -> dict | None:
     with _lock:
         monitors = _read_monitors()
@@ -156,6 +172,8 @@ def update_monitor(
                     m["slack_webhook_url"] = slack_webhook_url.strip()
                 if schedule_time is not None:
                     m["schedule_time"] = normalize_schedule_time(schedule_time)
+                if schedule_day is not None:
+                    m["schedule_day"] = normalize_schedule_day(schedule_day)
                 updated = m
                 break
         if updated:

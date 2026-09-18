@@ -28,7 +28,7 @@ import monitor_store
 from alert_job import KST, run_alert_check
 from alert_notifier import resolve_webhook_url
 from naver_autocomplete import run_autocomplete
-from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined
+from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined, build_excel_bytes
 from naver_cafe_tracker import run_tracker
 from naver_rank_search import run_rank_search
 from naver_keywordtool import run_keywordtool, credentials_ready
@@ -78,9 +78,11 @@ def _run_scheduled_monitor(monitor_id):
 def _schedule_monitor(monitor):
     schedule_time = monitor.get("schedule_time") or monitor_store.DEFAULT_SCHEDULE_TIME
     hour, minute = (int(x) for x in schedule_time.split(":"))
+    schedule_day = monitor.get("schedule_day") or monitor_store.DEFAULT_SCHEDULE_DAY
+    day_of_week = "*" if schedule_day == "daily" else schedule_day
     _scheduler.add_job(
         _run_scheduled_monitor,
-        CronTrigger(hour=hour, minute=minute, timezone=KST),
+        CronTrigger(day_of_week=day_of_week, hour=hour, minute=minute, timezone=KST),
         id=_monitor_job_id(monitor["id"]),
         replace_existing=True,
         args=[monitor["id"]],
@@ -434,7 +436,17 @@ def api_autocomplete_download():
     return output
 
 
-# ── 카페글 노출 알림 (매일 10시 자동 확인, 모니터 여러 개 가능) ──
+# ── 카페글 노출 알림 (모니터별 스케줄 자동 확인, 모니터 여러 개 가능) ──
+_DAY_LABELS = {
+    "daily": "매일", "mon": "매주 월요일", "tue": "매주 화요일", "wed": "매주 수요일",
+    "thu": "매주 목요일", "fri": "매주 금요일", "sat": "매주 토요일", "sun": "매주 일요일",
+}
+
+def _schedule_label(m):
+    day = m.get("schedule_day") or monitor_store.DEFAULT_SCHEDULE_DAY
+    t = m.get("schedule_time") or monitor_store.DEFAULT_SCHEDULE_TIME
+    return f"{_DAY_LABELS.get(day, '매일')} {t}"
+
 def _monitor_summary(m):
     last = monitor_store.get_latest_run(m["id"])
     return {
@@ -444,6 +456,8 @@ def _monitor_summary(m):
         "has_own_webhook": bool(m.get("slack_webhook_url", "").strip()),
         "slack_configured": bool(resolve_webhook_url(m.get("slack_webhook_url", ""))),
         "schedule_time": m.get("schedule_time") or monitor_store.DEFAULT_SCHEDULE_TIME,
+        "schedule_day": m.get("schedule_day") or monitor_store.DEFAULT_SCHEDULE_DAY,
+        "schedule_label": _schedule_label(m),
         "keyword_count": len(m.get("keywords", [])),
         "last_run": {"ran_at": last["ran_at"], "total_hits": last["total_hits"]} if last else None,
     }
@@ -462,7 +476,7 @@ def api_monitors():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "모니터 이름을 입력하세요."}), 400
-    m = monitor_store.create_monitor(name, data.get("slack_webhook_url", ""), data.get("schedule_time", monitor_store.DEFAULT_SCHEDULE_TIME))
+    m = monitor_store.create_monitor(name, data.get("slack_webhook_url", ""), data.get("schedule_time", monitor_store.DEFAULT_SCHEDULE_TIME), data.get("schedule_day", monitor_store.DEFAULT_SCHEDULE_DAY))
     _schedule_monitor(m)
     return jsonify({"monitor": _monitor_summary(m)})
 
@@ -474,7 +488,7 @@ def api_monitor_detail(monitor_id):
         _unschedule_monitor(monitor_id)
         return jsonify({"ok": True})
     data = request.get_json(force=True)
-    m = monitor_store.update_monitor(monitor_id, data.get("name"), data.get("slack_webhook_url"), data.get("schedule_time"))
+    m = monitor_store.update_monitor(monitor_id, data.get("name"), data.get("slack_webhook_url"), data.get("schedule_time"), data.get("schedule_day"))
     _schedule_monitor(m)
     return jsonify({"monitor": _monitor_summary(m)})
 
@@ -546,8 +560,32 @@ def api_monitor_history(monitor_id):
         return jsonify({"ok": True})
     return jsonify({
         "history": monitor_store.get_history(monitor_id),
-        "next_run_kst": f"매일 {m.get('schedule_time') or monitor_store.DEFAULT_SCHEDULE_TIME} (Asia/Seoul)",
+        "next_run_kst": f"{_schedule_label(m)} (Asia/Seoul)",
     })
+
+@app.route("/api/monitors/<monitor_id>/run.xlsx")
+def api_monitor_run_excel(monitor_id):
+    """특정 실행 회차(ran_at=ts)의 결과를 엑셀로 다운로드. ts 없으면 최신 회차."""
+    _get_monitor_or_404(monitor_id)
+    ts = request.args.get("ts", "").strip()
+    history = monitor_store.get_history(monitor_id)  # 최신 우선
+    run = None
+    if ts:
+        for r in history:
+            if r.get("ran_at") == ts:
+                run = r
+                break
+    if run is None:
+        run = history[0] if history else None
+    if run is None:
+        abort(404)
+    # results([{keyword, posts, error}]) → 엑셀 (노출된 글만 행으로)
+    xlsx = build_excel_bytes(run.get("results", []))
+    resp = make_response(xlsx)
+    fname = f"노출알림_{re.sub(r'[^0-9]', '', run.get('ran_at', '')) or monitor_id}.xlsx"
+    resp.headers["Content-Disposition"] = _attachment_header(fname)
+    resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return resp
 
 @app.route("/api/monitors/<monitor_id>/history/download")
 def api_monitor_history_download(monitor_id):

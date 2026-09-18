@@ -23,10 +23,11 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import monitor_store
-from alert_notifier import send_slack_digest, resolve_webhook_url
+from alert_notifier import send_slack_digest, resolve_webhook_url, APP_BASE_URL
 from naver_cafe_collector import extract_posts, fetch_html
 
 KST = ZoneInfo("Asia/Seoul")
@@ -93,7 +94,12 @@ def run_alert_check(monitor: dict, keywords: list[str] | None = None, notify: bo
         webhook_url = resolve_webhook_url(monitor.get("slack_webhook_url", ""))
         if webhook_url:
             try:
-                send_slack_digest(monitor["name"], monitor["id"], webhook_url, date_str, results)
+                # 이번 실행 결과 엑셀 다운로드 링크 (ran_at으로 히스토리에서 해당 회차를 찾아 생성)
+                excel_url = (
+                    f"{APP_BASE_URL.rstrip('/')}/api/monitors/{monitor['id']}"
+                    f"/run.xlsx?ts={quote(date_str)}"
+                )
+                send_slack_digest(monitor["name"], monitor["id"], webhook_url, date_str, results, excel_url)
                 summary["notified"] = True
             except Exception as e:
                 summary["notify_error"] = str(e)

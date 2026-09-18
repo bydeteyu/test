@@ -14,14 +14,17 @@ def resolve_webhook_url(monitor_webhook_url: str) -> str:
     return (monitor_webhook_url or "").strip() or DEFAULT_SLACK_WEBHOOK_URL
 
 
-def build_digest_text(monitor_name: str, monitor_id: str, date_str: str, results: list[dict]) -> str:
+def build_digest_text(monitor_name: str, monitor_id: str, date_str: str, results: list[dict], excel_url: str = "") -> str:
     """results: [{'keyword': str, 'posts': [{'제목','카페이름','링크',...}], 'error': str|None}, ...]"""
     total_hits = sum(len(r["posts"]) for r in results if not r.get("error"))
     monitor_url = f"{APP_BASE_URL.rstrip('/')}/keywords?monitor={monitor_id}"
     lines = [
         f"*[{monitor_name}] 네이버 카페글 노출 알림 ({date_str})*",
-        f"총 {len(results)}개 키워드 확인 · {total_hits}건 노출\n",
+        f"총 {len(results)}개 키워드 확인 · {total_hits}건 노출",
     ]
+    if excel_url:
+        lines.append(f"📎 <{excel_url}|이번 결과 엑셀 다운로드>")
+    lines.append("")
 
     for r in results:
         kw = r["keyword"]
@@ -41,10 +44,10 @@ def build_digest_text(monitor_name: str, monitor_id: str, date_str: str, results
     return "\n".join(lines)
 
 
-def send_slack_digest(monitor_name: str, monitor_id: str, monitor_webhook_url: str, date_str: str, results: list[dict]) -> None:
+def send_slack_digest(monitor_name: str, monitor_id: str, monitor_webhook_url: str, date_str: str, results: list[dict], excel_url: str = "") -> None:
     webhook_url = resolve_webhook_url(monitor_webhook_url)
     if not webhook_url:
         raise RuntimeError("이 모니터에 슬랙 웹훅이 설정되어 있지 않고, 기본 SLACK_WEBHOOK_URL도 없습니다.")
-    text = build_digest_text(monitor_name, monitor_id, date_str, results)
+    text = build_digest_text(monitor_name, monitor_id, date_str, results, excel_url)
     resp = requests.post(webhook_url, json={"text": text}, timeout=10)
     resp.raise_for_status()

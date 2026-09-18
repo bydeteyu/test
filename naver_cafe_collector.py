@@ -221,14 +221,11 @@ def save_csv(keyword: str, posts: list[dict], out_dir: Path) -> Path:
     return path
 
 
-def save_excel_combined(results: list[dict], out_dir: Path) -> Path:
-    """모든 키워드 결과를 시트 하나짜리 엑셀로 저장. 키워드 열 포함."""
+def _build_results_workbook(results: list[dict]):
+    """results([{'keyword','posts':[{'제목','카페이름','작성일','링크'}]}])를 워크북으로."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"카페글_수집_{datetime.now():%Y%m%d_%H%M}.xlsx"
 
     wb = Workbook()
     ws = wb.active
@@ -247,7 +244,7 @@ def save_excel_combined(results: list[dict], out_dir: Path) -> Path:
     row = 2
     for r in results:
         kw = r["keyword"]
-        for p in r["posts"]:
+        for p in r.get("posts", []):
             ws.cell(row=row, column=1, value=kw)
             ws.cell(row=row, column=2, value=p["제목"])
             ws.cell(row=row, column=3, value=p["카페이름"])
@@ -258,13 +255,26 @@ def save_excel_combined(results: list[dict], out_dir: Path) -> Path:
             cell.font = Font(color="1565C0", underline="single")
             row += 1
 
-    # 열 너비 자동 조정
     col_widths = [20, 50, 30, 16, 60]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
+    return wb
 
-    wb.save(path)
+
+def save_excel_combined(results: list[dict], out_dir: Path) -> Path:
+    """모든 키워드 결과를 시트 하나짜리 엑셀로 저장. 키워드 열 포함."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"카페글_수집_{datetime.now():%Y%m%d_%H%M}.xlsx"
+    _build_results_workbook(results).save(path)
     return path
+
+
+def build_excel_bytes(results: list[dict]) -> bytes:
+    """results를 엑셀 바이트로 만들어 반환 (파일 저장 없이 다운로드 응답용)."""
+    from io import BytesIO
+    buf = BytesIO()
+    _build_results_workbook(results).save(buf)
+    return buf.getvalue()
 
 
 def get_keywords(args_keywords: list[str]) -> list[str]:

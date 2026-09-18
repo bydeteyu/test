@@ -372,6 +372,15 @@ function renderHistory(history) {
     d.innerHTML = `<summary>${esc(run.ran_at)} <span class="muted">· 키워드 ${run.keywords_checked}개 · 노출 ${run.total_hits}건${notifyNote ? ' · ' + notifyNote : ''}</span></summary>`;
     const body = document.createElement('div');
     body.style.marginTop = '8px';
+    const tsEnc = encodeURIComponent(run.ran_at);
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex; gap:8px; margin-bottom:6px; flex-wrap:wrap;';
+    bar.innerHTML =
+      `<a href="/api/monitors/${currentMonitorId}/run.xlsx?ts=${tsEnc}" ` +
+      `style="background:#1a6e3c;color:#fff;font-size:.76rem;font-weight:600;padding:4px 11px;border-radius:6px;text-decoration:none;">&#8595; 엑셀 다운로드</a>` +
+      `<button onclick="resendToSlack('${tsEnc}', this)" ` +
+      `style="background:#4a154b;color:#fff;font-size:.76rem;font-weight:600;padding:4px 11px;border:none;border-radius:6px;cursor:pointer;">슬랙으로 링크 전송</button>`;
+    body.appendChild(bar);
     run.results.forEach(r => {
       const row = document.createElement('div');
       row.style.fontSize = '.83rem';
@@ -392,6 +401,28 @@ function renderHistory(history) {
     d.appendChild(body);
     list.appendChild(d);
   });
+}
+
+async function resendToSlack(tsEnc, btn) {
+  const ts = decodeURIComponent(tsEnc);
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '전송 중…';
+  try {
+    const res = await fetch(`/api/monitors/${currentMonitorId}/history/resend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ts }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '전송 실패');
+    btn.textContent = '✓ 전송됨';
+    btn.style.background = '#2e7d32';
+  } catch (e) {
+    alert('슬랙 전송 실패: ' + e.message);
+    btn.textContent = original;
+    btn.disabled = false;
+  }
 }
 
 async function loadMonitorDetail() {

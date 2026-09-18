@@ -26,7 +26,7 @@ from flask import Flask, render_template, request, jsonify, send_file, abort, ma
 
 import monitor_store
 from alert_job import KST, run_alert_check
-from alert_notifier import resolve_webhook_url
+from alert_notifier import resolve_webhook_url, send_slack_digest, APP_BASE_URL
 from naver_autocomplete import run_autocomplete
 from naver_cafe_collector import fetch_html, extract_posts, save_csv, save_excel_combined, build_excel_bytes
 from naver_cafe_tracker import run_tracker
@@ -586,6 +586,36 @@ def api_monitor_run_excel(monitor_id):
     resp.headers["Content-Disposition"] = _attachment_header(fname)
     resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     return resp
+
+@app.route("/api/monitors/<monitor_id>/history/resend", methods=["POST"])
+def api_monitor_history_resend(monitor_id):
+    """저장된 특정 실행 회차(ran_at=ts)를 재실행 없이 슬랙으로 다시 전송 (엑셀 링크 포함)."""
+    m = _get_monitor_or_404(monitor_id)
+    data = request.get_json(force=True, silent=True) or {}
+    ts = (data.get("ts") or "").strip()
+    history = monitor_store.get_history(monitor_id)  # 최신 우선
+    run = None
+    if ts:
+        run = next((r for r in history if r.get("ran_at") == ts), None)
+    if run is None:
+        run = history[0] if history else None
+    if run is None:
+        return jsonify({"error": "전송할 실행 기록이 없습니다."}), 404
+
+    webhook_url = resolve_webhook_url(m.get("slack_webhook_url", ""))
+    if not webhook_url:
+        return jsonify({"error": "이 모니터에 슬랙 웹훅이 설정되지 않았습니다."}), 400
+
+    ran_at = run.get("ran_at", "")
+    excel_url = (
+        f"{APP_BASE_URL.rstrip('/')}/api/monitors/{monitor_id}"
+        f"/run.xlsx?ts={quote(ran_at)}"
+    )
+    try:
+        send_slack_digest(m["name"], monitor_id, webhook_url, ran_at, run.get("results", []), excel_url)
+    except Exception as e:
+        return jsonify({"error": f"슬랙 전송 실패: {e}"}), 500
+    return jsonify({"ok": True, "ran_at": ran_at})
 
 @app.route("/api/monitors/<monitor_id>/history/download")
 def api_monitor_history_download(monitor_id):

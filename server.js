@@ -43,7 +43,9 @@ function loadDb() {
   if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(seedData(), null, 2));
   }
-  return JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+  const db = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+  if (!db.matches) db.matches = [];
+  return db;
 }
 
 function saveDb(db) {
@@ -128,6 +130,122 @@ app.patch("/api/keywords/:id", (req, res) => {
 app.delete("/api/keywords/:id", (req, res) => {
   const db = loadDb();
   db.keywords = db.keywords.filter((k) => k.id !== req.params.id);
+  saveDb(db);
+  res.json({ ok: true });
+});
+
+// ---- cafe monitor (Naver Search Open API — title/description matches only) ----
+function stripTags(s) {
+  return String(s || "")
+    .replace(/<\/?b>/g, "")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;/g, "'");
+}
+
+async function searchCafeArticles(query) {
+  const clientId = process.env.NAVER_CLIENT_ID;
+  const clientSecret = process.env.NAVER_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    const err = new Error("missing_api_key");
+    err.code = "missing_api_key";
+    throw err;
+  }
+  const url = "https://openapi.naver.com/v1/search/cafearticle.json?display=100&sort=date&query=" + encodeURIComponent(query);
+  const res = await fetch(url, {
+    headers: {
+      "X-Naver-Client-Id": clientId,
+      "X-Naver-Client-Secret": clientSecret
+    }
+  });
+  if (!res.ok) {
+    const err = new Error("naver_api_error_" + res.status);
+    err.code = "naver_api_error";
+    throw err;
+  }
+  const body = await res.json();
+  return (body.items || []).map((item) => ({
+    title: stripTags(item.title),
+    link: item.link,
+    description: stripTags(item.description),
+    cafename: stripTags(item.cafename)
+  }));
+}
+
+app.post("/api/monitor/run", async (req, res) => {
+  const db = loadDb();
+  const { projectId } = req.body || {};
+  const project = db.projects.find((p) => p.id === projectId);
+  if (!project) return res.status(404).json({ error: "not_found" });
+
+  const cafeName = String(project.cafeName || "").trim();
+  const keywords = String(project.watchKeywords || "")
+    .split(/[,\n]/)
+    .map((k) => k.trim())
+    .filter(Boolean);
+
+  if (!cafeName || keywords.length === 0) {
+    return res.status(400).json({ error: "watch_not_configured" });
+  }
+
+  const existingLinks = new Set(db.matches.filter((m) => m.projectId === projectId).map((m) => m.link));
+  const added = [];
+
+  try {
+    for (const keyword of keywords) {
+      const items = await searchCafeArticles(keyword);
+      for (const item of items) {
+        if (!item.cafename || !item.cafename.includes(cafeName)) continue;
+        if (existingLinks.has(item.link)) continue;
+        existingLinks.add(item.link);
+        const match = {
+          id: crypto.randomUUID(),
+          projectId,
+          keyword,
+          title: item.title,
+          description: item.description,
+          link: item.link,
+          cafename: item.cafename,
+          reviewed: false,
+          foundAt: new Date().toISOString()
+        };
+        db.matches.push(match);
+        added.push(match);
+      }
+    }
+  } catch (err) {
+    if (err.code === "missing_api_key") {
+      return res.status(500).json({ error: "missing_api_key", message: "NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 환경 변수가 설정되어 있지 않습니다." });
+    }
+    return res.status(502).json({ error: err.code || "search_failed" });
+  }
+
+  saveDb(db);
+  res.json({ newCount: added.length, matches: added });
+});
+
+app.get("/api/matches", (req, res) => {
+  const db = loadDb();
+  const { projectId } = req.query;
+  const matches = projectId ? db.matches.filter((m) => m.projectId === projectId) : db.matches;
+  matches.sort((a, b) => (b.foundAt || "").localeCompare(a.foundAt || ""));
+  res.json(matches);
+});
+
+app.patch("/api/matches/:id", (req, res) => {
+  const db = loadDb();
+  const match = db.matches.find((m) => m.id === req.params.id);
+  if (!match) return res.status(404).json({ error: "not_found" });
+  Object.assign(match, req.body);
+  saveDb(db);
+  res.json(match);
+});
+
+app.delete("/api/matches/:id", (req, res) => {
+  const db = loadDb();
+  db.matches = db.matches.filter((m) => m.id !== req.params.id);
   saveDb(db);
   res.json({ ok: true });
 });

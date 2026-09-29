@@ -160,7 +160,7 @@ td input[type=text]{width:100%; min-width:90px}
   var WEIGHTS = { volume:0.3, competition:0.2, trend:0.2, brandFit:0.2, viral:0.1 };
   var POLL_MS = 5000;
 
-  var state = { projects: [], keywords: [], activeProjectId: null, loaded: false };
+  var state = { projects: [], keywords: [], matches: [], activeProjectId: null, loaded: false };
 
   var tabsEl = document.getElementById("projectTabs");
   var contentEl = document.getElementById("content");
@@ -331,6 +331,8 @@ td input[type=text]{width:100%; min-width:90px}
     html += '</form>';
     html += '</section>';
 
+    html += renderMonitorSection(project);
+
     contentEl.innerHTML = html;
 
     var editBtn = document.getElementById("editProjectBtn");
@@ -352,6 +354,84 @@ td input[type=text]{width:100%; min-width:90px}
     if (form) form.addEventListener("submit", function(ev){
       ev.preventDefault();
       addKeyword(project.id, form);
+    });
+
+    wireMonitorSection(project);
+  }
+
+  function renderMonitorSection(project){
+    var matches = state.matches.filter(function(m){ return m.projectId === project.id; });
+    var unreviewed = matches.filter(function(m){ return !m.reviewed; });
+
+    var html = '<section class="card" style="display:flex;flex-direction:column;gap:14px">';
+    html += '<div><h2>카페 모니터링</h2><p class="meta-line">지정한 네이버 카페에서 감시 키워드가 포함된 글의 제목을 검색해 찾아줍니다. ' +
+      '네이버 검색에 공개적으로 색인된 글만 찾을 수 있고(비공개 카페 본문은 확인하지 않습니다), 댓글은 자동으로 남기지 않으니 발견된 글을 열어 담당자가 직접 작성하세요.</p></div>';
+
+    html += '<form id="monitorConfigForm" class="field-grid">';
+    html += '<label><span class="lbl">카페명</span><input type="text" name="cafeName" value="' + esc(project.cafeName) + '" placeholder="예: 씨앙카페"></label>';
+    html += '<label class="wide" style="grid-column:span 2"><span class="lbl">감시 키워드 (쉼표로 구분)</span><input type="text" name="watchKeywords" value="' + esc(project.watchKeywords) + '" placeholder="예: 성장, 담적"></label>';
+    html += '<div style="display:flex;align-items:flex-end;gap:8px"><button type="submit" class="ghost">설정 저장</button><button type="button" id="runMonitorBtn" class="primary">지금 검색 실행</button></div>';
+    html += '</form>';
+
+    if (matches.length === 0){
+      html += '<div class="empty"><strong>아직 발견된 글이 없습니다</strong><span>카페명과 감시 키워드를 저장한 뒤 "지금 검색 실행"을 눌러보세요.</span></div>';
+    } else {
+      html += '<div class="summary-row"><div class="stat"><div class="num">' + matches.length + '</div><div class="lbl">발견된 글</div></div>' +
+        '<div class="stat"><div class="num">' + unreviewed.length + '</div><div class="lbl">미확인</div></div></div>';
+      html += '<div class="table-scroll"><table><thead><tr><th>발견일</th><th>키워드</th><th>제목</th><th>카페명</th><th>확인</th><th></th></tr></thead><tbody>';
+      matches.forEach(function(m){
+        html += '<tr>';
+        html += '<td>' + esc((m.foundAt||"").slice(0,10)) + '</td>';
+        html += '<td>' + esc(m.keyword) + '</td>';
+        html += '<td><a href="' + esc(m.link) + '" target="_blank" rel="noopener">' + esc(m.title) + '</a></td>';
+        html += '<td>' + esc(m.cafename) + '</td>';
+        html += '<td><input type="checkbox" data-match-id="' + esc(m.id) + '"' + (m.reviewed ? ' checked' : '') + '></td>';
+        html += '<td><button class="danger" data-del-match="' + esc(m.id) + '">삭제</button></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</section>';
+    return html;
+  }
+
+  function wireMonitorSection(project){
+    var cfgForm = document.getElementById("monitorConfigForm");
+    if (cfgForm) cfgForm.addEventListener("submit", function(ev){
+      ev.preventDefault();
+      var fd = new FormData(cfgForm);
+      var data = {};
+      fd.forEach(function(v,k){ data[k] = v; });
+      api("/api/projects/" + project.id, { method: "PATCH", body: data }).then(function(){
+        toast("모니터링 설정을 저장했습니다");
+        return refresh();
+      }).catch(function(){ toast("저장에 실패했습니다"); });
+    });
+    var runBtn = document.getElementById("runMonitorBtn");
+    if (runBtn) runBtn.addEventListener("click", function(){
+      runBtn.disabled = true;
+      runBtn.textContent = "검색 중…";
+      api("/api/monitor/run", { method: "POST", body: { projectId: project.id } }).then(function(result){
+        toast("새 글 " + result.newCount + "건을 찾았습니다");
+        return refresh();
+      }).catch(function(err){
+        toast(err.message === "missing_api_key" ? "네이버 API 키가 설정되어 있지 않습니다" : "검색 설정을 먼저 저장해주세요");
+      }).finally(function(){
+        runBtn.disabled = false;
+        runBtn.textContent = "지금 검색 실행";
+      });
+    });
+    document.querySelectorAll("[data-match-id]").forEach(function(cb){
+      cb.addEventListener("change", function(){
+        api("/api/matches/" + cb.getAttribute("data-match-id"), { method: "PATCH", body: { reviewed: cb.checked } })
+          .then(refresh).catch(function(){ toast("업데이트에 실패했습니다"); });
+      });
+    });
+    document.querySelectorAll("[data-del-match]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        api("/api/matches/" + btn.getAttribute("data-del-match"), { method: "DELETE" })
+          .then(refresh).catch(function(){ toast("삭제에 실패했습니다"); });
+      });
     });
   }
 
@@ -452,9 +532,10 @@ td input[type=text]{width:100%; min-width:90px}
 
   // ---- load / poll ----
   function refresh(){
-    return Promise.all([api("/api/projects"), api("/api/keywords")]).then(function(res){
+    return Promise.all([api("/api/projects"), api("/api/keywords"), api("/api/matches")]).then(function(res){
       state.projects = res[0];
       state.keywords = res[1];
+      state.matches = res[2];
       state.loaded = true;
       if (!state.activeProjectId && state.projects.length) state.activeProjectId = state.projects[0].id;
       if (state.activeProjectId && !state.projects.some(function(p){ return p.id === state.activeProjectId; })){

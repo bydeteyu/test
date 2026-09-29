@@ -400,7 +400,7 @@ td input[type=text]{width:100%; min-width:90px}
 
     html += '<div style="border-top:1px solid var(--border);padding-top:14px;display:flex;flex-direction:column;gap:8px">';
     html += '<h3 style="font-size:0.92rem">글 수동 등록</h3>';
-    html += '<p class="meta-line">가입이 필요한 카페 글은 자동 검색에 안 잡힐 수 있어요. 화면을 캡처해 올리면 AI가 제목·내용을 읽어서 등록합니다 (복사가 막혀 있어도 스크린샷은 문제없어요). 이미지 없이 링크·제목만 직접 입력해도 됩니다.</p>';
+    html += '<p class="meta-line">가입이 필요한 카페 글은 자동 검색에 안 잡힐 수 있어요. 화면을 캡처해 올리면 AI가 제목·내용을 읽어서 등록하는 동시에, 글 내용을 바탕으로 바이럴 키워드도 바로 제안합니다 (아래 "AI 키워드 확장"에 표시). 복사가 막혀 있어도 스크린샷은 문제없고, 이미지 없이 링크·제목만 직접 입력해도 됩니다.</p>';
     html += '<form id="manualMatchForm" class="add-row-form">';
     html += '<label class="wide"><span class="lbl">스크린샷 업로드</span><input type="file" name="image" accept="image/*"></label>';
     html += '<label class="wide"><span class="lbl">제목 (이미지 업로드 시 자동 추출, 직접 입력 시 우선 사용)</span><input type="text" name="title" placeholder="예: 중학생 아이 키성장이 고민이에요"></label>';
@@ -477,8 +477,9 @@ td input[type=text]{width:100%; min-width:90px}
 
       function finish(promise){
         submitBtn.disabled = true;
-        promise.then(function(){
-          toast("글을 등록했습니다");
+        promise.then(function(result){
+          var suggestCount = result && result.suggestions ? result.suggestions.length : 0;
+          toast(suggestCount > 0 ? "글 등록 완료 — 키워드 제안 " + suggestCount + "건" : "글을 등록했습니다");
           manualForm.reset();
           return refresh();
         }).catch(function(err){

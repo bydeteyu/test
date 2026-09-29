@@ -301,8 +301,9 @@ app.post("/api/matches/from-image", async (req, res) => {
     foundAt: new Date().toISOString()
   };
   db.matches.push(match);
+  const suggestions = addSuggestions(db, project, extracted.keywords);
   saveDb(db);
-  res.status(201).json(match);
+  res.status(201).json({ match, suggestions });
 });
 
 app.get("/api/matches", (req, res) => {
@@ -404,15 +405,47 @@ const SCREENSHOT_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 async function extractFromScreenshot(imageBase64, mediaType) {
   const prompt = [
-    "이 이미지는 네이버 카페 게시글(또는 댓글) 스크린샷이다.",
+    "너는 마케팅 에이전시의 키워드 리서치 담당자다. 이 이미지는 네이버 카페 게시글(또는 댓글) 스크린샷이다.",
     "이미지에 실제로 보이는 내용만 근거로 다음 JSON을 추출해라. 보이지 않는 내용을 지어내지 마라.",
-    '{"title": "글 제목 (안 보이면 본문 첫 문장으로 대체)", "content": "본문 내용 요약 (2~4문장)", "keywords": ["글에서 언급된 증상/관심사 표현 후보, 최대 5개"]}',
-    "다른 설명 없이 JSON만 답해라."
+    "1. title: 글 제목 (안 보이면 본문 첫 문장으로 대체)",
+    "2. content: 본문 내용 요약 (2~4문장)",
+    "3. keywords: 이 글의 작성자나 댓글 단 사람들이 실제로 검색해볼 법한 바이럴 마케팅 키워드 후보, 최대 5개.",
+    '   각 항목은 {"keyword": "2~6단어 자연스러운 검색어", "reason": "이미지의 어떤 표현에서 이 키워드를 뽑았는지 한 줄 근거"} 형태.',
+    '   의료광고 규제상 과장된 효능 표현("완치", "100% 효과" 등)은 keywords에 넣지 마라.',
+    "",
+    "다음 JSON 형식으로만 답해라. 다른 설명은 붙이지 마라.",
+    '{"title": "...", "content": "...", "keywords": [{"keyword": "...", "reason": "..."}]}'
   ].join("\n");
   return callClaudeJSON([
     { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
     { type: "text", text: prompt }
   ]);
+}
+
+function addSuggestions(db, project, candidates) {
+  const existingKeywords = new Set(
+    String(project.watchKeywords || "").split(/[,\n]/).map((k) => k.trim()).filter(Boolean)
+  );
+  db.keywords.filter((k) => k.projectId === project.id).forEach((k) => existingKeywords.add(k.keyword));
+  db.suggestions.filter((s) => s.projectId === project.id).forEach((s) => existingKeywords.add(s.keyword));
+
+  const added = [];
+  for (const item of candidates || []) {
+    const keyword = String((item && item.keyword) || "").trim();
+    if (!keyword || existingKeywords.has(keyword)) continue;
+    existingKeywords.add(keyword);
+    const suggestion = {
+      id: crypto.randomUUID(),
+      projectId: project.id,
+      keyword,
+      reason: String((item && item.reason) || "").trim(),
+      status: "pending",
+      createdAt: new Date().toISOString()
+    };
+    db.suggestions.push(suggestion);
+    added.push(suggestion);
+  }
+  return added;
 }
 
 app.post("/api/keywords/suggest", async (req, res) => {
@@ -442,22 +475,7 @@ app.post("/api/keywords/suggest", async (req, res) => {
     return res.status(502).json({ error: err.code || "analysis_failed" });
   }
 
-  const added = [];
-  for (const item of suggested) {
-    const keyword = String((item && item.keyword) || "").trim();
-    if (!keyword || existingKeywords.has(keyword)) continue;
-    existingKeywords.add(keyword);
-    const suggestion = {
-      id: crypto.randomUUID(),
-      projectId,
-      keyword,
-      reason: String((item && item.reason) || "").trim(),
-      status: "pending",
-      createdAt: new Date().toISOString()
-    };
-    db.suggestions.push(suggestion);
-    added.push(suggestion);
-  }
+  const added = addSuggestions(db, project, suggested);
   saveDb(db);
   res.json({ newCount: added.length, suggestions: added });
 });

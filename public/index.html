@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>키워드 리서치 보드</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F7F5F0; --surface:#FFFFFF; --surface-2:#F0ECE3;
+  --ink:#1E2420; --ink-soft:#63706A; --border:#DDD6C8;
+  --accent:#0E6E58; --accent-ink:#FFFFFF; --accent-soft:#E1EFE8;
+  --good:#1F7A4D; --good-soft:#E4F5EA;
+  --warn:#A6741A; --warn-soft:#FBF0DA;
+  --bad:#AE4430; --bad-soft:#FBE9E3;
+  --font-display:'Sora',system-ui,sans-serif;
+  --font-body:'Inter',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#14181A; --surface:#1C2220; --surface-2:#232B28;
+    --ink:#ECEFEC; --ink-soft:#9AA6A0; --border:#313A36;
+    --accent:#3FCB9F; --accent-ink:#0B1512; --accent-soft:#1B2C27;
+    --good:#4ADE94; --good-soft:#17281F;
+    --warn:#E3B24E; --warn-soft:#2E2716;
+    --bad:#FF7A5C; --bad-soft:#2E1B16;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#14181A; --surface:#1C2220; --surface-2:#232B28;
+  --ink:#ECEFEC; --ink-soft:#9AA6A0; --border:#313A36;
+  --accent:#3FCB9F; --accent-ink:#0B1512; --accent-soft:#1B2C27;
+  --good:#4ADE94; --good-soft:#17281F;
+  --warn:#E3B24E; --warn-soft:#2E2716;
+  --bad:#FF7A5C; --bad-soft:#2E1B16;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--font-body);
+  padding-inline:16px; padding-block:20px 48px;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{font-family:var(--font-display); font-weight:700; margin:0; text-wrap:balance}
+.wrap{max-width:1040px; margin-inline:auto; display:flex; flex-direction:column; gap:20px}
+header.page{display:flex; flex-direction:column; gap:4px}
+header.page h1{font-size:1.5rem; letter-spacing:-0.01em}
+header.page p{margin:0; color:var(--ink-soft); font-size:0.92rem}
+
+.tabs{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+.tab{
+  font-family:var(--font-display); font-weight:600; font-size:0.86rem;
+  padding:8px 14px; border-radius:999px; border:1px solid var(--border);
+  background:var(--surface); color:var(--ink-soft); cursor:pointer; white-space:nowrap;
+}
+.tab[aria-selected="true"]{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+.tab.new{background:transparent; border-style:dashed; color:var(--accent)}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px}
+.card h2{font-size:1.05rem}
+
+.empty{
+  display:flex; flex-direction:column; align-items:flex-start; gap:10px;
+  padding:28px 20px; border:1px dashed var(--border); border-radius:14px; color:var(--ink-soft);
+  background:var(--surface);
+}
+.empty strong{color:var(--ink); font-family:var(--font-display)}
+
+.field-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px}
+label{display:flex; flex-direction:column; gap:4px; font-size:0.8rem; color:var(--ink-soft)}
+label span.lbl{font-weight:600; color:var(--ink)}
+input,select,textarea{
+  font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+  background:var(--bg); color:var(--ink); min-width:0;
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
+textarea{resize:vertical; min-height:44px}
+
+button{
+  font:inherit; font-family:var(--font-display); font-weight:600; cursor:pointer;
+  border-radius:9px; border:1px solid transparent; padding:9px 16px;
+}
+button.primary{background:var(--accent); color:var(--accent-ink)}
+button.ghost{background:transparent; border-color:var(--border); color:var(--ink)}
+button.danger{background:transparent; color:var(--bad); border:1px solid var(--bad-soft); padding:5px 9px; font-size:0.78rem}
+button:disabled{opacity:0.5; cursor:not-allowed}
+
+.summary-row{display:flex; gap:12px; flex-wrap:wrap}
+.stat{
+  flex:1 1 120px; background:var(--surface-2); border-radius:10px; padding:12px 14px;
+  display:flex; flex-direction:column; gap:2px;
+}
+.stat .num{font-family:var(--font-display); font-size:1.4rem; font-variant-numeric:tabular-nums}
+.stat .lbl{font-size:0.76rem; color:var(--ink-soft)}
+
+.table-scroll{overflow-x:auto; border:1px solid var(--border); border-radius:12px}
+table{border-collapse:collapse; width:100%; min-width:920px; font-size:0.86rem}
+th,td{padding:9px 10px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle}
+thead th{
+  background:var(--surface-2); font-family:var(--font-display); font-size:0.72rem;
+  text-transform:uppercase; letter-spacing:0.03em; color:var(--ink-soft); white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:none}
+td input[type=number]{width:56px; text-align:right; font-variant-numeric:tabular-nums}
+td input[type=text]{width:100%; min-width:90px}
+.badge{
+  display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px;
+  font-family:var(--font-display); font-weight:700; font-size:0.78rem; font-variant-numeric:tabular-nums;
+}
+.badge.good{background:var(--good-soft); color:var(--good)}
+.badge.warn{background:var(--warn-soft); color:var(--warn)}
+.score-cell{white-space:nowrap}
+.add-row-form{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; padding-top:14px}
+.add-row-form label{flex:1 1 100px}
+.add-row-form label.wide{flex:2 1 160px}
+.add-row-form label.score{flex:0 0 64px}
+.weight-hint{font-size:0.68rem; color:var(--ink-soft); font-weight:400}
+
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(10,14,12,0.45); display:flex; align-items:flex-start;
+  justify-content:center; padding:40px 16px; z-index:10; overflow-y:auto;
+}
+.modal{background:var(--surface); border-radius:16px; border:1px solid var(--border); padding:22px; max-width:560px; width:100%; display:flex; flex-direction:column; gap:14px}
+.modal-actions{display:flex; justify-content:flex-end; gap:8px}
+.meta-line{font-size:0.78rem; color:var(--ink-soft)}
+[hidden]{display:none!important}
+.toast{
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--bg);
+  padding:9px 16px; border-radius:999px; font-size:0.82rem; opacity:0; pointer-events:none; transition:opacity .2s;
+}
+.toast.show{opacity:1}
+@media (max-width:640px){
+  table{min-width:760px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="page">
+    <h1>키워드 리서치 보드</h1>
+    <p>클라이언트별 바이럴 마케팅 키워드 리서치를 인테이크부터 평가·채택까지 한 곳에서 관리합니다.</p>
+  </header>
+
+  <nav class="tabs" id="projectTabs"></nav>
+
+  <div id="content"></div>
+</div>
+
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var CHANNELS = ["유튜브","인스타그램/릴스","블로그·SEO","온라인 커뮤니티","기타"];
+  var INDUSTRIES = ["패션/뷰티","F&B/외식","IT/테크","금융","커머스/리테일","의료/헬스케어","기타"];
+  var WEIGHTS = { volume:0.3, competition:0.2, trend:0.2, brandFit:0.2, viral:0.1 };
+  var POLL_MS = 5000;
+
+  var state = { projects: [], keywords: [], activeProjectId: null, loaded: false };
+
+  var tabsEl = document.getElementById("projectTabs");
+  var contentEl = document.getElementById("content");
+  var modalRoot = document.getElementById("modalRoot");
+  var toastEl = document.getElementById("toast");
+
+  function esc(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(function(){ toastEl.classList.remove("show"); }, 1800);
+  }
+
+  function api(path, opts){
+    opts = opts || {};
+    var headers = opts.body ? { "Content-Type": "application/json" } : {};
+    return fetch(path, {
+      method: opts.method || "GET",
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function(res){
+      if (!res.ok) return res.json().catch(function(){ return {}; }).then(function(e){
+        throw new Error(e.error || ("http_" + res.status));
+      });
+      return res.status === 204 ? null : res.json();
+    });
+  }
+
+  function clampScore(v){
+    v = Number(v);
+    if (isNaN(v)) return 0;
+    return Math.max(0, Math.min(100, Math.round(v)));
+  }
+
+  function computeScore(k){
+    return Math.round(
+      clampScore(k.volumeScore) * WEIGHTS.volume +
+      clampScore(k.competitionScore) * WEIGHTS.competition +
+      clampScore(k.trendScore) * WEIGHTS.trend +
+      clampScore(k.brandFitScore) * WEIGHTS.brandFit +
+      clampScore(k.viralScore) * WEIGHTS.viral
+    );
+  }
+
+  function render(){
+    renderTabs();
+    renderContent();
+  }
+
+  function renderTabs(){
+    var html = "";
+    state.projects.forEach(function(p){
+      var sel = p.id === state.activeProjectId;
+      html += '<button class="tab" role="tab" aria-selected="' + sel + '" data-project="' + esc(p.id) + '">' + esc(p.name) + '</button>';
+    });
+    html += '<button class="tab new" id="newProjectBtn">+ 새 프로젝트</button>';
+    tabsEl.innerHTML = html;
+
+    tabsEl.querySelectorAll(".tab[data-project]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        state.activeProjectId = btn.getAttribute("data-project");
+        render();
+      });
+    });
+    var newBtn = document.getElementById("newProjectBtn");
+    if (newBtn) newBtn.addEventListener("click", function(){ openProjectModal(); });
+  }
+
+  function renderContent(){
+    if (!state.loaded){
+      contentEl.innerHTML = '<div class="empty"><strong>불러오는 중…</strong><span>잠시만 기다려주세요.</span></div>';
+      return;
+    }
+    if (state.projects.length === 0){
+      contentEl.innerHTML =
+        '<div class="empty">' +
+          '<strong>등록된 프로젝트가 없습니다</strong>' +
+          '<span>클라이언트 프로젝트를 만들면 인테이크 정보와 키워드 리서치를 함께 관리할 수 있어요.</span>' +
+          '<button class="primary" id="emptyNewProjectBtn">첫 프로젝트 만들기</button>' +
+        '</div>';
+      var b = document.getElementById("emptyNewProjectBtn");
+      if (b) b.addEventListener("click", function(){ openProjectModal(); });
+      return;
+    }
+
+    var project = state.projects.find(function(p){ return p.id === state.activeProjectId; }) || state.projects[0];
+    state.activeProjectId = project.id;
+
+    var kws = state.keywords.filter(function(k){ return k.projectId === project.id; });
+    var adopted = kws.filter(function(k){ return computeScore(k) >= 70; });
+    var avg = kws.length ? Math.round(kws.reduce(function(s,k){ return s + computeScore(k); }, 0) / kws.length) : 0;
+
+    var html = '';
+
+    html += '<section class="card" style="display:flex;flex-direction:column;gap:12px">';
+    html += '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">';
+    html += '<div><h2>' + esc(project.name) + ' &middot; 클라이언트 인테이크</h2>';
+    html += '<p class="meta-line">업종 ' + esc(project.industry || '미정') + ' &nbsp;·&nbsp; 목표 ' + esc(project.goal || '미정') + ' &nbsp;·&nbsp; 기한 ' + esc(project.dueDate || '미정') + '</p></div>';
+    html += '<div style="display:flex;gap:8px">';
+    html += '<button class="ghost" id="editProjectBtn">인테이크 수정</button>';
+    html += '<button class="danger" id="deleteProjectBtn">프로젝트 삭제</button>';
+    html += '</div></div>';
+    html += '<div class="field-grid" style="font-size:0.86rem">';
+    html += infoBlock("타겟 오디언스", project.targetAudience);
+    html += infoBlock("우선 채널", project.priorityChannels);
+    html += infoBlock("금지어(NG 키워드)", project.bannedWords);
+    html += infoBlock("담당 PM / 리서처", [project.owner, project.researcher].filter(Boolean).join(" / "));
+    html += '</div></section>';
+
+    html += '<div class="summary-row">';
+    html += statBlock(kws.length, "등록 키워드");
+    html += statBlock(adopted.length, "채택 키워드");
+    html += statBlock(avg, "평균 평가점수");
+    html += '</div>';
+
+    html += '<section class="card" style="display:flex;flex-direction:column;gap:14px">';
+    html += '<h2>키워드 리서치</h2>';
+
+    if (kws.length === 0){
+      html += '<div class="empty"><strong>아직 등록된 키워드가 없습니다</strong><span>아래 양식에서 첫 키워드를 추가하고 평가 점수를 입력하세요.</span></div>';
+    } else {
+      html += '<div class="table-scroll"><table><thead><tr>' +
+        '<th>키워드</th><th>채널</th>' +
+        '<th>검색량<br><span class="weight-hint">30%</span></th>' +
+        '<th>경쟁강도<br><span class="weight-hint">20%, 낮을수록↑</span></th>' +
+        '<th>트렌드지속성<br><span class="weight-hint">20%</span></th>' +
+        '<th>브랜드적합성<br><span class="weight-hint">20%</span></th>' +
+        '<th>확산가능성<br><span class="weight-hint">10%</span></th>' +
+        '<th>평가점수</th><th>채택여부</th><th>담당자</th><th>메모</th><th></th>' +
+        '</tr></thead><tbody>';
+      kws.forEach(function(k){
+        var score = computeScore(k);
+        var ok = score >= 70;
+        html += '<tr data-kid="' + esc(k.id) + '">';
+        html += '<td>' + esc(k.keyword) + '</td>';
+        html += '<td>' + esc(k.channel) + '</td>';
+        html += scoreCell(k.id, "volumeScore", k.volumeScore);
+        html += scoreCell(k.id, "competitionScore", k.competitionScore);
+        html += scoreCell(k.id, "trendScore", k.trendScore);
+        html += scoreCell(k.id, "brandFitScore", k.brandFitScore);
+        html += scoreCell(k.id, "viralScore", k.viralScore);
+        html += '<td class="score-cell"><span class="badge ' + (ok ? 'good' : 'warn') + '">' + score + '점</span></td>';
+        html += '<td><span class="badge ' + (ok ? 'good' : 'warn') + '">' + (ok ? '채택' : '보류') + '</span></td>';
+        html += '<td>' + esc(k.owner) + '</td>';
+        html += '<td>' + esc(k.notes) + '</td>';
+        html += '<td><button class="danger" data-del-kw="' + esc(k.id) + '">삭제</button></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    html += '<form class="add-row-form" id="addKeywordForm">';
+    html += '<label class="wide"><span class="lbl">키워드</span><input type="text" name="keyword" required placeholder="예: 모닝루틴"></label>';
+    html += '<label><span class="lbl">채널</span><select name="channel">' + CHANNELS.map(function(c){ return '<option>' + esc(c) + '</option>'; }).join('') + '</select></label>';
+    html += '<label class="score"><span class="lbl">검색량</span><input type="number" name="volumeScore" min="0" max="100" value="0"></label>';
+    html += '<label class="score"><span class="lbl">경쟁강도</span><input type="number" name="competitionScore" min="0" max="100" value="0"></label>';
+    html += '<label class="score"><span class="lbl">트렌드</span><input type="number" name="trendScore" min="0" max="100" value="0"></label>';
+    html += '<label class="score"><span class="lbl">브랜드적합</span><input type="number" name="brandFitScore" min="0" max="100" value="0"></label>';
+    html += '<label class="score"><span class="lbl">확산성</span><input type="number" name="viralScore" min="0" max="100" value="0"></label>';
+    html += '<label class="wide"><span class="lbl">담당자</span><input type="text" name="owner" placeholder="이름"></label>';
+    html += '<label class="wide"><span class="lbl">메모</span><input type="text" name="notes" placeholder="선택"></label>';
+    html += '<button class="primary" type="submit">키워드 추가</button>';
+    html += '</form>';
+    html += '</section>';
+
+    contentEl.innerHTML = html;
+
+    var editBtn = document.getElementById("editProjectBtn");
+    if (editBtn) editBtn.addEventListener("click", function(){ openProjectModal(project); });
+    var delBtn = document.getElementById("deleteProjectBtn");
+    if (delBtn) delBtn.addEventListener("click", function(){ deleteProject(project); });
+
+    contentEl.querySelectorAll("[data-del-kw]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        deleteKeyword(btn.getAttribute("data-del-kw"));
+      });
+    });
+    contentEl.querySelectorAll("input[data-kw-field]").forEach(function(inp){
+      inp.addEventListener("change", function(){
+        updateKeywordScore(inp.getAttribute("data-kid"), inp.getAttribute("data-kw-field"), inp.value);
+      });
+    });
+    var form = document.getElementById("addKeywordForm");
+    if (form) form.addEventListener("submit", function(ev){
+      ev.preventDefault();
+      addKeyword(project.id, form);
+    });
+  }
+
+  function infoBlock(label, value){
+    return '<div><div style="color:var(--ink-soft);font-size:0.76rem;margin-bottom:2px">' + esc(label) + '</div>' +
+      '<div>' + (value ? esc(value) : '<span style="color:var(--ink-soft)">미정</span>') + '</div></div>';
+  }
+
+  function statBlock(num, label){
+    return '<div class="stat"><div class="num">' + num + '</div><div class="lbl">' + esc(label) + '</div></div>';
+  }
+
+  function scoreCell(id, field, value){
+    return '<td class="score-cell"><input type="number" min="0" max="100" value="' + clampScore(value) +
+      '" data-kid="' + esc(id) + '" data-kw-field="' + field + '"></td>';
+  }
+
+  // ---- modal: create / edit project ----
+  function openProjectModal(existing){
+    var isEdit = !!existing;
+    var p = existing || {};
+    modalRoot.innerHTML =
+      '<div class="modal-backdrop" id="backdrop"><div class="modal">' +
+      '<h2>' + (isEdit ? '인테이크 수정' : '새 프로젝트') + '</h2>' +
+      '<form id="projectForm" style="display:flex;flex-direction:column;gap:12px">' +
+      '<label><span class="lbl">클라이언트/브랜드명 *</span><input required name="name" value="' + esc(p.name) + '" placeholder="예: 분당미소한의원"></label>' +
+      '<div class="field-grid">' +
+      '<label><span class="lbl">업종</span><select name="industry">' + INDUSTRIES.map(function(i){ return '<option' + (p.industry===i?' selected':'') + '>' + esc(i) + '</option>'; }).join('') + '</select></label>' +
+      '<label><span class="lbl">목표</span><select name="goal"><option' + (p.goal==='인지도 확산'?' selected':'') + '>인지도 확산</option><option' + (p.goal==='전환/매출'?' selected':'') + '>전환/매출</option></select></label>' +
+      '<label><span class="lbl">담당 PM</span><input name="owner" value="' + esc(p.owner) + '"></label>' +
+      '<label><span class="lbl">담당 리서처</span><input name="researcher" value="' + esc(p.researcher) + '"></label>' +
+      '<label><span class="lbl">기한</span><input type="date" name="dueDate" value="' + esc(p.dueDate) + '"></label>' +
+      '<label><span class="lbl">우선 채널</span><input name="priorityChannels" value="' + esc(p.priorityChannels) + '" placeholder="예: 블로그·SEO"></label>' +
+      '</div>' +
+      '<label><span class="lbl">타겟 오디언스</span><textarea name="targetAudience">' + esc(p.targetAudience) + '</textarea></label>' +
+      '<label><span class="lbl">금지어(NG 키워드)</span><textarea name="bannedWords">' + esc(p.bannedWords) + '</textarea></label>' +
+      '<div class="modal-actions">' +
+      '<button type="button" class="ghost" id="cancelModal">취소</button>' +
+      '<button type="submit" class="primary">' + (isEdit ? '저장' : '만들기') + '</button>' +
+      '</div></form></div></div>';
+
+    document.getElementById("cancelModal").addEventListener("click", closeModal);
+    document.getElementById("backdrop").addEventListener("click", function(ev){
+      if (ev.target.id === "backdrop") closeModal();
+    });
+    document.getElementById("projectForm").addEventListener("submit", function(ev){
+      ev.preventDefault();
+      var fd = new FormData(ev.target);
+      var data = {};
+      fd.forEach(function(v,k){ data[k] = v; });
+      saveProject(isEdit ? existing.id : null, data);
+    });
+  }
+
+  function closeModal(){ modalRoot.innerHTML = ""; }
+
+  // ---- API-backed operations ----
+  function saveProject(id, data){
+    var req = id
+      ? api("/api/projects/" + id, { method: "PATCH", body: data })
+      : api("/api/projects", { method: "POST", body: data });
+    req.then(function(project){
+      if (!id) state.activeProjectId = project.id;
+      closeModal();
+      return refresh();
+    }).catch(function(){ toast("저장에 실패했습니다"); });
+  }
+
+  function deleteProject(project){
+    api("/api/projects/" + project.id, { method: "DELETE" }).then(function(){
+      state.activeProjectId = null;
+      return refresh();
+    }).catch(function(){ toast("삭제에 실패했습니다"); });
+  }
+
+  function addKeyword(projectId, form){
+    var fd = new FormData(form);
+    var data = { projectId: projectId };
+    fd.forEach(function(v,k){ data[k] = v; });
+    if (!String(data.keyword||"").trim()) return;
+    api("/api/keywords", { method: "POST", body: data }).then(function(){
+      form.reset();
+      return refresh();
+    }).catch(function(){ toast("키워드 추가에 실패했습니다"); });
+  }
+
+  function updateKeywordScore(id, field, value){
+    var payload = {};
+    payload[field] = clampScore(value);
+    api("/api/keywords/" + id, { method: "PATCH", body: payload }).then(refresh)
+      .catch(function(){ toast("저장에 실패했습니다"); });
+  }
+
+  function deleteKeyword(id){
+    api("/api/keywords/" + id, { method: "DELETE" }).then(refresh)
+      .catch(function(){ toast("삭제에 실패했습니다"); });
+  }
+
+  // ---- load / poll ----
+  function refresh(){
+    return Promise.all([api("/api/projects"), api("/api/keywords")]).then(function(res){
+      state.projects = res[0];
+      state.keywords = res[1];
+      state.loaded = true;
+      if (!state.activeProjectId && state.projects.length) state.activeProjectId = state.projects[0].id;
+      if (state.activeProjectId && !state.projects.some(function(p){ return p.id === state.activeProjectId; })){
+        state.activeProjectId = state.projects.length ? state.projects[0].id : null;
+      }
+      render();
+    }).catch(function(){
+      state.loaded = true;
+      contentEl.innerHTML = '<div class="empty"><strong>서버에 연결할 수 없습니다.</strong><span>잠시 후 새로고침해주세요.</span></div>';
+    });
+  }
+
+  function boot(){
+    render();
+    refresh();
+    setInterval(function(){
+      // avoid clobbering an open modal / focused input mid-edit
+      if (modalRoot.innerHTML.trim() || document.activeElement.tagName === "INPUT") return;
+      refresh();
+    }, POLL_MS);
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

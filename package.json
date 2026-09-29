@@ -1,0 +1,16 @@
+{
+  "name": "keyword-research-board",
+  "version": "1.0.0",
+  "private": true,
+  "description": "바이럴 마케팅 키워드 리서치 팀 보드",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

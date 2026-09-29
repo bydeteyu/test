@@ -4,16 +4,18 @@ const { extractPosts, findTarget } = require("./parse");
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
+const BASE = process.env.NAVER_SEARCH_BASE || "https://search.naver.com"; // 테스트용 override
+
 const CHANNELS = {
   // 통합검색은 페이지네이션이 없어 1페이지의 게시글 순서가 곧 순위
   integrated: {
     label: "통합",
-    url: (q) => `https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(q)}`,
+    url: (q) => `${BASE}/search.naver?where=nexearch&query=${encodeURIComponent(q)}`,
   },
   // 카페 탭은 10개 안팎씩 끊어 start=11, 21… 로 넘기며 maxRank까지 모은다
   cafe: {
     label: "카페",
-    url: (q, start) => `https://search.naver.com/search.naver?ssc=tab.cafe.all&query=${encodeURIComponent(q)}&start=${start}`,
+    url: (q, start) => `${BASE}/search.naver?ssc=tab.cafe.all&query=${encodeURIComponent(q)}&start=${start}`,
     onlyTypes: ["cafe"],
     paged: true,
   },

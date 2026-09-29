@@ -7,6 +7,7 @@ const { CHANNELS, fetchKeyword, findTarget, today } = require("./core");
 const MAX_RANK = Number(process.env.RANK_MAX || 20);
 const DELAY_MS = Number(process.env.RANK_DELAY_MS || 3000);
 const AUTO_HOUR = Number(process.env.RANK_AUTO_HOUR || 9); // KST
+const SNAP_MAX = Number(process.env.RANK_SNAPSHOT_MAX || 30); // 키워드 검색 시 저장할 상위 개수
 const KEEP_DAYS = 120;
 
 function mount(app, dataDir) {
@@ -20,40 +21,48 @@ function mount(app, dataDir) {
   }
   const save = (d) => fs.writeFileSync(file, JSON.stringify(d, null, 2));
 
-  // items 를 조회해 오늘자 기록으로 저장. 같은 키워드는 한 번만 조회한다.
-  async function runChecks(itemIds) {
+  // 키워드 목록(+등록 항목)을 조회해 오늘자로 기록한다. 같은 키워드는 한 번만 조회한다.
+  //  - 키워드마다 통합/카페 상위 SNAP_MAX개 스냅샷 저장 (키워드만 검색해도 기록됨)
+  //  - 그 키워드에 등록된 항목은 MAX_RANK 안에서 순위 판정
+  async function runChecks({ keywords = [], itemIds = null } = {}) {
     if (running) return { busy: true };
     running = true;
     try {
       const date = today();
-      const targets = load().items.filter((i) => !itemIds || itemIds.includes(i.id));
-      const byKeyword = new Map();
-      for (const it of targets) {
-        if (!byKeyword.has(it.keyword)) byKeyword.set(it.keyword, []);
-        byKeyword.get(it.keyword).push(it);
-      }
-      for (const [keyword, items] of byKeyword) {
-        const fetched = await fetchKeyword(keyword, { maxRank: MAX_RANK, delayMs: DELAY_MS });
+      const items = load().items.filter((i) => itemIds && itemIds.includes(i.id));
+      const kws = [...new Set([...keywords, ...items.map((i) => i.keyword)])];
+      for (const keyword of kws) {
+        const fetched = await fetchKeyword(keyword, { maxRank: SNAP_MAX, delayMs: DELAY_MS });
         const db = load(); // 조회 중 항목이 삭제/추가될 수 있어 저장 직전에 다시 읽는다
-        for (const it of items) {
-          if (!db.items.some((x) => x.id === it.id)) continue;
+        const snap = {};
+        for (const channel of Object.keys(CHANNELS)) {
+          const posts = fetched[channel];
+          snap[channel] = posts === null || posts.length === 0 ? null
+            : posts.map((p) => ({ rank: p.rank, type: p.type, title: p.title, link: "https://" + p.key }));
+        }
+        ((db.snapshots ??= {})[keyword] ??= {})[date] = snap;
+        prune(db.snapshots[keyword]);
+        for (const it of db.items.filter((x) => x.keyword === keyword && (!itemIds || itemIds.includes(x.id)))) {
           const rec = {};
           for (const channel of Object.keys(CHANNELS)) {
             const posts = fetched[channel];
             if (posts === null || posts.length === 0) { rec[channel] = { status: "error" }; continue; }
-            const hit = findTarget(posts, it);
+            const hit = findTarget(posts.slice(0, MAX_RANK), it);
             rec[channel] = hit ? { status: "hit", rank: hit.rank, title: hit.title } : { status: "miss" };
           }
-          (db.history[it.id] ??= {})[date] = rec;
-          const dates = Object.keys(db.history[it.id]).sort();
-          for (const d of dates.slice(0, Math.max(0, dates.length - KEEP_DAYS))) delete db.history[it.id][d];
+          prune((db.history[it.id] ??= {}))[date] = rec;
         }
         save(db);
       }
-      return { date, count: targets.length };
+      return { date, count: kws.length };
     } finally {
       running = false;
     }
+  }
+  function prune(byDate) {
+    const dates = Object.keys(byDate).sort();
+    for (const d of dates.slice(0, Math.max(0, dates.length - KEEP_DAYS))) delete byDate[d];
+    return byDate;
   }
 
   app.get("/api/rank", (req, res) => {
@@ -61,6 +70,7 @@ function mount(app, dataDir) {
     const items = db.items.filter((i) => !req.query.projectId || i.projectId === req.query.projectId);
     res.json({
       maxRank: MAX_RANK,
+      snapMax: SNAP_MAX,
       running,
       items: items.map((i) => ({ ...i, history: db.history[i.id] || {} })),
     });
@@ -97,9 +107,27 @@ function mount(app, dataDir) {
     const { projectId, itemId } = req.body || {};
     const ids = load().items.filter((i) => (itemId ? i.id === itemId : !projectId || i.projectId === projectId)).map((i) => i.id);
     if (ids.length === 0) return res.status(400).json({ error: "no_items" });
-    runChecks(ids).catch((e) => console.error("[rank] run failed:", e));
+    runChecks({ itemIds: ids }).catch((e) => console.error("[rank] run failed:", e));
     res.json({ started: ids.length });
   });
+
+  // 키워드 검색: 줄바꿈/쉼표로 구분한 키워드를 조회하고 순위 스냅샷을 기록
+  app.post("/api/rank/search", (req, res) => {
+    if (running) return res.status(409).json({ error: "busy" });
+    const keywords = [...new Set(String((req.body || {}).keywords || "").split(/[\n,]/).map((k) => k.trim()).filter(Boolean))].slice(0, 20);
+    if (keywords.length === 0) return res.status(400).json({ error: "no_keywords" });
+    runChecks({ keywords }).catch((e) => console.error("[rank] search failed:", e));
+    res.json({ started: keywords.length, keywords });
+  });
+
+  // 스냅샷 목록: ?keyword= 없으면 키워드별 기록 날짜 요약, 있으면 해당 키워드 전체 스냅샷
+  app.get("/api/rank/snapshots", (req, res) => {
+    const snaps = load().snapshots || {};
+    if (req.query.keyword) return res.json({ keyword: req.query.keyword, byDate: snaps[req.query.keyword] || {} });
+    res.json({ keywords: Object.entries(snaps).map(([keyword, byDate]) => ({ keyword, dates: Object.keys(byDate).sort().reverse() })) });
+  });
+
+  app.get("/rank", (req, res) => res.redirect("/rank.html"));
 
   // 매일 KST AUTO_HOUR 시 이후 첫 확인 시점에 전체 항목 1회 실행 (RANK_AUTO=off 로 끔)
   if (process.env.RANK_AUTO !== "off") {
@@ -107,10 +135,10 @@ function mount(app, dataDir) {
       const kst = new Date(Date.now() + 9 * 3600e3);
       if (running || kst.getUTCHours() < AUTO_HOUR) return;
       const db = load();
-      if (db.meta.lastAutoDate === today() || db.items.length === 0) return;
+      if (db.meta.lastAutoDate === today() || (db.items.length === 0 && !Object.keys(db.snapshots || {}).length)) return;
       db.meta.lastAutoDate = today();
       save(db);
-      runChecks(null).catch((e) => console.error("[rank] auto run failed:", e));
+      runChecks({ itemIds: db.items.map((i) => i.id), keywords: Object.keys(db.snapshots || {}) }).catch((e) => console.error("[rank] auto run failed:", e));
     }, 10 * 60 * 1000).unref();
   }
 }

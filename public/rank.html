@@ -48,7 +48,7 @@ a{color:var(--accent)}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
 label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-soft);flex:1 1 160px}
 label b{color:var(--ink)}
-input,select{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0}
+input,select,textarea{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0}
 button{font:inherit;font-family:var(--font-display);font-weight:600;cursor:pointer;border-radius:9px;border:1px solid transparent;padding:9px 16px}
 button.primary{background:var(--accent);color:var(--accent-ink)}
 button.danger{background:transparent;color:var(--bad);border-color:var(--bad-soft);padding:5px 9px;font-size:.78rem}
@@ -64,6 +64,9 @@ tbody tr:last-child td{border-bottom:none}
 .na{color:var(--ink-soft)}
 .meta{font-size:.78rem;color:var(--ink-soft)}
 .sub{color:var(--ink-soft);font-size:.76rem}
+tr.tracked td{background:var(--good-soft);font-weight:600}
+td a{color:var(--accent)}
+td.t{text-align:left;white-space:normal;min-width:220px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -73,6 +76,28 @@ tbody tr:last-child td{border-bottom:none}
     <h1>순위 체크</h1>
     <p>키워드로 검색했을 때 지정한 콘텐츠가 <b>통합검색</b>과 <b>카페 탭</b>에서 각각 몇 위인지 매일 확인합니다. (<a href="/">← 키워드 리서치 보드</a>)</p>
   </header>
+
+  <section class="card">
+    <h2>키워드로 순위 검색</h2>
+    <label><b>검색 키워드</b><span class="sub">한 줄에 하나씩 또는 쉼표(,)로 구분 · 통합검색과 카페 탭 각각 상위 <span class="snapMax">30</span>위까지 수집하고 오늘 날짜로 기록합니다</span>
+      <textarea id="kwInput" rows="3" placeholder="예: 대추밭백한의원"></textarea></label>
+    <button class="primary" id="searchBtn">순위 확인 시작</button>
+    <div class="meta" id="searchStatus"></div>
+  </section>
+
+  <section class="card" id="snapCard" hidden>
+    <div class="row" style="justify-content:space-between">
+      <h2>검색 결과 · 기록</h2>
+      <button class="primary" id="csvBtn">CSV 내려받기</button>
+    </div>
+    <div class="row">
+      <label><b>키워드</b><select id="snapKw"></select></label>
+      <label><b>날짜</b><select id="snapDate"></select></label>
+      <label><b>채널</b><select id="snapCh"><option value="integrated">통합검색</option><option value="cafe">카페 탭</option></select></label>
+    </div>
+    <div id="snapTable"></div>
+    <div class="meta">초록색 행은 아래에 등록한 추적 콘텐츠입니다. 검색한 키워드는 매일 자동으로 다시 기록됩니다.</div>
+  </section>
 
   <section class="card">
     <div class="row">
@@ -107,6 +132,7 @@ const api = async (url, opt) => {
   return r.json();
 };
 let pollTimer = null;
+let lastItems = [];
 
 async function loadProjects() {
   const ps = await api("/api/projects");
@@ -125,6 +151,11 @@ async function refresh() {
   if (!pid) return;
   const d = await api("/api/rank?projectId=" + encodeURIComponent(pid));
   $("#maxRank").textContent = d.maxRank;
+  lastItems = d.items;
+  document.querySelectorAll(".snapMax").forEach((e) => (e.textContent = d.snapMax));
+  $("#searchBtn").disabled = d.running;
+  $("#searchStatus").textContent = d.running ? "확인 중입니다… 키워드마다 수 초~수십 초가 걸립니다." : "";
+  await loadSnapKeywords();
   $("#runBtn").disabled = d.running || d.items.length === 0;
   $("#status").textContent = d.running ? "확인 중입니다… 키워드마다 수 초가 걸리며 자동으로 갱신됩니다." : "";
   if (d.running && !pollTimer) pollTimer = setInterval(refresh, 5000);
@@ -142,6 +173,54 @@ async function refresh() {
   $("#table").innerHTML = h + "</tbody></table></div>" + (dates.length ? "" : '<div class="meta">"지금 확인"을 누르면 첫 기록이 만들어집니다.</div>');
 }
 
+let snapData = null;
+async function loadSnapKeywords() {
+  const idx = (await api("/api/rank/snapshots")).keywords;
+  $("#snapCard").hidden = idx.length === 0;
+  const cur = $("#snapKw").value;
+  $("#snapKw").innerHTML = idx.map((k) => `<option>${esc(k.keyword)}</option>`).join("");
+  if (idx.some((k) => k.keyword === cur)) $("#snapKw").value = cur;
+  snapData = null;
+  await renderSnap(true);
+}
+async function renderSnap(reloadDates) {
+  const kw = $("#snapKw").value;
+  if (!kw) return;
+  if (reloadDates || !snapData) {
+    snapData = await api("/api/rank/snapshots?keyword=" + encodeURIComponent(kw));
+    const dates = Object.keys(snapData.byDate).sort().reverse();
+    const keep = $("#snapDate").value;
+    $("#snapDate").innerHTML = dates.map((x) => `<option>${x}</option>`).join("");
+    if (dates.includes(keep)) $("#snapDate").value = keep;
+  }
+  const snap = snapData.byDate[$("#snapDate").value];
+  const posts = snap && snap[$("#snapCh").value];
+  if (!posts) { $("#snapTable").innerHTML = '<div class="meta">이 날짜에는 결과를 가져오지 못했습니다(조회 차단 또는 결과 없음).</div>'; return; }
+  const mine = lastItems.filter((i) => i.keyword === kw);
+  const isMine = (p) => mine.some((i) => (i.match && p.link.includes(i.match.replace(/^https?:\/\//, ""))) || (i.titleContains && p.title.includes(i.titleContains)));
+  const names = { cafe: "카페", blog: "블로그", post: "포스트", kin: "지식iN", in: "인플루언서", tv: "TV" };
+  $("#snapTable").innerHTML = '<div class="table-scroll"><table><thead><tr><th>순위</th><th>종류</th><th class="l">제목</th><th>링크</th></tr></thead><tbody>' +
+    posts.map((p) => `<tr class="${isMine(p) ? "tracked" : ""}"><td>${p.rank}</td><td>${esc(names[p.type] || p.type)}</td><td class="t">${esc(p.title) || '<span class="sub">(제목 없음)</span>'}</td><td><a href="${esc(p.link)}" target="_blank" rel="noopener">바로가기</a></td></tr>`).join("") + "</tbody></table></div>";
+}
+["snapKw", "snapDate", "snapCh"].forEach((id) => $("#" + id).addEventListener("change", () => renderSnap(id === "snapKw")));
+$("#csvBtn").addEventListener("click", () => {
+  if (!snapData) return;
+  const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+  const rows = [["날짜", "키워드", "채널", "순위", "종류", "제목", "링크"]];
+  for (const [date, snap] of Object.entries(snapData.byDate).sort())
+    for (const [ch, posts] of Object.entries(snap)) for (const p of posts || []) rows.push([date, snapData.keyword, ch === "cafe" ? "카페" : "통합", p.rank, p.type, p.title, p.link]);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + rows.map((r) => r.map(q).join(",")).join("\n")], { type: "text/csv" }));
+  a.download = "rank-" + snapData.keyword + ".csv";
+  a.click();
+});
+$("#searchBtn").addEventListener("click", async () => {
+  const v = $("#kwInput").value;
+  if (!v.trim()) return alert("검색 키워드를 입력하세요.");
+  try { await api("/api/rank/search", { method: "POST", body: { keywords: v } }); }
+  catch (e) { return alert(e.status === 409 ? "이미 확인 중입니다. 잠시 후 다시 시도하세요." : "실행하지 못했습니다."); }
+  refresh();
+});
 $("#project").addEventListener("change", () => { localStorage.setItem("rankProject", $("#project").value); refresh(); });
 $("#addForm").addEventListener("submit", async (e) => {
   e.preventDefault();

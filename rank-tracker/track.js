@@ -12,14 +12,17 @@ const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
 const CHANNELS = {
+  // 통합검색은 페이지네이션이 없어 1페이지의 게시글 순서가 곧 순위
   integrated: {
-    label: "통합검색",
+    label: "통합",
     url: (q) => `https://search.naver.com/search.naver?where=nexearch&query=${encodeURIComponent(q)}`,
   },
+  // 카페 탭은 10개 안팎씩 끊어 start=11, 21… 로 넘기며 maxRank까지 모은다
   cafe: {
     label: "카페",
-    url: (q) => `https://search.naver.com/search.naver?ssc=tab.cafe.all&query=${encodeURIComponent(q)}`,
+    url: (q, start) => `https://search.naver.com/search.naver?ssc=tab.cafe.all&query=${encodeURIComponent(q)}&start=${start}`,
     onlyTypes: ["cafe"],
+    paged: true,
   },
 };
 
@@ -32,6 +35,21 @@ async function fetchHtml(url) {
   return res.text();
 }
 
+// 검색 범위(maxRank)까지의 게시글을 순서대로 모은다.
+async function collectPosts(ch, keyword, maxRank, delayMs) {
+  const all = [];
+  const seen = new Set();
+  for (let start = 1, page = 0; page < 5 && all.length < maxRank; page++) {
+    const posts = extractPosts(await fetchHtml(ch.url(keyword, start)), { onlyTypes: ch.onlyTypes });
+    const fresh = posts.filter((p) => !seen.has(p.key));
+    fresh.forEach((p) => { seen.add(p.key); all.push({ ...p, rank: all.length + 1 }); });
+    if (!ch.paged || fresh.length === 0) break; // 더 이상 새 글이 없으면 중단
+    start += posts.length;
+    await sleep(delayMs);
+  }
+  return all.slice(0, maxRank);
+}
+
 const csvCell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 
 async function main() {
@@ -42,6 +60,7 @@ async function main() {
   }
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const delayMs = config.delayMs ?? 3000;
+  const maxRank = config.maxRank ?? 20;
   const date = today();
 
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -52,7 +71,7 @@ async function main() {
     for (const [channel, ch] of Object.entries(CHANNELS)) {
       let posts = null;
       try {
-        posts = extractPosts(await fetchHtml(ch.url(kw.keyword)), { onlyTypes: ch.onlyTypes });
+        posts = await collectPosts(ch, kw.keyword, maxRank, delayMs);
         if (posts.length === 0) console.warn(`[경고] ${kw.keyword}/${ch.label}: 게시글 링크 0건 — 차단되었거나 페이지 구조가 바뀌었을 수 있음`);
       } catch (e) {
         console.error(`[오류] ${kw.keyword}/${ch.label}: ${e.message}`);
@@ -62,7 +81,7 @@ async function main() {
         // 조회 실패(posts===null)는 "미노출"과 구분해 빈 값으로 기록
         const exposed = posts === null ? "" : hit ? "Y" : "N";
         rows.push([date, kw.keyword, channel, t.label, exposed, hit ? hit.rank : "", hit ? hit.title : ""]);
-        console.log(`${date} | ${kw.keyword} | ${ch.label} | ${t.label} | ${exposed === "" ? "조회실패" : hit ? hit.rank + "위" : "미노출"}`);
+        console.log(`${date} | ${kw.keyword} | ${ch.label} | ${t.label} | ${exposed === "" ? "조회실패" : hit ? hit.rank + "위" : `${maxRank}위 밖`}`);
       }
       await sleep(delayMs);
     }
@@ -71,7 +90,7 @@ async function main() {
   // 같은 날 재실행 시 중복 방지: 오늘자 행은 교체
   const kept = fs.readFileSync(HISTORY, "utf8").split("\n").filter((l, i) => l && (i === 0 || !l.startsWith(`${date},`)));
   fs.writeFileSync(HISTORY, kept.join("\n") + "\n" + rows.map((r) => r.map(csvCell).join(",")).join("\n") + "\n");
-  writeReport(HISTORY, path.join(DATA_DIR, "report.html"), CHANNELS);
+  writeReport(HISTORY, path.join(DATA_DIR, "report.html"), CHANNELS, maxRank);
   console.log(`\n저장: ${HISTORY}\n순위표: ${path.join(DATA_DIR, "report.html")}`);
 }
 

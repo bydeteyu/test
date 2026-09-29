@@ -1,12 +1,12 @@
 {
   "delayMs": 3000,
+  "maxRank": 20,
   "keywords": [
     {
-      "keyword": "강남 한의원",
+      "keyword": "대추밭백한의원",
       "targets": [
-        { "label": "우리 블로그 글", "match": "blog.naver.com/myblogid/223000000000" },
-        { "label": "우리 카페 글", "match": "cafe.naver.com/mycafe/12345" },
-        { "label": "제목으로 찾기", "titleContains": "다이어트 한약 후기" }
+        { "label": "다녀왔어요 글", "titleContains": "대추밭백한의원 다녀왔어요" },
+        { "label": "특정 카페 글(URL)", "match": "cafe.naver.com/mycafe/12345" }
       ]
     }
   ]

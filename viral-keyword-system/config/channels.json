@@ -1,0 +1,32 @@
+{
+  "youtube_channels": [
+    {
+      "name": "약들약",
+      "alias": "고약사",
+      "channel_id": "UCt5JMGMG-HuAqKJdQ3P0F0A",
+      "handle": "@yakdeulyak",
+      "search_query": "약들약 고약사"
+    },
+    {
+      "name": "닥터딩요",
+      "alias": "이동환",
+      "channel_id": "UCPLPqXBQ2fh-dRLHQlW6lYQ",
+      "handle": "@doctordinyo",
+      "search_query": "닥터딩요 이동환"
+    },
+    {
+      "name": "당뇨스쿨",
+      "alias": "이혜민 한의사",
+      "channel_id": "",
+      "handle": "@dangyoschool",
+      "search_query": "당뇨스쿨 이혜민"
+    },
+    {
+      "name": "닥터조의 건강이야기",
+      "alias": "닥터조",
+      "channel_id": "",
+      "handle": "@doctorjoe",
+      "search_query": "닥터조의 건강이야기"
+    }
+  ]
+}

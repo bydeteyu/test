@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>써큐톡스 황금 키워드 리서치</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="layout">
+
+    <!-- ── 사이드바 ── -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">🔑</span>
+        <div>
+          <div class="logo-title">황금 키워드</div>
+          <div class="logo-sub">써큐톡스 리서치</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">키워드 입력</div>
+        <textarea id="keywordInput" placeholder="키워드를 한 줄에 하나씩 입력하세요.&#10;비워두면 기본 23개 시드 키워드 사용.&#10;&#10;예)&#10;콜레스테롤 높으면&#10;공복혈당&#10;손발 저림" rows="8"></textarea>
+        <div class="checkbox-row">
+          <input type="checkbox" id="useCacheCheck" />
+          <label for="useCacheCheck">오늘 수집 캐시 재사용 (빠름)</label>
+        </div>
+        <button class="btn-run" id="runBtn" onclick="startRun()">
+          <span class="btn-icon">▶</span> 리서치 시작
+        </button>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">과거 리포트</div>
+        <ul class="history-list" id="historyList">
+          {% for date in history %}
+          <li class="history-item" onclick="loadReport('{{ date }}')">
+            <span class="history-icon">📄</span> {{ date }}
+          </li>
+          {% endfor %}
+          {% if not history %}
+          <li class="history-empty">리포트 없음</li>
+          {% endif %}
+        </ul>
+      </div>
+    </aside>
+
+    <!-- ── 메인 콘텐츠 ── -->
+    <main class="main">
+
+      <!-- 초기 화면 -->
+      <div id="welcomeScreen" class="welcome">
+        <div class="welcome-icon">🌅</div>
+        <h1 class="welcome-title">황금 키워드 발굴 시스템</h1>
+        <p class="welcome-desc">
+          왼쪽에 키워드를 입력하고 <strong>리서치 시작</strong>을 누르세요.<br />
+          네이버 카페 · 데이터랩 · 유튜브를 분석해<br />
+          오늘의 황금 제목 TOP 3를 산출합니다.
+        </p>
+        <div class="welcome-steps">
+          <div class="step"><span class="step-num">1</span><span>수집</span></div>
+          <div class="step-arrow">→</div>
+          <div class="step"><span class="step-num">2</span><span>분석</span></div>
+          <div class="step-arrow">→</div>
+          <div class="step"><span class="step-num">3</span><span>생성</span></div>
+          <div class="step-arrow">→</div>
+          <div class="step"><span class="step-num">4</span><span>리포트</span></div>
+        </div>
+      </div>
+
+      <!-- 진행 화면 -->
+      <div id="progressScreen" class="progress-screen hidden">
+        <div class="progress-header">
+          <div class="spinner"></div>
+          <div>
+            <div class="progress-title" id="progressTitle">리서치 진행 중…</div>
+            <div class="progress-sub" id="progressSub">잠시만 기다려주세요</div>
+          </div>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="progressBar" style="width:0%"></div>
+        </div>
+        <div class="progress-pct" id="progressPct">0%</div>
+
+        <div class="step-indicators">
+          <div class="step-ind" id="si-collect">📡 수집</div>
+          <div class="step-ind" id="si-analyze">🔍 분석</div>
+          <div class="step-ind" id="si-generate">✨ 생성</div>
+          <div class="step-ind" id="si-report">📄 리포트</div>
+        </div>
+
+        <div class="log-box" id="logBox"></div>
+      </div>
+
+      <!-- 리포트 화면 -->
+      <div id="reportScreen" class="report-screen hidden">
+        <div class="report-topbar">
+          <div class="report-date" id="reportDateLabel"></div>
+          <button class="btn-raw" onclick="toggleRaw()">📋 원본 보기</button>
+          <button class="btn-new" onclick="showWelcome()">+ 새 리서치</button>
+        </div>
+        <div id="reportContent" class="report-content"></div>
+        <div id="reportRaw" class="report-raw hidden"></div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -4,7 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "8mb" }));
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "db.json");
@@ -209,6 +209,7 @@ app.post("/api/monitor/run", async (req, res) => {
           description: item.description,
           link: item.link,
           cafename: item.cafename,
+          source: "auto",
           reviewed: false,
           foundAt: new Date().toISOString()
         };
@@ -225,6 +226,83 @@ app.post("/api/monitor/run", async (req, res) => {
 
   saveDb(db);
   res.json({ newCount: added.length, matches: added });
+});
+
+app.post("/api/matches", (req, res) => {
+  const db = loadDb();
+  const body = req.body || {};
+  const projectId = body.projectId;
+  const project = db.projects.find((p) => p.id === projectId);
+  if (!project) return res.status(404).json({ error: "not_found" });
+
+  const title = String(body.title || "").trim();
+  if (!title) return res.status(400).json({ error: "title_required" });
+
+  const link = String(body.link || "").trim();
+  if (link && db.matches.some((m) => m.projectId === projectId && m.link === link)) {
+    return res.status(409).json({ error: "duplicate" });
+  }
+
+  const match = {
+    id: crypto.randomUUID(),
+    projectId,
+    keyword: String(body.keyword || "").trim() || "(수동 등록)",
+    title,
+    description: String(body.description || "").trim(),
+    link,
+    cafename: String(body.cafename || project.cafeName || "").trim(),
+    source: "manual",
+    reviewed: false,
+    foundAt: new Date().toISOString()
+  };
+  db.matches.push(match);
+  saveDb(db);
+  res.status(201).json(match);
+});
+
+app.post("/api/matches/from-image", async (req, res) => {
+  const db = loadDb();
+  const body = req.body || {};
+  const projectId = body.projectId;
+  const project = db.projects.find((p) => p.id === projectId);
+  if (!project) return res.status(404).json({ error: "not_found" });
+
+  const imageBase64 = String(body.imageBase64 || "");
+  if (!imageBase64) return res.status(400).json({ error: "image_required" });
+  if (imageBase64.length > 7_000_000) return res.status(400).json({ error: "image_too_large" });
+  const mediaType = SCREENSHOT_TYPES.includes(body.mediaType) ? body.mediaType : "image/png";
+
+  const link = String(body.link || "").trim();
+  if (link && db.matches.some((m) => m.projectId === projectId && m.link === link)) {
+    return res.status(409).json({ error: "duplicate" });
+  }
+
+  let extracted;
+  try {
+    extracted = await extractFromScreenshot(imageBase64, mediaType);
+  } catch (err) {
+    if (err.code === "missing_llm_key") {
+      return res.status(500).json({ error: "missing_llm_key", message: "ANTHROPIC_API_KEY 환경 변수가 설정되어 있지 않습니다." });
+    }
+    return res.status(502).json({ error: err.code || "extract_failed" });
+  }
+
+  const title = String(body.title || extracted.title || "").trim() || "스크린샷 등록";
+  const match = {
+    id: crypto.randomUUID(),
+    projectId,
+    keyword: "(스크린샷 등록)",
+    title,
+    description: String(extracted.content || "").trim(),
+    link,
+    cafename: String(project.cafeName || "").trim(),
+    source: "screenshot",
+    reviewed: false,
+    foundAt: new Date().toISOString()
+  };
+  db.matches.push(match);
+  saveDb(db);
+  res.status(201).json(match);
 });
 
 app.get("/api/matches", (req, res) => {
@@ -276,7 +354,7 @@ function buildAnalysisPrompt(project, posts, existingKeywords) {
   ].join("\n");
 }
 
-async function analyzeForKeywords(prompt) {
+async function callClaudeJSON(content) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     const err = new Error("missing_llm_key");
@@ -294,7 +372,7 @@ async function analyzeForKeywords(prompt) {
     body: JSON.stringify({
       model,
       max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }]
+      messages: [{ role: "user", content }]
     })
   });
   if (!res.ok) {
@@ -307,16 +385,34 @@ async function analyzeForKeywords(prompt) {
   const body = await res.json();
   const text = (body.content || []).map((c) => c.text || "").join("");
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  let parsed;
   try {
-    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+    return JSON.parse(jsonMatch ? jsonMatch[0] : text);
   } catch (e) {
     const err = new Error("parse_error");
     err.code = "parse_error";
     err.detail = text;
     throw err;
   }
+}
+
+async function analyzeForKeywords(prompt) {
+  const parsed = await callClaudeJSON(prompt);
   return Array.isArray(parsed.keywords) ? parsed.keywords : [];
+}
+
+const SCREENSHOT_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+async function extractFromScreenshot(imageBase64, mediaType) {
+  const prompt = [
+    "이 이미지는 네이버 카페 게시글(또는 댓글) 스크린샷이다.",
+    "이미지에 실제로 보이는 내용만 근거로 다음 JSON을 추출해라. 보이지 않는 내용을 지어내지 마라.",
+    '{"title": "글 제목 (안 보이면 본문 첫 문장으로 대체)", "content": "본문 내용 요약 (2~4문장)", "keywords": ["글에서 언급된 증상/관심사 표현 후보, 최대 5개"]}',
+    "다른 설명 없이 JSON만 답해라."
+  ].join("\n");
+  return callClaudeJSON([
+    { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
+    { type: "text", text: prompt }
+  ]);
 }
 
 app.post("/api/keywords/suggest", async (req, res) => {

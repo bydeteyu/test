@@ -380,12 +380,16 @@ td input[type=text]{width:100%; min-width:90px}
     } else {
       html += '<div class="summary-row"><div class="stat"><div class="num">' + matches.length + '</div><div class="lbl">발견된 글</div></div>' +
         '<div class="stat"><div class="num">' + unreviewed.length + '</div><div class="lbl">미확인</div></div></div>';
-      html += '<div class="table-scroll"><table><thead><tr><th>발견일</th><th>키워드</th><th>제목</th><th>카페명</th><th>확인</th><th></th></tr></thead><tbody>';
+      html += '<div class="table-scroll"><table><thead><tr><th>발견일</th><th>출처</th><th>키워드</th><th>제목</th><th>카페명</th><th>확인</th><th></th></tr></thead><tbody>';
       matches.forEach(function(m){
+        var titleCell = m.link
+          ? '<a href="' + esc(m.link) + '" target="_blank" rel="noopener">' + esc(m.title) + '</a>'
+          : esc(m.title);
         html += '<tr>';
         html += '<td>' + esc((m.foundAt||"").slice(0,10)) + '</td>';
+        html += '<td>' + sourceBadge(m.source) + '</td>';
         html += '<td>' + esc(m.keyword) + '</td>';
-        html += '<td><a href="' + esc(m.link) + '" target="_blank" rel="noopener">' + esc(m.title) + '</a></td>';
+        html += '<td>' + titleCell + (m.description ? '<div class="meta-line">' + esc(m.description) + '</div>' : '') + '</td>';
         html += '<td>' + esc(m.cafename) + '</td>';
         html += '<td><input type="checkbox" data-match-id="' + esc(m.id) + '"' + (m.reviewed ? ' checked' : '') + '></td>';
         html += '<td><button class="danger" data-del-match="' + esc(m.id) + '">삭제</button></td>';
@@ -393,8 +397,34 @@ td input[type=text]{width:100%; min-width:90px}
       });
       html += '</tbody></table></div>';
     }
+
+    html += '<div style="border-top:1px solid var(--border);padding-top:14px;display:flex;flex-direction:column;gap:8px">';
+    html += '<h3 style="font-size:0.92rem">글 수동 등록</h3>';
+    html += '<p class="meta-line">가입이 필요한 카페 글은 자동 검색에 안 잡힐 수 있어요. 화면을 캡처해 올리면 AI가 제목·내용을 읽어서 등록합니다 (복사가 막혀 있어도 스크린샷은 문제없어요). 이미지 없이 링크·제목만 직접 입력해도 됩니다.</p>';
+    html += '<form id="manualMatchForm" class="add-row-form">';
+    html += '<label class="wide"><span class="lbl">스크린샷 업로드</span><input type="file" name="image" accept="image/*"></label>';
+    html += '<label class="wide"><span class="lbl">제목 (이미지 업로드 시 자동 추출, 직접 입력 시 우선 사용)</span><input type="text" name="title" placeholder="예: 중학생 아이 키성장이 고민이에요"></label>';
+    html += '<label class="wide"><span class="lbl">글 링크 (선택)</span><input type="text" name="link" placeholder="https://cafe.naver.com/..."></label>';
+    html += '<button class="primary" type="submit">등록</button>';
+    html += '</form>';
+    html += '</div>';
+
     html += '</section>';
     return html;
+  }
+
+  function sourceBadge(source){
+    var label = source === "screenshot" ? "스크린샷" : source === "manual" ? "수동" : "자동검색";
+    return '<span class="badge ' + (source ? 'good' : 'warn') + '" style="font-size:0.68rem;padding:2px 8px">' + label + '</span>';
+  }
+
+  function fileToBase64(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){ resolve(String(reader.result).split(",")[1] || ""); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   }
 
   function wireMonitorSection(project){
@@ -434,6 +464,45 @@ td input[type=text]{width:100%; min-width:90px}
         api("/api/matches/" + btn.getAttribute("data-del-match"), { method: "DELETE" })
           .then(refresh).catch(function(){ toast("삭제에 실패했습니다"); });
       });
+    });
+
+    var manualForm = document.getElementById("manualMatchForm");
+    if (manualForm) manualForm.addEventListener("submit", function(ev){
+      ev.preventDefault();
+      var fd = new FormData(manualForm);
+      var file = fd.get("image");
+      var title = String(fd.get("title") || "").trim();
+      var link = String(fd.get("link") || "").trim();
+      var submitBtn = manualForm.querySelector("button[type=submit]");
+
+      function finish(promise){
+        submitBtn.disabled = true;
+        promise.then(function(){
+          toast("글을 등록했습니다");
+          manualForm.reset();
+          return refresh();
+        }).catch(function(err){
+          var msg = err.message === "missing_llm_key" ? "Claude API 키가 설정되어 있지 않습니다" :
+            err.message === "duplicate" ? "이미 등록된 링크입니다" :
+            err.message === "image_too_large" ? "이미지 용량이 너무 큽니다" :
+            err.message === "title_required" ? "제목을 입력하거나 이미지를 첨부하세요" : "등록에 실패했습니다";
+          toast(msg);
+        }).finally(function(){
+          submitBtn.disabled = false;
+        });
+      }
+
+      if (file && file.size > 0){
+        fileToBase64(file).then(function(base64){
+          finish(api("/api/matches/from-image", { method: "POST", body: {
+            projectId: project.id, imageBase64: base64, mediaType: file.type, title: title, link: link
+          } }));
+        });
+      } else if (title) {
+        finish(api("/api/matches", { method: "POST", body: { projectId: project.id, title: title, link: link } }));
+      } else {
+        toast("제목을 입력하거나 이미지를 첨부하세요");
+      }
     });
   }
 

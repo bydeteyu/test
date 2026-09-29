@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>순위 기록</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Apple SD Gothic Neo',sans-serif;background:#f0f2f7;min-height:100vh}
+header{background:#1a1a2e;color:#fff;padding:16px 28px;display:flex;align-items:center;gap:16px}
+header a{color:rgba(255,255,255,.5);text-decoration:none;font-size:.85rem}
+header a:hover{color:#fff}
+header h1{font-size:1rem;font-weight:700;color:#fff}
+.wrap{max-width:960px;margin:30px auto;padding:0 18px}
+.card{background:#fff;border-radius:12px;box-shadow:0 1px 8px rgba(0,0,0,.06);padding:24px;margin-bottom:18px}
+.card h2{font-size:.98rem;margin-bottom:10px}
+label.lbl{display:block;font-weight:600;margin-bottom:6px;font-size:.88rem}
+.hint{font-size:.78rem;color:#aaa;margin-bottom:9px;line-height:1.5}
+textarea,input,select{width:100%;border:1.5px solid #e0e3ed;border-radius:8px;padding:9px 11px;font:inherit;font-size:.88rem;outline:none;background:#fafbfd}
+textarea{height:80px;resize:vertical}
+textarea:focus,input:focus,select:focus{border-color:#03c75a;background:#fff}
+button.run{margin-top:12px;width:100%;padding:12px;background:#03c75a;color:#fff;font-size:.95rem;font-weight:700;border:none;border-radius:8px;cursor:pointer}
+button.run:hover{background:#02a84b}
+button.run:disabled{background:#b2dfcc;cursor:not-allowed}
+button.sm{padding:6px 13px;border:none;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;color:#fff;background:#1976d2}
+button.sm.del{background:#fff;color:#c62828;border:1px solid #f48fb1;padding:3px 9px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:4px}
+.grid3 label{font-size:.78rem;color:#777;display:block;margin-bottom:3px}
+@media(max-width:640px){.grid3{grid-template-columns:1fr}}
+.sbar{display:none;padding:10px 14px;border-radius:8px;font-size:.87rem;margin-bottom:14px}
+.sbar.running{background:#fff8e1;color:#9a6e00;border:1px solid #ffe082}
+.sbar.done{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7}
+.sbar.error{background:#fce4ec;color:#c62828;border:1px solid #f48fb1}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+.row>div{flex:1 1 150px}
+.row .sp{flex:0 0 auto;display:flex;gap:8px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{background:#f5f6fa;padding:8px 11px;text-align:left;font-weight:600;border-bottom:2px solid #e8eaf0;white-space:nowrap}
+td{padding:8px 11px;border-bottom:1px solid #f0f1f5;vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.c,th.c{text-align:center;white-space:nowrap}
+td a{color:#1976d2;text-decoration:none}
+td a:hover{text-decoration:underline}
+tr.mine td{background:#e8f5e9;font-weight:600}
+td.hit{background:#e8f5e9;color:#2e7d32;font-weight:700}
+td.miss{background:#fdeeee;color:#c62828}
+td.na{color:#aaa}
+.tag{font-size:.7rem;padding:1px 7px;border-radius:10px;background:#eef1f8;color:#556}
+.meta{font-size:.76rem;color:#999;margin-top:10px;line-height:1.6}
+.spinner{display:inline-block;width:14px;height:14px;vertical-align:middle;border:2.5px solid #c8e6c9;border-top-color:#03c75a;border-radius:50%;animation:spin .7s linear infinite;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <a href="/">&larr; 홈</a>
+  <h1>&#128203; 순위 기록</h1>
+</header>
+<div class="wrap">
+  <div class="card">
+    <h2>키워드로 순위 검색</h2>
+    <label class="lbl">검색 키워드</label>
+    <p class="hint">한 줄에 하나씩 또는 콤마(,)로 구분 — 통합검색과 카페탭을 각각 <span class="snapTop">30</span>위까지 수집하고 오늘 날짜로 기록합니다. 검색한 키워드는 매일 오전 9시 30분에 자동으로 다시 기록됩니다.</p>
+    <textarea id="kwInput" placeholder="대추밭백한의원&#10;수원한방병원 추천"></textarea>
+    <button class="run" id="searchBtn" onclick="startSearch()">순위 확인 시작</button>
+  </div>
+
+  <div id="status" class="sbar"></div>
+
+  <div class="card" id="snapCard" style="display:none">
+    <h2>검색 결과 · 기록</h2>
+    <div class="row">
+      <div><label class="lbl">키워드</label><select id="snapKw" onchange="loadSnap(true)"></select></div>
+      <div><label class="lbl">날짜</label><select id="snapDate" onchange="renderSnap()"></select></div>
+      <div><label class="lbl">채널</label>
+        <select id="snapCh" onchange="renderSnap()"><option value="integrated">통합검색</option><option value="cafe">카페탭</option></select></div>
+      <div class="sp"><button class="sm" onclick="downloadCsv()">↓ CSV</button></div>
+    </div>
+    <div class="scroll" id="snapTable"></div>
+    <p class="meta">초록색 행은 아래에 등록한 추적 콘텐츠입니다. CSV에는 선택한 키워드의 전체 날짜 기록이 들어갑니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>추적 콘텐츠 순위표</h2>
+    <p class="hint">내 글이 통합검색·카페탭에서 몇 위인지 날짜별로 기록합니다. 제목에 들어간 문구나 글 주소 중 하나만 입력해도 됩니다.</p>
+    <div class="grid3">
+      <div><label>검색 키워드</label><input id="fKw" placeholder="대추밭백한의원"></div>
+      <div><label>제목에 포함된 문구</label><input id="fTitle" placeholder="대추밭백한의원 다녀왔어요"></div>
+      <div><label>또는 글 주소</label><input id="fUrl" placeholder="cafe.naver.com/카페명/12345"></div>
+    </div>
+    <div class="row" style="margin-top:10px"><div class="sp"><button class="sm" onclick="addItem()">추가</button>
+      <button class="sm" id="runBtn" onclick="runAll()">지금 확인</button></div></div>
+    <div class="scroll" id="trackTable"></div>
+    <p class="meta">검색 범위는 통합·카페탭 각각 <span class="trackTop">20</span>위까지이며, 범위 밖이면 "20위 밖"으로 표시됩니다. 조회가 실패한 칸은 "-"로 표시합니다. 데이터 보존에는 DATA_DIR(Volume) 설정이 필요합니다.</p>
+  </div>
+</div>
+<script>
+let timer=null,items=[],trackTop=20;
+const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const $=id=>document.getElementById(id);
+function setStatus(t,m){const el=$('status');el.className='sbar '+t;el.style.display='block';el.innerHTML=(t==='running'?'<span class="spinner"></span>':'')+esc(m);}
+async function api(url,opt){
+  const r=await fetch(url,opt&&{method:opt.method,headers:{'Content-Type':'application/json'},body:opt.body&&JSON.stringify(opt.body)});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+  return d;
+}
+async function startSearch(){
+  const raw=$('kwInput').value.trim();
+  if(!raw){alert('키워드를 입력하세요.');return;}
+  try{await api('/api/rankboard/search',{method:'POST',body:{keywords:raw}});}catch(e){alert(e.message);return;}
+  poll();
+}
+async function runAll(){
+  try{await api('/api/rankboard/run',{method:'POST'});}catch(e){alert(e.message);return;}
+  poll();
+}
+async function addItem(){
+  const body={keyword:$('fKw').value,title_contains:$('fTitle').value,url:$('fUrl').value};
+  try{await api('/api/rankboard/items',{method:'POST',body});}catch(e){alert(e.message);return;}
+  ['fTitle','fUrl'].forEach(i=>$(i).value='');
+  refresh();
+}
+async function delItem(id){if(confirm('이 항목과 기록을 삭제할까요?')){await api('/api/rankboard/items/'+id,{method:'DELETE'});refresh();}}
+
+async function poll(){
+  clearInterval(timer);
+  const tick=async()=>{
+    const d=await refresh();
+    if(d.state.running)return;
+    clearInterval(timer);timer=null;
+    if(d.state.error)setStatus('error','오류: '+d.state.error);
+    else setStatus('done','완료! 결과를 아래에서 확인하세요.');
+  };
+  timer=setInterval(tick,2500);tick();
+}
+async function refresh(){
+  const d=await api('/api/rankboard');
+  items=d.items;trackTop=d.track_top;
+  document.querySelectorAll('.snapTop').forEach(e=>e.textContent=d.snapshot_top);
+  document.querySelectorAll('.trackTop').forEach(e=>e.textContent=d.track_top);
+  const run=d.state.running;
+  $('searchBtn').disabled=run;$('runBtn').disabled=run;
+  if(run)setStatus('running','확인 중… ('+d.state.done+'/'+d.state.total+') 키워드당 수십 초가 걸립니다.');
+  renderTrack();
+  const cur=$('snapKw').value;
+  $('snapCard').style.display=d.keywords.length?'block':'none';
+  $('snapKw').innerHTML=d.keywords.map(k=>'<option>'+esc(k.keyword)+'</option>').join('');
+  if(d.keywords.some(k=>k.keyword===cur))$('snapKw').value=cur;
+  await loadSnap(false);
+  return d;
+}
+function cell(r){
+  if(!r||r.status==='error')return '<td class="c na">-</td>';
+  return r.status==='hit'?'<td class="c hit">'+r.rank+'위</td>':'<td class="c miss">'+trackTop+'위 밖</td>';
+}
+function renderTrack(){
+  if(!items.length){$('trackTable').innerHTML='<p class="meta">아직 추적 중인 콘텐츠가 없습니다.</p>';return;}
+  const dates=[...new Set(items.flatMap(i=>Object.keys(i.history)))].sort().reverse().slice(0,7);
+  let h='<table><thead><tr><th rowspan="2">키워드</th><th rowspan="2">콘텐츠</th>'+dates.map(d=>'<th class="c" colspan="2">'+esc(d.slice(5))+'</th>').join('')+'<th rowspan="2"></th></tr><tr>'+dates.map(()=>'<th class="c">통합</th><th class="c">카페탭</th>').join('')+'</tr></thead><tbody>';
+  for(const i of items){
+    h+='<tr><td>'+esc(i.keyword)+'</td><td>'+esc(i.label)+'</td>'+dates.map(d=>cell((i.history[d]||{}).integrated)+cell((i.history[d]||{}).cafe)).join('')+'<td><button class="sm del" onclick="delItem(\''+i.id+'\')">삭제</button></td></tr>';
+  }
+  $('trackTable').innerHTML=h+'</tbody></table>'+(dates.length?'':'<p class="meta">"지금 확인"을 누르면 첫 기록이 만들어집니다.</p>');
+}
+
+let snaps={};
+async function loadSnap(resetDates){
+  const kw=$('snapKw').value;if(!kw)return;
+  snaps=await api('/api/rankboard/snapshots?keyword='+encodeURIComponent(kw));
+  const dates=Object.keys(snaps).sort().reverse();
+  const keep=resetDates?'':$('snapDate').value;
+  $('snapDate').innerHTML=dates.map(d=>'<option>'+d+'</option>').join('');
+  if(dates.includes(keep))$('snapDate').value=keep;
+  renderSnap();
+}
+function isMine(p,kw){
+  const norm=s=>String(s||'').replace(/\s+/g,'').toLowerCase();
+  return items.filter(i=>i.keyword===kw).some(i=>(i.url&&p.link.includes(i.url.replace(/^https?:\/\/(m\.)?/,'').replace(/\/$/,'')))||(i.title_contains&&norm(p.title).includes(norm(i.title_contains))));
+}
+function renderSnap(){
+  const kw=$('snapKw').value,day=snaps[$('snapDate').value];
+  const posts=day&&day[$('snapCh').value];
+  if(!posts||!posts.length){$('snapTable').innerHTML='<p class="meta">이 날짜·채널은 결과를 가져오지 못했습니다(조회 차단 또는 결과 없음).</p>';return;}
+  $('snapTable').innerHTML='<table><thead><tr><th class="c">순위</th><th>종류</th><th>제목</th><th>카페</th><th>링크</th></tr></thead><tbody>'+
+    posts.map(p=>'<tr class="'+(isMine(p,kw)?'mine':'')+'"><td class="c">'+p.rank+'</td><td><span class="tag">'+(p.type==='cafe'?'카페':'블로그')+'</span></td><td>'+esc(p.title)+'</td><td>'+esc(p.cafe)+'</td><td><a href="'+esc(p.link)+'" target="_blank" rel="noopener">바로가기</a></td></tr>').join('')+'</tbody></table>';
+}
+function downloadCsv(){const kw=$('snapKw').value;if(kw)window.location='/api/rankboard/download?keyword='+encodeURIComponent(kw);}
+refresh().then(d=>{if(d.state.running)poll();});
+</script>
+</body>
+</html>

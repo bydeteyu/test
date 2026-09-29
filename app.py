@@ -25,6 +25,7 @@ from apscheduler.jobstores.base import JobLookupError
 from flask import Flask, render_template, request, jsonify, send_file, abort, make_response
 
 import monitor_store
+import rank_history
 from alert_job import KST, run_alert_check
 from alert_notifier import resolve_webhook_url, send_slack_digest, APP_BASE_URL
 from naver_autocomplete import run_autocomplete
@@ -102,6 +103,17 @@ for _m in monitor_store.list_monitors():
     _schedule_monitor(_m)
 
 
+def _scheduled_rankboard():
+    keywords = rank_history.all_tracked_keywords()
+    if keywords and not RANKBOARD_STATE["running"]:
+        _run_rankboard(keywords)
+
+
+# 순위 기록: 매일 오전 9시 30분(KST)에 추적 콘텐츠·검색한 키워드를 자동 재확인
+_scheduler.add_job(_scheduled_rankboard, CronTrigger(hour=9, minute=30, timezone=KST),
+                   id="rankboard_daily", replace_existing=True)
+
+
 # ── 페이지 ──
 @app.route("/")
 def index(): return render_template("index.html")
@@ -114,6 +126,9 @@ def page_track(): return render_template("track.html")
 
 @app.route("/rank")
 def page_rank(): return render_template("rank.html")
+
+@app.route("/rankboard")
+def page_rankboard(): return render_template("rankboard.html")
 
 @app.route("/suggest")
 def page_suggest(): return render_template("suggest.html")
@@ -232,6 +247,105 @@ def api_track_download():
     w.writeheader(); w.writerows(job["rows"])
     output = make_response(si.getvalue().encode("utf-8-sig"))
     output.headers["Content-Disposition"] = "attachment; filename=tracker_result.csv"
+    output.headers["Content-Type"] = "text/csv; charset=utf-8"
+    return output
+
+
+# ── 순위 기록 (통합검색 / 카페탭 순위를 날짜별로 기록) ──
+RANKBOARD_STATE = {"running": False, "done": 0, "total": 0, "error": ""}
+
+
+def _run_rankboard(keywords, item_ids=None):
+    """수동/자동 공통. 브라우저는 다른 작업과 동시에 뜨지 않도록 전역 _run_lock 을 거친다."""
+    if not _run_lock.acquire(timeout=RUN_LOCK_TIMEOUT):
+        RANKBOARD_STATE.update({"running": False, "error": "다른 작업이 오래 걸리고 있어 시작하지 못했습니다."})
+        return
+    try:
+        RANKBOARD_STATE.update({"running": True, "done": 0, "total": len(keywords), "error": ""})
+        rank_history.run_check(
+            keywords, item_ids=item_ids,
+            progress_cb=lambda done, total: RANKBOARD_STATE.update({"done": done, "total": total}),
+        )
+    except Exception as e:  # noqa: BLE001
+        RANKBOARD_STATE["error"] = str(e)
+    finally:
+        RANKBOARD_STATE["running"] = False
+        _run_lock.release()
+
+
+def _start_rankboard(keywords, item_ids=None):
+    """이미 실행 중이면 False."""
+    if RANKBOARD_STATE["running"]:
+        return False
+    RANKBOARD_STATE.update({"running": True, "done": 0, "total": len(keywords), "error": ""})
+    threading.Thread(target=_run_rankboard, args=(keywords, item_ids), daemon=True).start()
+    return True
+
+
+@app.route("/api/rankboard")
+def api_rankboard():
+    return jsonify({
+        "state": RANKBOARD_STATE,
+        "track_top": rank_history.TRACK_TOP,
+        "snapshot_top": rank_history.SNAPSHOT_TOP,
+        "items": rank_history.list_items(),
+        "keywords": rank_history.snapshot_keywords(),
+    })
+
+
+@app.route("/api/rankboard/search", methods=["POST"])
+def api_rankboard_search():
+    raw = (request.get_json(force=True) or {}).get("keywords", "")
+    keywords = list(dict.fromkeys(k.strip() for k in raw.replace("\n", ",").split(",") if k.strip()))[:20]
+    if not keywords: return jsonify({"error": "키워드를 입력하세요."}), 400
+    if not _start_rankboard(keywords): return jsonify({"error": "이미 확인 중입니다. 잠시 후 다시 시도하세요."}), 409
+    return jsonify({"started": len(keywords)})
+
+
+@app.route("/api/rankboard/run", methods=["POST"])
+def api_rankboard_run():
+    """등록된 추적 콘텐츠 전체를 지금 확인."""
+    items = rank_history.list_items()
+    if not items: return jsonify({"error": "등록된 추적 콘텐츠가 없습니다."}), 400
+    keywords = list(dict.fromkeys(i["keyword"] for i in items))
+    if not _start_rankboard(keywords): return jsonify({"error": "이미 확인 중입니다. 잠시 후 다시 시도하세요."}), 409
+    return jsonify({"started": len(keywords)})
+
+
+@app.route("/api/rankboard/items", methods=["POST"])
+def api_rankboard_add_item():
+    d = request.get_json(force=True) or {}
+    keyword, title, url = (d.get(k, "").strip() for k in ("keyword", "title_contains", "url"))
+    if not keyword or not (title or url):
+        return jsonify({"error": "키워드와, 제목 문구 또는 글 주소 중 하나가 필요합니다."}), 400
+    return jsonify(rank_history.add_item(keyword, title, url, d.get("label", "")))
+
+
+@app.route("/api/rankboard/items/<item_id>", methods=["DELETE"])
+def api_rankboard_delete_item(item_id):
+    rank_history.delete_item(item_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/rankboard/snapshots")
+def api_rankboard_snapshots():
+    return jsonify(rank_history.get_snapshots(request.args.get("keyword", "")))
+
+
+@app.route("/api/rankboard/download")
+def api_rankboard_download():
+    keyword = request.args.get("keyword", "")
+    snaps = rank_history.get_snapshots(keyword)
+    if not snaps: abort(404)
+    si = StringIO()
+    w = csv.writer(si)
+    w.writerow(["날짜", "키워드", "채널", "순위", "종류", "제목", "카페", "링크"])
+    for date in sorted(snaps):
+        for ch, label in (("integrated", "통합"), ("cafe", "카페탭")):
+            for p in snaps[date].get(ch, []):
+                w.writerow([date, keyword, label, p["rank"], p.get("type", ""), p["title"], p.get("cafe", ""), p["link"]])
+    output = make_response(si.getvalue().encode("utf-8-sig"))
+    output.headers["Content-Disposition"] = _attachment_header(f"rank_history_{keyword}.csv")
     output.headers["Content-Type"] = "text/csv; charset=utf-8"
     return output
 

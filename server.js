@@ -45,6 +45,7 @@ function loadDb() {
   }
   const db = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
   if (!db.matches) db.matches = [];
+  if (!db.suggestions) db.suggestions = [];
   return db;
 }
 
@@ -246,6 +247,175 @@ app.patch("/api/matches/:id", (req, res) => {
 app.delete("/api/matches/:id", (req, res) => {
   const db = loadDb();
   db.matches = db.matches.filter((m) => m.id !== req.params.id);
+  saveDb(db);
+  res.json({ ok: true });
+});
+
+// ---- AI keyword expansion (Claude API — reads found post titles/descriptions only) ----
+function buildAnalysisPrompt(project, posts, existingKeywords) {
+  const postList = posts
+    .map((p, i) => (i + 1) + ". 제목: " + p.title + "\n   설명: " + (p.description || "(없음)"))
+    .join("\n");
+  return [
+    "너는 마케팅 에이전시의 키워드 리서치 담당자다.",
+    '아래는 네이버 카페 "' + (project.cafeName || "") + '"에서 감시 키워드로 검색해 발견한 글 목록이다',
+    "(클라이언트: " + project.name + ", 업종: " + (project.industry || "미상") + ").",
+    "",
+    postList,
+    "",
+    "이 글들에서 실제로 사람들이 궁금해하거나 검색할 법한 표현을 바탕으로, 추가로 감시하면 좋을 검색 키워드 후보를 최대 8개 제안해줘.",
+    "조건:",
+    "- 위 글 목록에 실제로 등장하거나 명확히 암시된 표현만 근거로 삼을 것 (없는 내용을 지어내지 말 것)",
+    "- 이미 감시 중인 키워드(" + (existingKeywords.join(", ") || "없음") + ")와 중복되지 않게",
+    '- 2~6단어의 자연스러운 검색어 형태로 (예: "중학생 키 성장", "성장판 자극 방법")',
+    "- 각 키워드마다 근거가 된 글의 표현을 한 줄로 설명",
+    '- 의료광고 규제상 과장된 효능 표현("완치", "100% 효과" 등)은 키워드로 제안하지 말 것',
+    "",
+    "다음 JSON 형식으로만 답해라. 다른 설명은 붙이지 마라.",
+    '{"keywords":[{"keyword":"...", "reason":"..."}]}'
+  ].join("\n");
+}
+
+async function analyzeForKeywords(prompt) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    const err = new Error("missing_llm_key");
+    err.code = "missing_llm_key";
+    throw err;
+  }
+  const model = process.env.CLAUDE_MODEL || "claude-haiku-4-5-20251001";
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }]
+    })
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    const err = new Error("llm_api_error_" + res.status);
+    err.code = "llm_api_error";
+    err.detail = detail;
+    throw err;
+  }
+  const body = await res.json();
+  const text = (body.content || []).map((c) => c.text || "").join("");
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+  } catch (e) {
+    const err = new Error("parse_error");
+    err.code = "parse_error";
+    err.detail = text;
+    throw err;
+  }
+  return Array.isArray(parsed.keywords) ? parsed.keywords : [];
+}
+
+app.post("/api/keywords/suggest", async (req, res) => {
+  const db = loadDb();
+  const { projectId } = req.body || {};
+  const project = db.projects.find((p) => p.id === projectId);
+  if (!project) return res.status(404).json({ error: "not_found" });
+
+  const posts = db.matches.filter((m) => m.projectId === projectId).slice(0, 30);
+  if (posts.length === 0) return res.status(400).json({ error: "no_posts" });
+
+  const existingKeywords = new Set(
+    String(project.watchKeywords || "").split(/[,\n]/).map((k) => k.trim()).filter(Boolean)
+  );
+  db.keywords.filter((k) => k.projectId === projectId).forEach((k) => existingKeywords.add(k.keyword));
+  db.suggestions.filter((s) => s.projectId === projectId).forEach((s) => existingKeywords.add(s.keyword));
+
+  const prompt = buildAnalysisPrompt(project, posts, Array.from(existingKeywords));
+
+  let suggested;
+  try {
+    suggested = await analyzeForKeywords(prompt);
+  } catch (err) {
+    if (err.code === "missing_llm_key") {
+      return res.status(500).json({ error: "missing_llm_key", message: "ANTHROPIC_API_KEY 환경 변수가 설정되어 있지 않습니다." });
+    }
+    return res.status(502).json({ error: err.code || "analysis_failed" });
+  }
+
+  const added = [];
+  for (const item of suggested) {
+    const keyword = String((item && item.keyword) || "").trim();
+    if (!keyword || existingKeywords.has(keyword)) continue;
+    existingKeywords.add(keyword);
+    const suggestion = {
+      id: crypto.randomUUID(),
+      projectId,
+      keyword,
+      reason: String((item && item.reason) || "").trim(),
+      status: "pending",
+      createdAt: new Date().toISOString()
+    };
+    db.suggestions.push(suggestion);
+    added.push(suggestion);
+  }
+  saveDb(db);
+  res.json({ newCount: added.length, suggestions: added });
+});
+
+app.get("/api/suggestions", (req, res) => {
+  const db = loadDb();
+  const { projectId } = req.query;
+  const list = projectId ? db.suggestions.filter((s) => s.projectId === projectId) : db.suggestions;
+  list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  res.json(list);
+});
+
+app.patch("/api/suggestions/:id", (req, res) => {
+  const db = loadDb();
+  const suggestion = db.suggestions.find((s) => s.id === req.params.id);
+  if (!suggestion) return res.status(404).json({ error: "not_found" });
+  const nextStatus = req.body && req.body.status;
+  Object.assign(suggestion, req.body);
+
+  if (nextStatus === "approved") {
+    const project = db.projects.find((p) => p.id === suggestion.projectId);
+    if (project) {
+      const kws = new Set(String(project.watchKeywords || "").split(/[,\n]/).map((k) => k.trim()).filter(Boolean));
+      if (!kws.has(suggestion.keyword)) {
+        kws.add(suggestion.keyword);
+        project.watchKeywords = Array.from(kws).join(", ");
+      }
+    }
+    const alreadyRow = db.keywords.some((k) => k.projectId === suggestion.projectId && k.keyword === suggestion.keyword);
+    if (!alreadyRow) {
+      db.keywords.push({
+        id: crypto.randomUUID(),
+        projectId: suggestion.projectId,
+        keyword: suggestion.keyword,
+        channel: "온라인 커뮤니티",
+        volumeScore: 0,
+        competitionScore: 0,
+        trendScore: 0,
+        brandFitScore: 0,
+        viralScore: 0,
+        owner: "",
+        notes: "AI 리서치 제안 — 근거: " + suggestion.reason,
+        createdAt: new Date().toISOString()
+      });
+    }
+  }
+
+  saveDb(db);
+  res.json(suggestion);
+});
+
+app.delete("/api/suggestions/:id", (req, res) => {
+  const db = loadDb();
+  db.suggestions = db.suggestions.filter((s) => s.id !== req.params.id);
   saveDb(db);
   res.json({ ok: true });
 });

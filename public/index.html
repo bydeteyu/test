@@ -160,7 +160,7 @@ td input[type=text]{width:100%; min-width:90px}
   var WEIGHTS = { volume:0.3, competition:0.2, trend:0.2, brandFit:0.2, viral:0.1 };
   var POLL_MS = 5000;
 
-  var state = { projects: [], keywords: [], matches: [], activeProjectId: null, loaded: false };
+  var state = { projects: [], keywords: [], matches: [], suggestions: [], activeProjectId: null, loaded: false };
 
   var tabsEl = document.getElementById("projectTabs");
   var contentEl = document.getElementById("content");
@@ -332,6 +332,7 @@ td input[type=text]{width:100%; min-width:90px}
     html += '</section>';
 
     html += renderMonitorSection(project);
+    html += renderSuggestSection(project);
 
     contentEl.innerHTML = html;
 
@@ -357,6 +358,7 @@ td input[type=text]{width:100%; min-width:90px}
     });
 
     wireMonitorSection(project);
+    wireSuggestSection(project);
   }
 
   function renderMonitorSection(project){
@@ -449,6 +451,67 @@ td input[type=text]{width:100%; min-width:90px}
       '" data-kid="' + esc(id) + '" data-kw-field="' + field + '"></td>';
   }
 
+  function renderSuggestSection(project){
+    var pending = state.suggestions.filter(function(s){ return s.projectId === project.id && s.status === "pending"; });
+    var matchCount = state.matches.filter(function(m){ return m.projectId === project.id; }).length;
+
+    var html = '<section class="card" style="display:flex;flex-direction:column;gap:14px">';
+    html += '<div><h2>AI 키워드 확장</h2><p class="meta-line">위에서 발견한 카페 글들의 제목·설명을 AI가 분석해서, 사람들이 추가로 검색해볼 법한 키워드를 제안합니다. ' +
+      '채택하면 감시 키워드와 키워드 리서치 표에 자동으로 추가됩니다.</p></div>';
+    html += '<div><button type="button" id="suggestBtn" class="primary"' + (matchCount === 0 ? ' disabled' : '') + '>발견된 글 분석해서 키워드 제안받기</button></div>';
+
+    if (pending.length === 0){
+      html += '<div class="empty"><strong>대기 중인 제안이 없습니다</strong><span>' +
+        (matchCount === 0 ? '먼저 카페 모니터링에서 글을 찾아야 분석할 수 있어요.' : '버튼을 눌러 새 제안을 받아보세요.') +
+        '</span></div>';
+    } else {
+      html += '<div class="table-scroll"><table><thead><tr><th>제안 키워드</th><th>근거</th><th></th></tr></thead><tbody>';
+      pending.forEach(function(s){
+        html += '<tr>';
+        html += '<td>' + esc(s.keyword) + '</td>';
+        html += '<td>' + esc(s.reason) + '</td>';
+        html += '<td class="row-actions"><button class="ghost" data-approve-suggestion="' + esc(s.id) + '">채택</button>' +
+          '<button class="danger" data-reject-suggestion="' + esc(s.id) + '">무시</button></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</section>';
+    return html;
+  }
+
+  function wireSuggestSection(project){
+    var btn = document.getElementById("suggestBtn");
+    if (btn) btn.addEventListener("click", function(){
+      btn.disabled = true;
+      btn.textContent = "분석 중…";
+      api("/api/keywords/suggest", { method: "POST", body: { projectId: project.id } }).then(function(result){
+        toast("새 키워드 제안 " + result.newCount + "건");
+        return refresh();
+      }).catch(function(err){
+        var msg = err.message === "missing_llm_key" ? "Claude API 키가 설정되어 있지 않습니다" :
+          err.message === "no_posts" ? "분석할 글이 없습니다. 먼저 카페 검색을 실행하세요" : "분석에 실패했습니다";
+        toast(msg);
+      }).finally(function(){
+        btn.disabled = false;
+        btn.textContent = "발견된 글 분석해서 키워드 제안받기";
+      });
+    });
+    document.querySelectorAll("[data-approve-suggestion]").forEach(function(b){
+      b.addEventListener("click", function(){
+        api("/api/suggestions/" + b.getAttribute("data-approve-suggestion"), { method: "PATCH", body: { status: "approved" } })
+          .then(function(){ toast("키워드를 채택했습니다"); return refresh(); })
+          .catch(function(){ toast("처리에 실패했습니다"); });
+      });
+    });
+    document.querySelectorAll("[data-reject-suggestion]").forEach(function(b){
+      b.addEventListener("click", function(){
+        api("/api/suggestions/" + b.getAttribute("data-reject-suggestion"), { method: "PATCH", body: { status: "rejected" } })
+          .then(refresh).catch(function(){ toast("처리에 실패했습니다"); });
+      });
+    });
+  }
+
   // ---- modal: create / edit project ----
   function openProjectModal(existing){
     var isEdit = !!existing;
@@ -532,10 +595,11 @@ td input[type=text]{width:100%; min-width:90px}
 
   // ---- load / poll ----
   function refresh(){
-    return Promise.all([api("/api/projects"), api("/api/keywords"), api("/api/matches")]).then(function(res){
+    return Promise.all([api("/api/projects"), api("/api/keywords"), api("/api/matches"), api("/api/suggestions")]).then(function(res){
       state.projects = res[0];
       state.keywords = res[1];
       state.matches = res[2];
+      state.suggestions = res[3];
       state.loaded = true;
       if (!state.activeProjectId && state.projects.length) state.activeProjectId = state.projects[0].id;
       if (state.activeProjectId && !state.projects.some(function(p){ return p.id === state.activeProjectId; })){

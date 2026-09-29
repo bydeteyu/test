@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>순위 체크</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F7F5F0; --surface:#FFFFFF; --surface-2:#F0ECE3;
+  --ink:#1E2420; --ink-soft:#63706A; --border:#DDD6C8;
+  --accent:#0E6E58; --accent-ink:#FFFFFF; --accent-soft:#E1EFE8;
+  --good:#1F7A4D; --good-soft:#E4F5EA;
+  --warn:#A6741A; --warn-soft:#FBF0DA;
+  --bad:#AE4430; --bad-soft:#FBE9E3;
+  --font-display:'Sora',system-ui,sans-serif;
+  --font-body:'Inter',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#14181A; --surface:#1C2220; --surface-2:#232B28;
+    --ink:#ECEFEC; --ink-soft:#9AA6A0; --border:#313A36;
+    --accent:#3FCB9F; --accent-ink:#0B1512; --accent-soft:#1B2C27;
+    --good:#4ADE94; --good-soft:#17281F;
+    --warn:#E3B24E; --warn-soft:#2E2716;
+    --bad:#FF7A5C; --bad-soft:#2E1B16;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#14181A; --surface:#1C2220; --surface-2:#232B28;
+  --ink:#ECEFEC; --ink-soft:#9AA6A0; --border:#313A36;
+  --accent:#3FCB9F; --accent-ink:#0B1512; --accent-soft:#1B2C27;
+  --good:#4ADE94; --good-soft:#17281F;
+  --warn:#E3B24E; --warn-soft:#2E2716;
+  --bad:#FF7A5C; --bad-soft:#2E1B16;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);padding:20px 16px 48px;-webkit-font-smoothing:antialiased}
+h1,h2{font-family:var(--font-display);margin:0}
+.wrap{max-width:1040px;margin-inline:auto;display:flex;flex-direction:column;gap:20px}
+header p{margin:4px 0 0;color:var(--ink-soft);font-size:.92rem}
+a{color:var(--accent)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.card h2{font-size:1.05rem}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-soft);flex:1 1 160px}
+label b{color:var(--ink)}
+input,select{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0}
+button{font:inherit;font-family:var(--font-display);font-weight:600;cursor:pointer;border-radius:9px;border:1px solid transparent;padding:9px 16px}
+button.primary{background:var(--accent);color:var(--accent-ink)}
+button.danger{background:transparent;color:var(--bad);border-color:var(--bad-soft);padding:5px 9px;font-size:.78rem}
+button:disabled{opacity:.5;cursor:not-allowed}
+.table-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:center;white-space:nowrap}
+thead th{background:var(--surface-2);font-family:var(--font-display);font-size:.75rem;color:var(--ink-soft)}
+td.l,th.l{text-align:left}
+tbody tr:last-child td{border-bottom:none}
+.hit{background:var(--good-soft);color:var(--good);font-weight:700}
+.miss{background:var(--bad-soft);color:var(--bad)}
+.na{color:var(--ink-soft)}
+.meta{font-size:.78rem;color:var(--ink-soft)}
+.sub{color:var(--ink-soft);font-size:.76rem}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>순위 체크</h1>
+    <p>키워드로 검색했을 때 지정한 콘텐츠가 <b>통합검색</b>과 <b>카페 탭</b>에서 각각 몇 위인지 매일 확인합니다. (<a href="/">← 키워드 리서치 보드</a>)</p>
+  </header>
+
+  <section class="card">
+    <div class="row">
+      <label><b>프로젝트</b><select id="project"></select></label>
+    </div>
+    <h2>추적할 콘텐츠 추가</h2>
+    <form id="addForm" class="row">
+      <label><b>검색 키워드</b><input name="keyword" required placeholder="예: 대추밭백한의원"></label>
+      <label><b>콘텐츠 제목에 포함된 문구</b><input name="titleContains" placeholder="예: 대추밭백한의원 다녀왔어요"></label>
+      <label><b>또는 글 주소(선택)</b><input name="match" placeholder="예: cafe.naver.com/카페명/12345"></label>
+      <button class="primary" type="submit">추가</button>
+    </form>
+    <div class="meta">제목 문구나 글 주소 중 하나는 필요합니다. 주소는 <code>cafe.naver.com/카페명/글번호</code> 형태의 일부만 입력해도 됩니다.</div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2>순위표</h2>
+      <button class="primary" id="runBtn">지금 확인</button>
+    </div>
+    <div class="meta" id="status"></div>
+    <div id="table"></div>
+    <div class="meta">검색 범위는 각 채널 <span id="maxRank">20</span>위까지입니다. 매일 오전 9시(KST) 이후 서버가 자동으로 확인합니다. 조회가 막히면 <b>-</b>로 표시됩니다.</div>
+  </section>
+</div>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api = async (url, opt) => {
+  const r = await fetch(url, opt && { ...opt, headers: { "Content-Type": "application/json" }, body: JSON.stringify(opt.body) });
+  if (!r.ok) throw Object.assign(new Error("HTTP " + r.status), { status: r.status });
+  return r.json();
+};
+let pollTimer = null;
+
+async function loadProjects() {
+  const ps = await api("/api/projects");
+  $("#project").innerHTML = ps.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  const saved = localStorage.getItem("rankProject");
+  if (saved && ps.some((p) => p.id === saved)) $("#project").value = saved;
+}
+
+function cell(rec) {
+  if (!rec || rec.status === "error") return '<td class="na">-</td>';
+  return rec.status === "hit" ? `<td class="hit">${rec.rank}위</td>` : `<td class="miss">${$("#maxRank").textContent}위 밖</td>`;
+}
+
+async function refresh() {
+  const pid = $("#project").value;
+  if (!pid) return;
+  const d = await api("/api/rank?projectId=" + encodeURIComponent(pid));
+  $("#maxRank").textContent = d.maxRank;
+  $("#runBtn").disabled = d.running || d.items.length === 0;
+  $("#status").textContent = d.running ? "확인 중입니다… 키워드마다 수 초가 걸리며 자동으로 갱신됩니다." : "";
+  if (d.running && !pollTimer) pollTimer = setInterval(refresh, 5000);
+  if (!d.running && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (d.items.length === 0) { $("#table").innerHTML = '<div class="meta">아직 추적 중인 콘텐츠가 없습니다.</div>'; return; }
+  const dates = [...new Set(d.items.flatMap((i) => Object.keys(i.history)))].sort().reverse().slice(0, 7);
+  let h = '<div class="table-scroll"><table><thead><tr><th class="l" rowspan="2">키워드</th><th class="l" rowspan="2">콘텐츠</th>';
+  h += dates.map((x) => `<th colspan="2">${esc(x.slice(5))}</th>`).join("") + '<th rowspan="2"></th></tr><tr>';
+  h += dates.map(() => "<th>통합</th><th>카페</th>").join("") + "</tr></thead><tbody>";
+  for (const i of d.items) {
+    h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l">${esc(i.label)}</td>`;
+    h += dates.map((x) => cell(i.history[x]?.integrated) + cell(i.history[x]?.cafe)).join("");
+    h += `<td><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
+  }
+  $("#table").innerHTML = h + "</tbody></table></div>" + (dates.length ? "" : '<div class="meta">"지금 확인"을 누르면 첫 기록이 만들어집니다.</div>');
+}
+
+$("#project").addEventListener("change", () => { localStorage.setItem("rankProject", $("#project").value); refresh(); });
+$("#addForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  if (!f.titleContains.trim() && !f.match.trim()) return alert("제목 문구나 글 주소 중 하나를 입력하세요.");
+  await api("/api/rank/items", { method: "POST", body: { ...f, projectId: $("#project").value } });
+  e.target.reset();
+  refresh();
+});
+$("#runBtn").addEventListener("click", async () => {
+  try { await api("/api/rank/run", { method: "POST", body: { projectId: $("#project").value } }); }
+  catch (e) { if (e.status !== 409) return alert("실행하지 못했습니다."); }
+  refresh();
+});
+$("#table").addEventListener("click", async (e) => {
+  const id = e.target.dataset.del;
+  if (id && confirm("이 항목과 기록을 삭제할까요?")) { await api("/api/rank/items/" + id, { method: "DELETE" }); refresh(); }
+});
+loadProjects().then(refresh);
+</script>
+</body>
+</html>

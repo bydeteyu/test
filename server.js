@@ -534,6 +534,9 @@ app.delete("/api/suggestions/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+// 순위 체크(통합검색/카페 탭) — 카페 모니터링과 별개 모듈
+require("./rank-tracker/routes").mount(app, DATA_DIR);
+
 app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = process.env.PORT || 3000;

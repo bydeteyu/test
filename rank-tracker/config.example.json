@@ -1,0 +1,13 @@
+{
+  "delayMs": 3000,
+  "maxRank": 20,
+  "keywords": [
+    {
+      "keyword": "대추밭백한의원",
+      "targets": [
+        { "label": "다녀왔어요 글", "titleContains": "대추밭백한의원 다녀왔어요" },
+        { "label": "특정 카페 글(URL)", "match": "cafe.naver.com/mycafe/12345" }
+      ]
+    }
+  ]
+}

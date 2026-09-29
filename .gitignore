@@ -1,2 +1,4 @@
 node_modules/
 data/
+rank-tracker/config.json
+rank-tracker/data/

@@ -4,6 +4,32 @@ const path = require("path");
 const crypto = require("crypto");
 
 const app = express();
+
+// 헬스체크 (인증 없이 응답) — 배포 플랫폼용
+app.get("/healthz", (req, res) => res.type("text").send("ok"));
+
+// 공개 URL로 배포할 때를 위한 선택적 비밀번호 보호 (HTTP Basic).
+// APP_PASSWORD 를 설정하면 모든 페이지/API에 로그인이 필요합니다. APP_USER 기본값: admin
+if (process.env.APP_PASSWORD) {
+  const expectUser = process.env.APP_USER || "admin";
+  const expectPass = process.env.APP_PASSWORD;
+  const safeEq = (a, b) => {
+    const ha = crypto.createHash("sha256").update(String(a)).digest();
+    const hb = crypto.createHash("sha256").update(String(b)).digest();
+    return crypto.timingSafeEqual(ha, hb);
+  };
+  app.use((req, res, next) => {
+    const m = /^Basic (.+)$/.exec(req.headers.authorization || "");
+    if (m) {
+      const decoded = Buffer.from(m[1], "base64").toString("utf8");
+      const i = decoded.indexOf(":");
+      if (i >= 0 && safeEq(decoded.slice(0, i), expectUser) & safeEq(decoded.slice(i + 1), expectPass)) return next();
+    }
+    res.set("WWW-Authenticate", 'Basic realm="keyword-board", charset="UTF-8"');
+    res.status(401).send("로그인이 필요합니다.");
+  });
+}
+
 app.use(express.json({ limit: "8mb" }));
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
@@ -540,6 +566,6 @@ require("./rank-tracker/routes").mount(app, DATA_DIR);
 app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`keyword-research-board listening on port ${PORT}`);
 });

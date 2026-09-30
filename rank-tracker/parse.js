@@ -16,6 +16,9 @@ function normalize(href) {
   if (host === "cafe.naver.com") {
     // /카페명/글번호  또는 /ArticleRead.nhn?clubid=..&articleid=..
     if (parts.length >= 2 && /^\d+$/.test(parts[1])) return { type: "cafe", key: `cafe.naver.com/${parts[0]}/${parts[1]}` };
+    // 신형 주소: /f-e/cafes/{카페번호}/articles/{글번호}, /ca-fe/cafes/{카페번호}/articles/{글번호}
+    const m = u.pathname.match(/\/cafes\/(\d+)\/articles\/(\d+)/);
+    if (m) return { type: "cafe", key: `cafe.naver.com/${m[1]}/${m[2]}` };
     const id = u.searchParams.get("articleid");
     const club = u.searchParams.get("clubid");
     if (id && club) return { type: "cafe", key: `cafe.naver.com/${club}/${id}` };
@@ -53,16 +56,24 @@ function extractPosts(html, { onlyTypes } = {}) {
     seen.set(n.key, post);
     posts.push(post);
   });
+  posts.pageText = $("body").text().replace(/\s+/g, " ").trim(); // 링크 패턴으로 못 잡은 경우의 제목 검색용
   return posts;
 }
 
-function findTarget(posts, target) {
+const squash = (s) => String(s).replace(/\s+/g, "");
+
+// pageText 를 넘기면(통합검색용) 링크 주소로 식별하지 못한 글도 페이지 본문에 제목이 있으면 노출로 본다.
+// 이 경우 순위는 알 수 없어 rank 는 null.
+function findTarget(posts, target, { pageText } = {}) {
+  const t = target.titleContains ? squash(target.titleContains) : "";
   const hit = posts.find((p) => {
     if (target.match && p.key.includes(target.match.replace(/^https?:\/\//, "").replace(/^(m|www)\./, ""))) return true;
-    if (target.titleContains && p.title.includes(target.titleContains)) return true;
+    if (t && squash(p.title).includes(t)) return true;
     return false;
   });
-  return hit || null;
+  if (hit) return hit;
+  if (t && pageText && squash(pageText).includes(t)) return { rank: null, title: target.titleContains, viaText: true };
+  return null;
 }
 
 module.exports = { extractPosts, findTarget, normalize };

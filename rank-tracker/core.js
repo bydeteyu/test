@@ -34,15 +34,19 @@ async function fetchHtml(url) {
 async function collectPosts(ch, keyword, maxRank, delayMs) {
   const all = [];
   const seen = new Set();
+  let pageText = "";
   for (let start = 1, page = 0; page < 8 && all.length < maxRank; page++) {
     const posts = extractPosts(await fetchHtml(ch.url(keyword, start)), { onlyTypes: ch.onlyTypes });
+    pageText += " " + posts.pageText;
     const fresh = posts.filter((p) => !seen.has(p.key));
     fresh.forEach((p) => { seen.add(p.key); all.push({ ...p, rank: all.length + 1 }); });
     if (!ch.paged || fresh.length === 0) break; // 더 이상 새 글이 없으면 중단
     start += posts.length;
     await sleep(delayMs);
   }
-  return all.slice(0, maxRank);
+  const out = all.slice(0, maxRank);
+  out.pageText = pageText;
+  return out;
 }
 
 // 키워드 하나에 대해 채널별 게시글 목록을 가져온다. 실패한 채널은 null (미노출과 구분).
@@ -60,4 +64,4 @@ async function fetchKeyword(keyword, { maxRank = 50, delayMs = 3000 } = {}) {
   return out;
 }
 
-module.exports = { CHANNELS, fetchKeyword, findTarget, today, sleep };
+module.exports = { fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };

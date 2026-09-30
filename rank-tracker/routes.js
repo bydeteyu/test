@@ -2,7 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { CHANNELS, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
+const { CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
 
 const MAX_RANK = Number(process.env.RANK_MAX || 50);
 const DELAY_MS = Number(process.env.RANK_DELAY_MS || 3000);
@@ -76,6 +76,13 @@ function mount(app, dataDir) {
     if (!keyword) return res.status(400).json({ error: "keyword_required" });
     const q = String(req.query.q || "").replace(/\s+/g, "");
     const out = {};
+    if (SOURCE === "api") { // 공식 API 방식: 채널별 상위 결과를 그대로 보여준다
+      const fetched = await fetchKeyword(keyword, { maxRank: 15, delayMs: 0 });
+      for (const [channel, posts] of Object.entries(fetched)) {
+        out[channel] = posts === null ? { error: "조회 실패 (서버 로그와 API 키 설정을 확인하세요)" } : { source: "api", postCount: posts.length, posts: posts.map((p) => ({ rank: p.rank, type: p.type, key: p.key, title: p.title.slice(0, 60) })) };
+      }
+      return res.json(out);
+    }
     for (const [channel, ch] of Object.entries(CHANNELS)) {
       try {
         const html = await fetchHtml(ch.url(keyword, 1)); // 진단용은 재시도 없이 첫 주소만 (실제 조회는 대체 주소·재시도 사용)
@@ -102,6 +109,9 @@ function mount(app, dataDir) {
     res.json({
       maxRank: MAX_RANK,
       snapMax: SNAP_MAX,
+      source: SOURCE,
+      apiConfigured: SOURCE === "api" ? apiConfigured() : true,
+      channels: Object.entries(CHANNELS).map(([key, c]) => ({ key, label: c.label })),
       running,
       items: items.map((i) => ({ ...i, history: db.history[i.id] || {} })),
     });

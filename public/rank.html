@@ -74,7 +74,7 @@ td.t{text-align:left;white-space:normal;min-width:220px}
 <div class="wrap">
   <header>
     <h1>순위 체크</h1>
-    <p>키워드로 검색했을 때 지정한 콘텐츠가 <span class="chLabels">카페·블로그</span> 검색 결과에서 각각 몇 위인지 매일 확인합니다. (네이버 검색 공식 API 기준) (<a href="/">← 키워드 리서치 보드</a>)</p>
+    <p>키워드로 검색했을 때 지정한 콘텐츠가 <span class="chLabels">통합·카페</span> 검색 결과에서 각각 몇 위인지 매일 확인합니다. (<a href="/">← 키워드 리서치 보드</a>)</p>
   </header>
 
   <section class="card" id="apiWarn" hidden>
@@ -97,7 +97,7 @@ td.t{text-align:left;white-space:normal;min-width:220px}
 
   <section class="card">
     <h2>키워드로 순위 검색</h2>
-    <label><b>검색 키워드</b><span class="sub">한 줄에 하나씩 또는 쉼표(,)로 구분 · <span class="chLabels">카페·블로그</span> 각각 상위 <span class="snapMax">50</span>위까지 수집하고 오늘 날짜로 기록합니다</span>
+    <label><b>검색 키워드</b><span class="sub">한 줄에 하나씩 또는 쉼표(,)로 구분 · <span class="chLabels">통합·카페</span> 각각 상위 <span class="snapMax">50</span>위까지 수집하고 오늘 날짜로 기록합니다</span>
       <textarea id="kwInput" rows="3" placeholder="예: 대추밭백한의원"></textarea></label>
     <button class="primary" id="searchBtn">순위 확인 시작</button>
     <div class="meta" id="searchStatus"></div>
@@ -146,7 +146,7 @@ const api = async (url, opt) => {
   if (!r.ok) throw Object.assign(new Error("HTTP " + r.status), { status: r.status });
   return r.json();
 };
-let channels = [{ key: "cafe", label: "카페" }, { key: "blog", label: "블로그" }];
+let channels = [{ key: "integrated", label: "통합" }, { key: "cafe", label: "카페" }];
 let pollTimer = null;
 let lastItems = [];
 

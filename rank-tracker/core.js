@@ -108,6 +108,43 @@ async function collectApiPosts(ch, keyword, maxRank) {
   return out;
 }
 
+// 카페 글 조회수 조회(비공식 카페 글 API, 공개 글만). 실패하면 null — 순위 기록에는 영향 없다.
+// key: "cafe.naver.com/{카페명 또는 카페번호}/{글번호}"
+const viewCache = new Map();
+async function fetchCafeViews(key, { debug = false } = {}) {
+  const m = /^cafe\.naver\.com\/([^/]+)\/(\d+)$/.exec(key || "");
+  if (!m) return debug ? { error: "카페 글 주소가 아님" } : null;
+  if (!debug && viewCache.has(key)) return viewCache.get(key);
+  const headers = { "User-Agent": UA, "Accept": "application/json, text/plain, */*", "Accept-Language": "ko-KR,ko;q=0.9", "Referer": "https://cafe.naver.com/" };
+  const trace = {};
+  let views = null;
+  try {
+    let clubId = /^\d+$/.test(m[1]) ? m[1] : null;
+    if (!clubId) { // 카페명 → 카페번호: 카페 첫 화면 HTML 에서 찾는다
+      const html = await (await fetch(`https://cafe.naver.com/${encodeURIComponent(m[1])}`, { headers: { ...headers, Accept: "text/html" } })).text();
+      const mm = /(?:clubid|clubId|cafes\/)[=":\s]*(\d{5,})/.exec(html);
+      clubId = mm ? mm[1] : null;
+    }
+    trace.clubId = clubId;
+    if (clubId) {
+      const url = `https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${clubId}/articles/${m[2]}?query=&useCafeId=true&requestFrom=A`;
+      const res = await fetch(url, { headers });
+      trace.status = res.status;
+      if (res.ok) {
+        const j = await res.json();
+        const n = j?.result?.article?.readCount ?? j?.result?.readCount;
+        views = Number.isFinite(Number(n)) ? Number(n) : null;
+        trace.shape = Object.keys(j?.result || {});
+      }
+    }
+  } catch (e) {
+    trace.error = e.message;
+  }
+  if (debug) return { views, ...trace };
+  viewCache.set(key, views);
+  return views;
+}
+
 // 검색 범위(maxRank)까지의 게시글을 순서대로 모은다.
 async function collectPosts(ch, keyword, maxRank, delayMs) {
   if (ch.api) return collectApiPosts(ch, keyword, maxRank);
@@ -157,4 +194,4 @@ async function fetchKeyword(keyword, { maxRank = 50, delayMs = 3000 } = {}) {
   return out;
 }
 
-module.exports = { SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };
+module.exports = { fetchCafeViews, SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };

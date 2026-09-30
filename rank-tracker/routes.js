@@ -2,7 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
+const { fetchCafeViews, CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
 
 const MAX_RANK = Number(process.env.RANK_MAX || 50);
 const DELAY_MS = Number(process.env.RANK_DELAY_MS || 3000);
@@ -54,6 +54,10 @@ function mount(app, dataDir) {
             if (posts === null || posts.length === 0) { rec[channel] = { status: "error" }; continue; }
             const hit = findTarget(posts.slice(0, MAX_RANK), it, channel === "integrated" ? { pageText: posts.pageText, anchors: posts.anchors } : {});
             rec[channel] = hit ? { status: "hit", rank: hit.rank ?? null, title: hit.title } : { status: "miss" };
+            if (hit && hit.key) { // 카페 글이면 조회수도 함께 기록 (실패해도 순위 기록은 유지)
+              const views = await fetchCafeViews(hit.key);
+              if (views !== null) rec[channel].views = views;
+            }
           }
           prune((db.history[it.id] ??= {}))[date] = rec;
         }
@@ -101,6 +105,15 @@ function mount(app, dataDir) {
       }
     }
     res.json(out);
+  });
+
+  // 진단용: 카페 글 조회수를 가져오는지 확인. 예) /api/rank/views?url=cafe.naver.com/imsanbu/80153775
+  app.get("/api/rank/views", async (req, res) => {
+    const raw = String(req.query.url || "").trim();
+    let key = raw.replace(/^https?:\/\//, "").split(/[?#]/)[0];
+    const m = /cafes\/(\d+)\/articles\/(\d+)/.exec(raw);
+    if (m) key = `cafe.naver.com/${m[1]}/${m[2]}`;
+    res.json(await fetchCafeViews(key, { debug: true }));
   });
 
   app.get("/api/rank", (req, res) => {

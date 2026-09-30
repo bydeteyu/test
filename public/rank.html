@@ -160,8 +160,9 @@ async function loadProjects() {
 // 순위를 알 수 없는 노출(통합검색에서 링크로 식별하지 못하고 본문에서만 찾은 경우)은 "노출"로 표시한다.
 function cell(rec) {
   if (!rec || rec.status === "error") return '<td class="na">-</td>';
-  if (rec.status === "hit" && rec.rank == null) return '<td class="hit">노출</td>';
-  return rec.status === "hit" ? `<td class="hit">${rec.rank}위</td>` : `<td class="miss">${$("#maxRank").textContent}위 밖</td>`;
+  const v = rec.views != null ? `<div class="sub">조회 ${Number(rec.views).toLocaleString()}</div>` : "";
+  if (rec.status === "hit" && rec.rank == null) return `<td class="hit">노출${v}</td>`;
+  return rec.status === "hit" ? `<td class="hit">${rec.rank}위${v}</td>` : `<td class="miss">${$("#maxRank").textContent}위 밖</td>`;
 }
 
 async function refresh() {

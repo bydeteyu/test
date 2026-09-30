@@ -78,6 +78,19 @@ td.t{text-align:left;white-space:normal;min-width:220px}
   </header>
 
   <section class="card">
+    <h2>프로젝트</h2>
+    <div class="row">
+      <label><b>프로젝트 선택</b><select id="project"></select></label>
+      <button id="delProject" class="danger" type="button">선택한 프로젝트 삭제</button>
+    </div>
+    <form id="projForm" class="row">
+      <label><b>새 프로젝트 이름</b><input name="name" required maxlength="60" placeholder="예: 대추밭백한의원"></label>
+      <button class="primary" type="submit">프로젝트 추가</button>
+    </form>
+    <div class="meta">아래의 키워드 검색 · 추적 콘텐츠 · 순위표는 선택한 프로젝트별로 따로 관리됩니다.</div>
+  </section>
+
+  <section class="card">
     <h2>키워드로 순위 검색</h2>
     <label><b>검색 키워드</b><span class="sub">한 줄에 하나씩 또는 쉼표(,)로 구분 · 통합검색과 카페 탭 각각 상위 <span class="snapMax">50</span>위까지 수집하고 오늘 날짜로 기록합니다</span>
       <textarea id="kwInput" rows="3" placeholder="예: 대추밭백한의원"></textarea></label>
@@ -100,10 +113,7 @@ td.t{text-align:left;white-space:normal;min-width:220px}
   </section>
 
   <section class="card">
-    <div class="row">
-      <label><b>프로젝트</b><select id="project"></select></label>
-    </div>
-    <h2>추적할 콘텐츠 추가</h2>
+    <h2>추적할 콘텐츠 추가 <span class="sub" id="projName"></span></h2>
     <form id="addForm" class="row">
       <label><b>검색 키워드</b><input name="keyword" required placeholder="예: 대추밭백한의원"></label>
       <label><b>콘텐츠 제목에 포함된 문구</b><input name="titleContains" placeholder="예: 대추밭백한의원 다녀왔어요"></label>
@@ -150,7 +160,8 @@ function cell(rec) {
 
 async function refresh() {
   const pid = $("#project").value;
-  if (!pid) return;
+  if (!pid) { $("#snapCard").hidden = true; $("#table").innerHTML = '<div class="meta">프로젝트를 먼저 추가하세요.</div>'; return; }
+  $("#projName").textContent = "· " + $("#project").selectedOptions[0].textContent;
   const d = await api("/api/rank?projectId=" + encodeURIComponent(pid));
   $("#maxRank").textContent = d.maxRank;
   lastItems = d.items;
@@ -177,7 +188,7 @@ async function refresh() {
 
 let snapData = null;
 async function loadSnapKeywords() {
-  const idx = (await api("/api/rank/snapshots")).keywords;
+  const idx = (await api("/api/rank/snapshots?projectId=" + encodeURIComponent($("#project").value))).keywords;
   $("#snapCard").hidden = idx.length === 0;
   const cur = $("#snapKw").value;
   $("#snapKw").innerHTML = idx.map((k) => `<option>${esc(k.keyword)}</option>`).join("");
@@ -219,8 +230,30 @@ $("#csvBtn").addEventListener("click", () => {
 $("#searchBtn").addEventListener("click", async () => {
   const v = $("#kwInput").value;
   if (!v.trim()) return alert("검색 키워드를 입력하세요.");
-  try { await api("/api/rank/search", { method: "POST", body: { keywords: v } }); }
+  try { await api("/api/rank/search", { method: "POST", body: { keywords: v, projectId: $("#project").value } }); }
   catch (e) { return alert(e.status === 409 ? "이미 확인 중입니다. 잠시 후 다시 시도하세요." : "실행하지 못했습니다."); }
+  refresh();
+});
+$("#projForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = new FormData(e.target).get("name").trim();
+  if (!name) return;
+  const p = await api("/api/projects", { method: "POST", body: { name } });
+  e.target.reset();
+  await loadProjects();
+  $("#project").value = p.id;
+  localStorage.setItem("rankProject", p.id);
+  refresh();
+});
+$("#delProject").addEventListener("click", async () => {
+  const id = $("#project").value;
+  if (!id) return;
+  const name = $("#project").selectedOptions[0].textContent;
+  if (!confirm(`"${name}" 프로젝트를 삭제할까요?\n순위 체크 기록뿐 아니라 메인 보드의 이 프로젝트 키워드 리서치 데이터도 함께 삭제됩니다.`)) return;
+  await api("/api/rank/purge", { method: "POST", body: { projectId: id } });
+  await api("/api/projects/" + encodeURIComponent(id), { method: "DELETE" });
+  localStorage.removeItem("rankProject");
+  await loadProjects();
   refresh();
 });
 $("#project").addEventListener("change", () => { localStorage.setItem("rankProject", $("#project").value); refresh(); });

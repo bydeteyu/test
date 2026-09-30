@@ -78,7 +78,7 @@ function mount(app, dataDir) {
     const out = {};
     for (const [channel, ch] of Object.entries(CHANNELS)) {
       try {
-        const html = await fetchHtml(ch.url(keyword, 1));
+        const html = await fetchHtml(ch.url(keyword, 1)); // 진단용은 재시도 없이 첫 주소만 (실제 조회는 대체 주소·재시도 사용)
         const posts = extractPosts(html, { onlyTypes: ch.onlyTypes });
         out[channel] = {
           htmlLength: html.length,

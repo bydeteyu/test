@@ -4,10 +4,10 @@ const path = require("path");
 const crypto = require("crypto");
 const { CHANNELS, fetchKeyword, findTarget, today } = require("./core");
 
-const MAX_RANK = Number(process.env.RANK_MAX || 20);
+const MAX_RANK = Number(process.env.RANK_MAX || 50);
 const DELAY_MS = Number(process.env.RANK_DELAY_MS || 3000);
 const AUTO_HOUR = Number(process.env.RANK_AUTO_HOUR || 9); // KST
-const SNAP_MAX = Number(process.env.RANK_SNAPSHOT_MAX || 30); // 키워드 검색 시 저장할 상위 개수
+const SNAP_MAX = Number(process.env.RANK_SNAPSHOT_MAX || 50); // 키워드 검색 시 저장할 상위 개수
 const KEEP_DAYS = 120;
 
 function mount(app, dataDir) {

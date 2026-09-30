@@ -68,6 +68,21 @@ tr.tracked td{background:var(--good-soft);font-weight:600}
 td a{color:var(--accent)}
 td.t{text-align:left;white-space:normal;min-width:220px}
 [hidden]{display:none!important}
+.delta{color:var(--good);font-weight:600}.delta.zero{color:var(--ink-soft);font-weight:400}
+td.act{white-space:nowrap}td.act button{margin-left:4px}
+button.ghost{background:transparent;color:var(--ink);border-color:var(--border);padding:5px 9px;font-size:.78rem}
+tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-align:left}
+.charts{position:sticky;left:0;width:min(calc(100vw - 96px),940px);display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.chart{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}
+.chart h3{margin:0 0 6px;font-size:.86rem;font-family:var(--font-display)}
+.chart svg{width:100%;height:auto;display:block}
+.chart .empty{color:var(--ink-soft);font-size:.82rem;padding:36px 8px;text-align:center}
+.legend{display:flex;gap:14px;font-size:.76rem;color:var(--ink-soft);margin-top:4px}
+.legend i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+#tip{position:fixed;z-index:9;pointer-events:none;background:var(--ink);color:var(--surface);font-size:.76rem;padding:6px 9px;border-radius:7px;white-space:pre;display:none}
+:root{--s1:#2a78d6;--s2:#eb6834}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--s1:#3987e5;--s2:#d95926}}
+:root[data-theme="dark"]{--s1:#3987e5;--s2:#d95926}
 </style>
 </head>
 <body>
@@ -158,11 +173,118 @@ async function loadProjects() {
 }
 
 // 순위를 알 수 없는 노출(통합검색에서 링크로 식별하지 못하고 본문에서만 찾은 경우)은 "노출"로 표시한다.
-function cell(rec) {
+function cell(rec, prevViews) {
   if (!rec || rec.status === "error") return '<td class="na">-</td>';
-  const v = rec.views != null ? `<div class="sub">조회 ${Number(rec.views).toLocaleString()}</div>` : "";
+  let v = "";
+  if (rec.views != null) {
+    const diff = prevViews != null ? rec.views - prevViews : null;
+    const dl = diff == null ? "" : ` <span class="delta${diff === 0 ? " zero" : ""}">(${diff > 0 ? "+" : diff < 0 ? "−" : "+"}${Math.abs(diff).toLocaleString()})</span>`;
+    v = `<div class="sub">조회 ${Number(rec.views).toLocaleString()}${dl}</div>`;
+  }
   if (rec.status === "hit" && rec.rank == null) return `<td class="hit">노출${v}</td>`;
   return rec.status === "hit" ? `<td class="hit">${rec.rank}위${v}</td>` : `<td class="miss">${$("#maxRank").textContent}위 밖</td>`;
+}
+
+// ---- 더보기 차트: 왼쪽 일별 조회수 증가(막대) / 오른쪽 순위(선) ----
+const expanded = new Set();
+const tip = document.createElement("div");
+tip.id = "tip";
+document.body.appendChild(tip);
+document.addEventListener("mouseover", (e) => {
+  const t = e.target.closest("[data-tip]");
+  if (!t) { tip.style.display = "none"; return; }
+  tip.textContent = t.dataset.tip;
+  tip.style.display = "block";
+});
+document.addEventListener("mousemove", (e) => { if (tip.style.display === "block") { tip.style.left = e.clientX + 12 + "px"; tip.style.top = e.clientY + 12 + "px"; } });
+
+const CH_COLOR = { integrated: "var(--s1)", cafe: "var(--s2)" };
+const W = 480, H = 220, M = { l: 44, r: 18, t: 14, b: 28 };
+const fmtN = (n) => Number(n).toLocaleString();
+
+// 채널별 (날짜 오름차순) 조회수 기록과, 각 날짜의 전일(직전 기록) 대비 증가량
+function viewsByChannel(item) {
+  const dates = Object.keys(item.history).sort();
+  const out = {};
+  for (const c of channels) {
+    let prev = null;
+    out[c.key] = {};
+    for (const d of dates) {
+      const v = item.history[d]?.[c.key]?.views;
+      if (v == null) continue;
+      out[c.key][d] = { views: v, prev };
+      prev = v;
+    }
+  }
+  return out;
+}
+
+function niceMax(v) { const p = 10 ** Math.floor(Math.log10(Math.max(v, 1))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
+
+function viewsChart(item) {
+  const vb = viewsByChannel(item);
+  // 같은 글이라 채널 값이 같으므로 날짜별로 조회수가 있는 첫 채널 값을 사용
+  const dates = Object.keys(item.history).sort();
+  const pts = [];
+  let prev = null;
+  for (const d of dates) {
+    const v = channels.map((c) => vb[c.key][d]?.views).find((x) => x != null);
+    if (v == null) continue;
+    if (prev != null) pts.push({ date: d, diff: v - prev, views: v });
+    prev = v;
+  }
+  if (pts.length === 0) return '<div class="empty">조회수 기록이 2일 이상 쌓이면 일별 증가량이 표시됩니다.</div>';
+  const max = niceMax(Math.max(...pts.map((p) => p.diff), 1));
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+  const bw = Math.min(28, (iw / pts.length) * 0.6);
+  const y = (v) => M.t + ih - (Math.max(v, 0) / max) * ih;
+  let g = "";
+  for (let k = 0; k <= 4; k++) {
+    const v = (max / 4) * k;
+    g += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border)" stroke-width="1"/><text x="${M.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--ink-soft)">${fmtN(Math.round(v))}</text>`;
+  }
+  pts.forEach((p, i) => {
+    const cx = M.l + (iw / pts.length) * (i + 0.5);
+    const top = y(p.diff), h = Math.max(M.t + ih - top, p.diff > 0 ? 2 : 0);
+    const r = Math.min(4, bw / 2, h);
+    g += h > 0 ? `<path d="M${cx - bw / 2},${M.t + ih} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${bw - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z" fill="var(--s1)"/>` : "";
+    g += `<text x="${cx}" y="${Math.min(top - 4, M.t + ih - 3)}" text-anchor="middle" font-size="10" fill="var(--ink)">${p.diff > 0 ? "+" : ""}${fmtN(p.diff)}</text>`;
+    g += `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--ink-soft)">${esc(p.date.slice(5))}</text>`;
+    g += `<rect x="${cx - iw / pts.length / 2}" y="${M.t}" width="${iw / pts.length}" height="${ih}" fill="transparent" data-tip="${esc(p.date)}\n조회수 ${fmtN(p.views)} (${p.diff >= 0 ? "+" : ""}${fmtN(p.diff)})"/>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="일별 조회수 증가량 막대그래프">${g}</svg>`;
+}
+
+function rankChart(item) {
+  const dates = Object.keys(item.history).sort();
+  const series = channels.map((c) => ({ c, pts: dates.map((d, i) => ({ d, i, rec: item.history[d]?.[c.key] })).filter((p) => p.rec && p.rec.status === "hit" && p.rec.rank != null) }));
+  const all = series.flatMap((s) => s.pts.map((p) => p.rec.rank));
+  if (all.length === 0) return '<div class="empty">순위가 기록된 날이 없습니다. (범위 밖이거나 조회 실패)</div>';
+  const rstep = Math.max(1, Math.ceil((Math.max(...all) * 1.1 - 1) / 4)), maxR = 1 + rstep * 4; // 눈금이 정수가 되도록
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+  const x = (i) => M.l + (dates.length === 1 ? iw / 2 : (iw / (dates.length - 1)) * i);
+  const y = (r) => M.t + ((r - 1) / (maxR - 1)) * ih; // 1위가 위
+  let g = "";
+  for (let k = 0; k <= 4; k++) {
+    const r = 1 + rstep * k;
+    g += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(r)}" y2="${y(r)}" stroke="var(--border)"/><text x="${M.l - 6}" y="${y(r) + 4}" text-anchor="end" font-size="10" fill="var(--ink-soft)">${r}위</text>`;
+  }
+  const step = Math.ceil(dates.length / 8);
+  dates.forEach((d, i) => { if (i % step === 0 || i === dates.length - 1) g += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--ink-soft)">${esc(d.slice(5))}</text>`; });
+  for (const s of series) {
+    const col = CH_COLOR[s.c.key] || "var(--s1)";
+    // 연속한 날만 선으로 잇고, 끊긴 날(밖/실패)은 이어 붙이지 않는다
+    let path = "", last = null;
+    for (const p of s.pts) { path += (last !== null && p.i === last + 1 ? "L" : "M") + `${x(p.i)},${y(p.rec.rank)} `; last = p.i; }
+    g += `<path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    for (const p of s.pts) g += `<circle cx="${x(p.i)}" cy="${y(p.rec.rank)}" r="4" fill="${col}" stroke="var(--surface)" stroke-width="2"/><circle cx="${x(p.i)}" cy="${y(p.rec.rank)}" r="12" fill="transparent" data-tip="${esc(p.d)}\n${esc(s.c.label)} ${p.rec.rank}위"/>`;
+  }
+  const legend = channels.map((c) => `<span><i style="border-color:${CH_COLOR[c.key] || "var(--s1)"}"></i>${esc(c.label)}</span>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="순위 추이 선그래프">${g}</svg><div class="legend">${legend}<span>위로 갈수록 상위</span></div>`;
+}
+
+function detailRow(item, cols) {
+  return `<tr class="detail"><td colspan="${cols}"><div class="charts"><div class="chart"><h3>일별 조회수 증가</h3>${viewsChart(item)}</div><div class="chart"><h3>순위 추이</h3>${rankChart(item)}</div></div></td></tr>`;
 }
 
 async function refresh() {
@@ -191,8 +313,10 @@ async function refresh() {
   h += dates.map(() => channels.map((c) => `<th>${esc(c.label)}</th>`).join("")).join("") + "</tr></thead><tbody>";
   for (const i of d.items) {
     h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l">${esc(i.label)}</td>`;
-    h += dates.map((x) => channels.map((c) => cell(i.history[x]?.[c.key])).join("")).join("");
-    h += `<td><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
+    const vb = viewsByChannel(i);
+    h += dates.map((x) => channels.map((c) => cell(i.history[x]?.[c.key], vb[c.key][x]?.prev)).join("")).join("");
+    h += `<td class="act"><button class="ghost" data-run="${esc(i.id)}"${d.running ? " disabled" : ""}>확인</button><button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
+    if (expanded.has(i.id)) h += detailRow(i, 2 + dates.length * channels.length + 1);
   }
   $("#table").innerHTML = h + "</tbody></table></div>" + (dates.length ? "" : '<div class="meta">"지금 확인"을 누르면 첫 기록이 만들어집니다.</div>');
 }
@@ -282,6 +406,13 @@ $("#runBtn").addEventListener("click", async () => {
   refresh();
 });
 $("#table").addEventListener("click", async (e) => {
+  const runId = e.target.dataset.run, moreId = e.target.dataset.more;
+  if (runId) {
+    try { await api("/api/rank/run", { method: "POST", body: { itemId: runId } }); }
+    catch (er) { if (er.status !== 409) return alert("실행하지 못했습니다."); }
+    return refresh();
+  }
+  if (moreId) { expanded.has(moreId) ? expanded.delete(moreId) : expanded.add(moreId); return refresh(); }
   const id = e.target.dataset.del;
   if (id && confirm("이 항목과 기록을 삭제할까요?")) { await api("/api/rank/items/" + id, { method: "DELETE" }); refresh(); }
 });

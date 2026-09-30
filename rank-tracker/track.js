@@ -35,8 +35,8 @@ async function main() {
         const hit = posts ? findTarget(posts, t, channel === "integrated" ? { pageText: posts.pageText } : {}) : null;
         // 조회 실패(posts===null)는 "미노출"과 구분해 빈 값으로 기록
         const exposed = posts === null ? "" : hit ? "Y" : "N";
-        rows.push([date, kw.keyword, channel, t.label, exposed, hit ? hit.rank : "", hit ? hit.title : ""]);
-        console.log(`${date} | ${kw.keyword} | ${ch.label} | ${t.label} | ${exposed === "" ? "조회실패" : channel === "integrated" ? (hit ? "노출" : "미노출") : hit ? hit.rank + "위" : `${maxRank}위 밖`}`);
+        rows.push([date, kw.keyword, channel, t.label, exposed, hit ? (hit.rank ?? "") : "", hit ? hit.title : ""]);
+        console.log(`${date} | ${kw.keyword} | ${ch.label} | ${t.label} | ${exposed === "" ? "조회실패" : hit ? (hit.rank == null ? "노출" : hit.rank + "위") : `${maxRank}위 밖`}`);
       }
     }
   }

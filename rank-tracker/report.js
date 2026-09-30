@@ -22,7 +22,7 @@ function parseCsv(text) {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // 날짜별로 통합/카페 칸을 나눠 표시
-function writeReport(csvPath, outPath, channels, maxRank = 20) {
+function writeReport(csvPath, outPath, channels, maxRank = 50) {
   const [, ...data] = parseCsv(fs.readFileSync(csvPath, "utf8")).filter((r) => r.length > 1);
   const dates = [...new Set(data.map((r) => r[0]))].sort().reverse();
   const groups = new Map();

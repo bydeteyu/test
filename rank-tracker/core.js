@@ -34,7 +34,7 @@ async function fetchHtml(url) {
 async function collectPosts(ch, keyword, maxRank, delayMs) {
   const all = [];
   const seen = new Set();
-  for (let start = 1, page = 0; page < 5 && all.length < maxRank; page++) {
+  for (let start = 1, page = 0; page < 8 && all.length < maxRank; page++) {
     const posts = extractPosts(await fetchHtml(ch.url(keyword, start)), { onlyTypes: ch.onlyTypes });
     const fresh = posts.filter((p) => !seen.has(p.key));
     fresh.forEach((p) => { seen.add(p.key); all.push({ ...p, rank: all.length + 1 }); });
@@ -46,7 +46,7 @@ async function collectPosts(ch, keyword, maxRank, delayMs) {
 }
 
 // 키워드 하나에 대해 채널별 게시글 목록을 가져온다. 실패한 채널은 null (미노출과 구분).
-async function fetchKeyword(keyword, { maxRank = 20, delayMs = 3000 } = {}) {
+async function fetchKeyword(keyword, { maxRank = 50, delayMs = 3000 } = {}) {
   const out = {};
   for (const [channel, ch] of Object.entries(CHANNELS)) {
     try {

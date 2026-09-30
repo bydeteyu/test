@@ -19,7 +19,7 @@ async function main() {
   }
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const delayMs = config.delayMs ?? 3000;
-  const maxRank = config.maxRank ?? 20;
+  const maxRank = config.maxRank ?? 50;
   const date = today();
 
   fs.mkdirSync(DATA_DIR, { recursive: true });

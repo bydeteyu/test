@@ -36,7 +36,7 @@ function writeReport(csvPath, outPath, channels, maxRank = 50) {
   const cell = (d, c) => {
     const v = d && d[c];
     if (!v || v.exposed === "") return '<td class="na">-</td>';
-    if (c === "integrated") return v.exposed === "Y" ? '<td class="hit">노출</td>' : '<td class="miss">미노출</td>'; // 통합은 노출 유무만
+    if (v.exposed === "Y" && v.rank === "") return '<td class="hit">노출</td>'; // 순위를 알 수 없는 노출
     return v.exposed === "Y" ? `<td class="hit">${esc(v.rank)}위</td>` : `<td class="miss">${maxRank}위 밖</td>`;
   };
   const body = [...groups.values()]
@@ -48,7 +48,7 @@ function writeReport(csvPath, outPath, channels, maxRank = 50) {
   fs.writeFileSync(outPath, `<!doctype html><html lang="ko"><meta charset="utf-8"><title>네이버 순위표</title>
 <style>body{font:14px sans-serif;margin:24px}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px 10px;text-align:center;white-space:nowrap}
 th{background:#f3f3f3}td:nth-child(-n+2){text-align:left}.hit{background:#e6f7e6;font-weight:bold}.miss{color:#b00;background:#fdeeee}.na{color:#999}</style>
-<h1>네이버 노출·순위표 <small>(통합검색은 노출 여부, 카페 탭은 ${maxRank}위까지 순위)</small></h1><table>${head1}${head2}
+<h1>네이버 노출·순위표 <small>(통합검색 / 카페 탭 각각 ${maxRank}위까지)</small></h1><table>${head1}${head2}
 ${body}</table></html>`);
 }
 

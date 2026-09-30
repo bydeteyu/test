@@ -120,7 +120,7 @@ td.t{text-align:left;white-space:normal;min-width:220px}
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
-    <div class="meta">통합검색은 노출 여부만, 카페 탭은 <span id="maxRank">50</span>위까지 순위를 확인합니다. 매일 오전 9시(KST) 이후 서버가 자동으로 확인합니다. 조회가 막히면 <b>-</b>로 표시됩니다.</div>
+    <div class="meta">검색 범위는 각 채널 <span id="maxRank">50</span>위까지입니다. 매일 오전 9시(KST) 이후 서버가 자동으로 확인합니다. 조회가 막히면 <b>-</b>로 표시됩니다.</div>
   </section>
 </div>
 <script>
@@ -141,10 +141,10 @@ async function loadProjects() {
   if (saved && ps.some((p) => p.id === saved)) $("#project").value = saved;
 }
 
-// 통합검색은 순위가 불안정해 노출 유무만 표시하고, 카페 탭은 순위를 표시한다.
-function cell(rec, presenceOnly) {
+// 순위를 알 수 없는 노출(통합검색에서 링크로 식별하지 못하고 본문에서만 찾은 경우)은 "노출"로 표시한다.
+function cell(rec) {
   if (!rec || rec.status === "error") return '<td class="na">-</td>';
-  if (presenceOnly) return rec.status === "hit" ? '<td class="hit">노출</td>' : '<td class="miss">미노출</td>';
+  if (rec.status === "hit" && rec.rank == null) return '<td class="hit">노출</td>';
   return rec.status === "hit" ? `<td class="hit">${rec.rank}위</td>` : `<td class="miss">${$("#maxRank").textContent}위 밖</td>`;
 }
 
@@ -169,7 +169,7 @@ async function refresh() {
   h += dates.map(() => "<th>통합</th><th>카페</th>").join("") + "</tr></thead><tbody>";
   for (const i of d.items) {
     h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l">${esc(i.label)}</td>`;
-    h += dates.map((x) => cell(i.history[x]?.integrated, true) + cell(i.history[x]?.cafe)).join("");
+    h += dates.map((x) => cell(i.history[x]?.integrated) + cell(i.history[x]?.cafe)).join("");
     h += `<td><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
   }
   $("#table").innerHTML = h + "</tbody></table></div>" + (dates.length ? "" : '<div class="meta">"지금 확인"을 누르면 첫 기록이 만들어집니다.</div>');

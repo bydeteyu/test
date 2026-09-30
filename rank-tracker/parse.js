@@ -19,6 +19,12 @@ function normalize(href) {
     // 신형 주소: /f-e/cafes/{카페번호}/articles/{글번호}, /ca-fe/cafes/{카페번호}/articles/{글번호}
     const m = u.pathname.match(/\/cafes\/(\d+)\/articles\/(\d+)/);
     if (m) return { type: "cafe", key: `cafe.naver.com/${m[1]}/${m[2]}` };
+    // 클릭 후 주소: /카페명?iframe_url_utf8=/ca-fe/cafes/{카페번호}/articles/{글번호}%3F...
+    const iframe = u.searchParams.get("iframe_url_utf8");
+    if (iframe) {
+      const im = iframe.match(/\/cafes\/(\d+)\/articles\/(\d+)/) || iframe.match(/articleid(?:=|%3D)(\d+)/i);
+      if (im) return { type: "cafe", key: `cafe.naver.com/${im.length === 3 ? im[1] : parts[0]}/${im[im.length - 1]}` };
+    }
     const id = u.searchParams.get("articleid");
     const club = u.searchParams.get("clubid");
     if (id && club) return { type: "cafe", key: `cafe.naver.com/${club}/${id}` };
@@ -82,6 +88,19 @@ function extractPosts(html, { onlyTypes } = {}) {
   return posts;
 }
 
+// 카페 글은 카페명(imsanbu)과 카페번호(10094499) 두 가지 주소로 나올 수 있어, 글번호가 같고
+// 카페 식별자가 같거나 (하나는 이름, 하나는 번호라) 비교할 수 없는 경우에도 같은 글로 본다.
+function sameCafePost(postKey, matchStr) {
+  const raw = String(matchStr).trim();
+  const ref = normalize(/^https?:\/\//.test(raw) ? raw : "https://" + raw);
+  if (!ref || ref.type !== "cafe") return null; // 카페 주소가 아니면 판단하지 않음
+  const [, pc, pa] = postKey.split("/");
+  const [, rc, ra] = ref.key.split("/");
+  if (pa !== ra) return false;
+  const num = (x) => /^\d+$/.test(x);
+  return pc === rc || num(pc) !== num(rc);
+}
+
 const squash = (s) => String(s).replace(/\s+/g, "");
 
 // pageText 를 넘기면(통합검색용) 링크 주소로 식별하지 못한 글도 페이지 본문에 제목이 있으면 노출로 본다.
@@ -89,7 +108,11 @@ const squash = (s) => String(s).replace(/\s+/g, "");
 function findTarget(posts, target, { pageText, anchors } = {}) {
   const t = target.titleContains ? squash(target.titleContains) : "";
   const hit = posts.find((p) => {
-    if (target.match && p.key.includes(target.match.replace(/^https?:\/\//, "").replace(/^(m|www)\./, ""))) return true;
+    if (target.match) {
+      const same = p.type === "cafe" ? sameCafePost(p.key, target.match) : null;
+      if (same !== null) { if (same) return true; }
+      else if (p.key.includes(target.match.replace(/^https?:\/\//, "").replace(/^(m|www)\./, ""))) return true;
+    }
     if (t && squash(p.title).includes(t)) return true;
     return false;
   });

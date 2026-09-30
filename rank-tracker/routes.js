@@ -47,7 +47,7 @@ function mount(app, dataDir) {
           for (const channel of Object.keys(CHANNELS)) {
             const posts = fetched[channel];
             if (posts === null || posts.length === 0) { rec[channel] = { status: "error" }; continue; }
-            const hit = findTarget(posts.slice(0, MAX_RANK), it, channel === "integrated" ? { pageText: posts.pageText } : {});
+            const hit = findTarget(posts.slice(0, MAX_RANK), it, channel === "integrated" ? { pageText: posts.pageText, anchors: posts.anchors } : {});
             rec[channel] = hit ? { status: "hit", rank: hit.rank ?? null, title: hit.title } : { status: "miss" };
           }
           prune((db.history[it.id] ??= {}))[date] = rec;
@@ -82,6 +82,7 @@ function mount(app, dataDir) {
           cafeLinks: [...html.matchAll(/https?:\/\/(?:m\.)?cafe\.naver\.com\/[^"'\s<>]+/g)].map((m) => m[0]).slice(0, 10),
           textContainsQ: q ? posts.pageText.replace(/\s+/g, "").includes(q) : null,
           textSample: posts.pageText.slice(0, 200),
+          titleAnchors: posts.anchors.slice(0, 20).map((a, i) => ({ n: i + 1, text: a.text.slice(0, 50), href: a.href.slice(0, 80) })),
         };
       } catch (e) {
         out[channel] = { error: e.message };

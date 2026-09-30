@@ -35,9 +35,11 @@ async function collectPosts(ch, keyword, maxRank, delayMs) {
   const all = [];
   const seen = new Set();
   let pageText = "";
+  const anchors = [];
   for (let start = 1, page = 0; page < 8 && all.length < maxRank; page++) {
     const posts = extractPosts(await fetchHtml(ch.url(keyword, start)), { onlyTypes: ch.onlyTypes });
     pageText += " " + posts.pageText;
+    anchors.push(...posts.anchors);
     const fresh = posts.filter((p) => !seen.has(p.key));
     fresh.forEach((p) => { seen.add(p.key); all.push({ ...p, rank: all.length + 1 }); });
     if (!ch.paged || fresh.length === 0) break; // 더 이상 새 글이 없으면 중단
@@ -46,6 +48,7 @@ async function collectPosts(ch, keyword, maxRank, delayMs) {
   }
   const out = all.slice(0, maxRank);
   out.pageText = pageText;
+  out.anchors = anchors;
   return out;
 }
 

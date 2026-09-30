@@ -37,3 +37,13 @@ test("통합검색: 링크로 못 잡아도 본문에 제목이 있으면 노출
   assert.ok(hit && hit.rank === null);
   assert.strictEqual(findTarget(p, { titleContains: "없는 문구" }, { pageText: p.pageText }), null);
 });
+
+test("통합검색: 주소로 식별 못해도 제목 링크 순서로 추정 순위를 매긴다", () => {
+  const p = extractPosts(`<a href="https://a.go.kr/x">경주 대추밭 백한의원의 임신 동의보감 도서관</a>
+    <a href="https://r.naver.com/1">대추밭백한의원 다녀왔어요^^ 후기 입니다</a>
+    <a href="https://r.naver.com/2">경주 대추밭백한의원 예약 실패.. 취소표 오픈시간</a>`);
+  const o = { pageText: p.pageText, anchors: p.anchors };
+  const hit = findTarget(p, { titleContains: "예약 실패.. 취소표" }, o);
+  assert.strictEqual(hit.rank, 3);
+  assert.strictEqual(findTarget(p, { titleContains: "다녀왔어요^^" }, o).rank, 2);
+});

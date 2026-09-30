@@ -66,6 +66,12 @@ details.hist-item { border: 1px solid #eee; border-radius: 8px; padding: 8px 12p
 details.hist-item summary { cursor: pointer; font-size: .85rem; font-weight: 600; }
 details.hist-item summary .muted { font-weight: 400; color: #888; }
 .date-fresh { color: #d32f2f; font-weight: 700; }
+.read-btn { font-size: .7rem; font-weight: 600; border: 1px solid #cbd5e1; background: #fff; color: #64748b; border-radius: 5px; padding: 1px 7px; cursor: pointer; margin-right: 5px; vertical-align: middle; white-space: nowrap; }
+.read-btn:hover { border-color: #94a3b8; }
+.read-btn.on { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+.post-line > a { color: #1976d2; text-decoration: none; }
+.post-line.post-read > a { text-decoration: line-through; color: #b0b0b0; }
+.post-line.post-read { opacity: .7; }
 </style>
 </head>
 <body>
@@ -173,6 +179,57 @@ function dateHtml(dateStr) {
   if (!dateStr) return '';
   const cls = isFreshDate(dateStr) ? ' class="date-fresh"' : '';
   return `<span${cls}>${esc(dateStr)}</span>`;
+}
+
+// ── 읽음(확인) 표시 ──
+let readSet = new Set();
+async function loadReadMarks() {
+  try {
+    const res = await fetch('/api/read-marks');
+    const data = await res.json();
+    readSet = new Set(data.urls || []);
+  } catch (e) { /* 무시 — 표시만 안 될 뿐 */ }
+}
+// 한 글을 렌더링(확인 버튼 + 링크). 확인된 글은 취소선/흐림 처리.
+function postLineHtml(p) {
+  const url = p['링크'] || '';
+  const isRead = readSet.has(url);
+  const dateNote = p['작성일'] ? ` · ${dateHtml(p['작성일'])}` : '';
+  return `<span class="post-line${isRead ? ' post-read' : ''}" data-url="${esc(url)}">`
+    + `<button class="read-btn${isRead ? ' on' : ''}" onclick="toggleRead(this)" `
+    + `data-url="${esc(url)}" data-title="${esc(p['제목'] || '')}">${isRead ? '✓ 확인됨' : '확인'}</button>`
+    + `<a href="${esc(url)}" target="_blank">${esc(p['제목'] || '')}</a> (${esc(p['카페이름'] || '')}${dateNote})`
+    + `</span>`;
+}
+// 같은 URL이 화면에 여러 번 있어도 모두 갱신
+function applyReadUI(url) {
+  const isRead = readSet.has(url);
+  document.querySelectorAll(`.post-line[data-url="${cssEscape(url)}"]`).forEach(span => {
+    span.classList.toggle('post-read', isRead);
+    const btn = span.querySelector('.read-btn');
+    if (btn) { btn.classList.toggle('on', isRead); btn.textContent = isRead ? '✓ 확인됨' : '확인'; }
+  });
+}
+function cssEscape(s) { return String(s).replace(/["\\]/g, '\\$&'); }
+async function toggleRead(btn) {
+  const url = btn.getAttribute('data-url');
+  const title = btn.getAttribute('data-title') || '';
+  const willRead = !readSet.has(url);
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/read-marks', {
+      method: willRead ? 'POST' : 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, title }),
+    });
+    if (!res.ok) throw new Error();
+    if (willRead) readSet.add(url); else readSet.delete(url);
+    applyReadUI(url);
+  } catch (e) {
+    alert('확인 표시 저장에 실패했습니다. 잠시 후 다시 시도해주세요.');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 const params = new URLSearchParams(location.search);
@@ -356,8 +413,7 @@ function renderResults(results) {
       ul.className = 'posts';
       r.posts.forEach(p => {
         const li = document.createElement('li');
-        const dateNote = p['작성일'] ? ` · ${dateHtml(p['작성일'])}` : '';
-        li.innerHTML = `<a href="${esc(p['링크'])}" target="_blank">${esc(p['제목'])}</a> (${esc(p['카페이름'])}${dateNote})`;
+        li.innerHTML = postLineHtml(p);
         ul.appendChild(li);
       });
       block.appendChild(ul);
@@ -398,10 +454,7 @@ function renderHistory(history) {
       } else if (!r.posts.length) {
         row.innerHTML = `⬜ <b>${esc(r.keyword)}</b> — 노출 없음`;
       } else {
-        const links = r.posts.map(p => {
-          const dateNote = p['작성일'] ? ` · ${dateHtml(p['작성일'])}` : '';
-          return `<a href="${esc(p['링크'])}" target="_blank" style="color:#1976d2;text-decoration:none;">${esc(p['제목'])}</a> (${esc(p['카페이름'])}${dateNote})`;
-        }).join('<br>');
+        const links = r.posts.map(p => postLineHtml(p)).join('<br>');
         row.innerHTML = `✅ <b>${esc(r.keyword)}</b> — ${r.posts.length}건<br><span style="margin-left:14px;">${links}</span>`;
       }
       body.appendChild(row);
@@ -517,11 +570,14 @@ async function pollAlert(job_id) {
   loadMonitors();
 }
 
-loadMonitors();
-if (currentMonitorId) {
-  loadKeywords();
-  loadMonitorDetail();
-}
+(async () => {
+  await loadReadMarks();
+  loadMonitors();
+  if (currentMonitorId) {
+    loadKeywords();
+    loadMonitorDetail();
+  }
+})();
 </script>
 </body>
 </html>

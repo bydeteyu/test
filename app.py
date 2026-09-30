@@ -25,6 +25,7 @@ from apscheduler.jobstores.base import JobLookupError
 from flask import Flask, render_template, request, jsonify, send_file, abort, make_response
 
 import monitor_store
+import read_store
 from alert_job import KST, run_alert_check
 from alert_notifier import resolve_webhook_url, send_slack_digest, APP_BASE_URL
 from naver_autocomplete import run_autocomplete
@@ -637,6 +638,22 @@ def api_monitor_history_download(monitor_id):
     output.headers["Content-Disposition"] = _attachment_header(f"alert_history_{safe_name}.csv")
     output.headers["Content-Type"] = "text/csv; charset=utf-8"
     return output
+
+
+@app.route("/api/read-marks", methods=["GET", "POST", "DELETE"])
+def api_read_marks():
+    """읽은(확인한) 카페글 표시 — URL 기준 저장."""
+    if request.method == "GET":
+        return jsonify({"urls": read_store.list_marks()})
+    data = request.get_json(force=True, silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "url이 필요합니다."}), 400
+    if request.method == "POST":
+        read_store.mark(url, (data.get("title") or "").strip())
+    else:  # DELETE
+        read_store.unmark(url)
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":

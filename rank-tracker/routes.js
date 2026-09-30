@@ -2,7 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { CHANNELS, fetchKeyword, findTarget, today } = require("./core");
+const { CHANNELS, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
 
 const MAX_RANK = Number(process.env.RANK_MAX || 50);
 const DELAY_MS = Number(process.env.RANK_DELAY_MS || 3000);
@@ -47,8 +47,8 @@ function mount(app, dataDir) {
           for (const channel of Object.keys(CHANNELS)) {
             const posts = fetched[channel];
             if (posts === null || posts.length === 0) { rec[channel] = { status: "error" }; continue; }
-            const hit = findTarget(posts.slice(0, MAX_RANK), it);
-            rec[channel] = hit ? { status: "hit", rank: hit.rank, title: hit.title } : { status: "miss" };
+            const hit = findTarget(posts.slice(0, MAX_RANK), it, channel === "integrated" ? { pageText: posts.pageText } : {});
+            rec[channel] = hit ? { status: "hit", rank: hit.rank ?? null, title: hit.title } : { status: "miss" };
           }
           prune((db.history[it.id] ??= {}))[date] = rec;
         }
@@ -64,6 +64,31 @@ function mount(app, dataDir) {
     for (const d of dates.slice(0, Math.max(0, dates.length - KEEP_DAYS))) delete byDate[d];
     return byDate;
   }
+
+  // 진단용: 서버가 네이버에서 실제로 받은 내용을 보여준다. 예) /api/rank/debug?keyword=대추밭백한의원&q=예약 실패
+  app.get("/api/rank/debug", async (req, res) => {
+    const keyword = String(req.query.keyword || "").trim();
+    if (!keyword) return res.status(400).json({ error: "keyword_required" });
+    const q = String(req.query.q || "").replace(/\s+/g, "");
+    const out = {};
+    for (const [channel, ch] of Object.entries(CHANNELS)) {
+      try {
+        const html = await fetchHtml(ch.url(keyword, 1));
+        const posts = extractPosts(html, { onlyTypes: ch.onlyTypes });
+        out[channel] = {
+          htmlLength: html.length,
+          postCount: posts.length,
+          posts: posts.slice(0, 15).map((p) => ({ rank: p.rank, type: p.type, key: p.key, title: p.title.slice(0, 60) })),
+          cafeLinks: [...html.matchAll(/https?:\/\/(?:m\.)?cafe\.naver\.com\/[^"'\s<>]+/g)].map((m) => m[0]).slice(0, 10),
+          textContainsQ: q ? posts.pageText.replace(/\s+/g, "").includes(q) : null,
+          textSample: posts.pageText.slice(0, 200),
+        };
+      } catch (e) {
+        out[channel] = { error: e.message };
+      }
+    }
+    res.json(out);
+  });
 
   app.get("/api/rank", (req, res) => {
     const db = load();

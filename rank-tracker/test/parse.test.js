@@ -47,3 +47,12 @@ test("통합검색: 주소로 식별 못해도 제목 링크 순서로 추정 �
   assert.strictEqual(hit.rank, 3);
   assert.strictEqual(findTarget(p, { titleContains: "다녀왔어요^^" }, o).rank, 2);
 });
+
+test("카페 글 주소: 카페명/카페번호/iframe 주소 형식이 달라도 같은 글로 매칭", () => {
+  const p = extractPosts('<a href="https://cafe.naver.com/f-e/cafes/10094499/articles/80153775?art=x">글</a><a href="https://cafe.naver.com/other/999">다른</a>');
+  assert.strictEqual(findTarget(p, { match: "cafe.naver.com/imsanbu/80153775" }).rank, 1);
+  assert.strictEqual(findTarget(p, { match: "https://cafe.naver.com/imsanbu?iframe_url_utf8=%2Fca-fe%2Fcafes%2F10094499%2Farticles%2F80153775%253Fart%3Dx" }).rank, 1);
+  assert.strictEqual(findTarget(p, { match: "cafe.naver.com/imsanbu/80153776" }), null);
+  const q = extractPosts('<a href="https://cafe.naver.com/imsanbu?iframe_url_utf8=%2Fca-fe%2Fcafes%2F10094499%2Farticles%2F80153775%253Fart%3Dx">글</a>');
+  assert.strictEqual(findTarget(q, { match: "cafe.naver.com/imsanbu/80153775" }).rank, 1);
+});

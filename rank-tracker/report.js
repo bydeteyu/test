@@ -48,7 +48,7 @@ function writeReport(csvPath, outPath, channels, maxRank = 50) {
   fs.writeFileSync(outPath, `<!doctype html><html lang="ko"><meta charset="utf-8"><title>네이버 순위표</title>
 <style>body{font:14px sans-serif;margin:24px}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px 10px;text-align:center;white-space:nowrap}
 th{background:#f3f3f3}td:nth-child(-n+2){text-align:left}.hit{background:#e6f7e6;font-weight:bold}.miss{color:#b00;background:#fdeeee}.na{color:#999}</style>
-<h1>네이버 노출·순위표 <small>(통합검색 / 카페 탭 각각 ${maxRank}위까지)</small></h1><table>${head1}${head2}
+<h1>네이버 노출·순위표 <small>(${chans.map((c) => channels[c].label).join(" / ")} 각각 ${maxRank}위까지)</small></h1><table>${head1}${head2}
 ${body}</table></html>`);
 }
 

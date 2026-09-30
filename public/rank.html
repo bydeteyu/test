@@ -74,8 +74,13 @@ td.t{text-align:left;white-space:normal;min-width:220px}
 <div class="wrap">
   <header>
     <h1>순위 체크</h1>
-    <p>키워드로 검색했을 때 지정한 콘텐츠가 <b>통합검색</b>과 <b>카페 탭</b>에서 각각 몇 위인지 매일 확인합니다. (<a href="/">← 키워드 리서치 보드</a>)</p>
+    <p>키워드로 검색했을 때 지정한 콘텐츠가 <span class="chLabels">카페·블로그</span> 검색 결과에서 각각 몇 위인지 매일 확인합니다. (네이버 검색 공식 API 기준) (<a href="/">← 키워드 리서치 보드</a>)</p>
   </header>
+
+  <section class="card" id="apiWarn" hidden>
+    <b style="color:var(--bad)">네이버 API 키가 설정되지 않았습니다.</b>
+    <div class="meta">서버 환경 변수 <code>NAVER_CLIENT_ID</code>, <code>NAVER_CLIENT_SECRET</code>을 설정해야 순위를 확인할 수 있습니다. (네이버 개발자센터 → 애플리케이션 등록 → 검색 API)</div>
+  </section>
 
   <section class="card">
     <h2>프로젝트</h2>
@@ -92,7 +97,7 @@ td.t{text-align:left;white-space:normal;min-width:220px}
 
   <section class="card">
     <h2>키워드로 순위 검색</h2>
-    <label><b>검색 키워드</b><span class="sub">한 줄에 하나씩 또는 쉼표(,)로 구분 · 통합검색과 카페 탭 각각 상위 <span class="snapMax">50</span>위까지 수집하고 오늘 날짜로 기록합니다</span>
+    <label><b>검색 키워드</b><span class="sub">한 줄에 하나씩 또는 쉼표(,)로 구분 · <span class="chLabels">카페·블로그</span> 각각 상위 <span class="snapMax">50</span>위까지 수집하고 오늘 날짜로 기록합니다</span>
       <textarea id="kwInput" rows="3" placeholder="예: 대추밭백한의원"></textarea></label>
     <button class="primary" id="searchBtn">순위 확인 시작</button>
     <div class="meta" id="searchStatus"></div>
@@ -106,7 +111,7 @@ td.t{text-align:left;white-space:normal;min-width:220px}
     <div class="row">
       <label><b>키워드</b><select id="snapKw"></select></label>
       <label><b>날짜</b><select id="snapDate"></select></label>
-      <label><b>채널</b><select id="snapCh"><option value="integrated">통합검색</option><option value="cafe">카페 탭</option></select></label>
+      <label><b>채널</b><select id="snapCh"></select></label>
     </div>
     <div id="snapTable"></div>
     <div class="meta">초록색 행은 아래에 등록한 추적 콘텐츠입니다. 검색한 키워드는 매일 자동으로 다시 기록됩니다.</div>
@@ -141,6 +146,7 @@ const api = async (url, opt) => {
   if (!r.ok) throw Object.assign(new Error("HTTP " + r.status), { status: r.status });
   return r.json();
 };
+let channels = [{ key: "cafe", label: "카페" }, { key: "blog", label: "블로그" }];
 let pollTimer = null;
 let lastItems = [];
 
@@ -164,6 +170,10 @@ async function refresh() {
   $("#projName").textContent = "· " + $("#project").selectedOptions[0].textContent;
   const d = await api("/api/rank?projectId=" + encodeURIComponent(pid));
   $("#maxRank").textContent = d.maxRank;
+  channels = d.channels;
+  $("#apiWarn").hidden = d.apiConfigured;
+  $("#snapCh").innerHTML = channels.map((c) => `<option value="${esc(c.key)}">${esc(c.label)}</option>`).join("");
+  document.querySelectorAll(".chLabels").forEach((e) => (e.textContent = channels.map((c) => c.label).join("·")));
   lastItems = d.items;
   document.querySelectorAll(".snapMax").forEach((e) => (e.textContent = d.snapMax));
   $("#searchBtn").disabled = d.running;
@@ -176,11 +186,11 @@ async function refresh() {
   if (d.items.length === 0) { $("#table").innerHTML = '<div class="meta">아직 추적 중인 콘텐츠가 없습니다.</div>'; return; }
   const dates = [...new Set(d.items.flatMap((i) => Object.keys(i.history)))].sort().reverse().slice(0, 7);
   let h = '<div class="table-scroll"><table><thead><tr><th class="l" rowspan="2">키워드</th><th class="l" rowspan="2">콘텐츠</th>';
-  h += dates.map((x) => `<th colspan="2">${esc(x.slice(5))}</th>`).join("") + '<th rowspan="2"></th></tr><tr>';
-  h += dates.map(() => "<th>통합</th><th>카페</th>").join("") + "</tr></thead><tbody>";
+  h += dates.map((x) => `<th colspan="${channels.length}">${esc(x.slice(5))}</th>`).join("") + '<th rowspan="2"></th></tr><tr>';
+  h += dates.map(() => channels.map((c) => `<th>${esc(c.label)}</th>`).join("")).join("") + "</tr></thead><tbody>";
   for (const i of d.items) {
     h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l">${esc(i.label)}</td>`;
-    h += dates.map((x) => cell(i.history[x]?.integrated) + cell(i.history[x]?.cafe)).join("");
+    h += dates.map((x) => channels.map((c) => cell(i.history[x]?.[c.key])).join("")).join("");
     h += `<td><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
   }
   $("#table").innerHTML = h + "</tbody></table></div>" + (dates.length ? "" : '<div class="meta">"지금 확인"을 누르면 첫 기록이 만들어집니다.</div>');
@@ -221,7 +231,7 @@ $("#csvBtn").addEventListener("click", () => {
   const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
   const rows = [["날짜", "키워드", "채널", "순위", "종류", "제목", "링크"]];
   for (const [date, snap] of Object.entries(snapData.byDate).sort())
-    for (const [ch, posts] of Object.entries(snap)) for (const p of posts || []) rows.push([date, snapData.keyword, ch === "cafe" ? "카페" : "통합", p.rank, p.type, p.title, p.link]);
+    for (const [ch, posts] of Object.entries(snap)) for (const p of posts || []) rows.push([date, snapData.keyword, (channels.find((c) => c.key === ch) || { label: ch }).label, p.rank, p.type, p.title, p.link]);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["\ufeff" + rows.map((r) => r.map(q).join(",")).join("\n")], { type: "text/csv" }));
   a.download = "rank-" + snapData.keyword + ".csv";

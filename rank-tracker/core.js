@@ -1,12 +1,21 @@
 // CLI(track.js)와 웹 앱(routes.js)이 함께 쓰는 네이버 검색 결과 조회 로직.
-const { extractPosts, findTarget } = require("./parse");
+const { extractPosts, findTarget, normalize } = require("./parse");
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
 const BASE = process.env.NAVER_SEARCH_BASE || "https://search.naver.com"; // 테스트용 override
 
-const CHANNELS = {
+// 순위 조회 방식. 기본은 네이버 검색 오픈 API(공식, 차단 위험 없음): 카페·블로그 각각의 검색 결과 순위.
+// 통합검색 순위는 공식 API가 없어 RANK_SOURCE=scrape 로 화면을 읽는 방식(차단될 수 있음)을 켜야 한다.
+const SOURCE = process.env.RANK_SOURCE === "scrape" ? "scrape" : "api";
+
+const API_CHANNELS = {
+  cafe: { label: "카페", api: "cafearticle" },
+  blog: { label: "블로그", api: "blog" },
+};
+
+const SCRAPE_CHANNELS = {
   // 통합검색은 페이지네이션이 없어 1페이지의 게시글 순서가 곧 순위
   integrated: {
     label: "통합",
@@ -25,6 +34,8 @@ const CHANNELS = {
     paged: true,
   },
 };
+
+const CHANNELS = SOURCE === "scrape" ? SCRAPE_CHANNELS : API_CHANNELS;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // KST 기준 날짜
@@ -64,8 +75,39 @@ async function fetchWithFallback(ch, keyword, start, delayMs) {
   throw lastErr;
 }
 
+const apiConfigured = () => !!(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET);
+
+const stripTags = (t) =>
+  String(t || "").replace(/<[^>]+>/g, "").replace(/&(quot|amp|lt|gt|apos|#39);/g, (_, e) => ({ quot: '"', amp: "&", lt: "<", gt: ">", apos: "'", "#39": "'" }[e]));
+
+// 네이버 검색 오픈 API (관련도순). 결과 순서가 곧 해당 검색의 순위.
+async function collectApiPosts(ch, keyword, maxRank) {
+  if (!apiConfigured()) throw new Error("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 환경 변수가 없습니다");
+  const all = [];
+  const seen = new Set();
+  for (let start = 1; start <= 1000 && all.length < maxRank; start += 100) {
+    const url = `${process.env.NAVER_API_BASE || "https://openapi.naver.com"}/v1/search/${ch.api}.json?query=${encodeURIComponent(keyword)}&display=100&start=${start}&sort=sim`;
+    const res = await fetch(url, { headers: { "X-Naver-Client-Id": process.env.NAVER_CLIENT_ID, "X-Naver-Client-Secret": process.env.NAVER_CLIENT_SECRET } });
+    if (!res.ok) throw new Error(`API HTTP ${res.status}`);
+    const items = (await res.json()).items || [];
+    for (const it of items) {
+      const n = normalize(it.link);
+      const key = n ? n.key : String(it.link).replace(/^https?:\/\//, "");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push({ rank: all.length + 1, type: n ? n.type : ch.api, key, title: stripTags(it.title) });
+    }
+    if (items.length < 100) break;
+  }
+  const out = all.slice(0, maxRank);
+  out.pageText = "";
+  out.anchors = [];
+  return out;
+}
+
 // 검색 범위(maxRank)까지의 게시글을 순서대로 모은다.
 async function collectPosts(ch, keyword, maxRank, delayMs) {
+  if (ch.api) return collectApiPosts(ch, keyword, maxRank);
   const all = [];
   const seen = new Set();
   let pageText = "";
@@ -96,9 +138,9 @@ async function fetchKeyword(keyword, { maxRank = 50, delayMs = 3000 } = {}) {
       console.error(`[rank] ${keyword}/${ch.label}: ${e.message}`);
       out[channel] = null;
     }
-    await sleep(delayMs);
+    if (!ch.api) await sleep(delayMs);
   }
   return out;
 }
 
-module.exports = { fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };
+module.exports = { SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };

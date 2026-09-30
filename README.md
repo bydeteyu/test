@@ -84,3 +84,13 @@ npm test            # 파서 단위 테스트
 - 순위 = 검색 결과 페이지에서 게시글 링크가 나타나는 순서(중복 제거). 통합검색은 블로그·카페 등 모든 게시글 기준, 카페 탭은 카페 글 기준입니다. 조회 실패는 "미노출"과 구분해 `-`로 기록합니다.
 - **1일 1회 실행**: cron(`0 9 * * * cd /경로 && npm run rank`) 또는 GitHub Actions `schedule`로 돌리세요. 같은 날 재실행하면 그날 기록을 덮어씁니다.
 - 공식 API가 아니라 검색 결과 HTML을 읽습니다. 네이버 화면 구조 변경·요청 차단 시 결과가 0건이 될 수 있고(경고 출력), 개인화/지역/기기에 따라 실제 화면과 순위가 다를 수 있습니다. 요청 간격(`delayMs`)을 두고 소량만 조회하세요. 이용약관은 직접 확인하시기 바랍니다.
+
+## 웹 배포 (Railway / Render / Docker)
+
+`npm start`가 `PORT` 환경 변수로 `0.0.0.0`에 바인딩하므로 Node.js를 지원하는 호스팅에 그대로 올릴 수 있습니다. 헬스체크 경로는 `/healthz` 입니다.
+
+- **필수: `APP_PASSWORD`** — 설정하면 모든 페이지/API에 로그인(HTTP Basic, 아이디 기본값 `admin`, `APP_USER`로 변경)이 필요합니다. 공개 URL로 배포할 때는 반드시 설정하세요.
+- **Railway**: GitHub 저장소 연결 → Variables에 `APP_PASSWORD`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`(필요 시 `ANTHROPIC_API_KEY`) 추가 → Volume을 `/data`에 마운트하고 `DATA_DIR=/data` 설정 → 발급된 도메인의 `/rank.html` 접속.
+- **Render**: `render.yaml`(디스크 포함)을 사용하는 Blueprint로 배포. 디스크는 유료 플랜이 필요합니다.
+- **Docker**: `docker build -t board . && docker run -p 3000:3000 -v board-data:/data -e APP_PASSWORD=비밀번호 board`
+- 영구 볼륨이 없으면 재배포 시 데이터가 초기화됩니다. 또한 클라우드 서버 IP는 네이버가 막을 수 있어 순위가 `-`로 나올 수 있습니다.

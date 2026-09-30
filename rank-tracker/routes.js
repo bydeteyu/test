@@ -24,7 +24,7 @@ function mount(app, dataDir) {
   // 키워드 목록(+등록 항목)을 조회해 오늘자로 기록한다. 같은 키워드는 한 번만 조회한다.
   //  - 키워드마다 통합/카페 상위 SNAP_MAX개 스냅샷 저장 (키워드만 검색해도 기록됨)
   //  - 그 키워드에 등록된 항목은 MAX_RANK 안에서 순위 판정
-  async function runChecks({ keywords = [], itemIds = null } = {}) {
+  async function runChecks({ keywords = [], itemIds = null, projectId = null } = {}) {
     if (running) return { busy: true };
     running = true;
     try {
@@ -41,6 +41,11 @@ function mount(app, dataDir) {
             : posts.map((p) => ({ rank: p.rank, type: p.type, title: p.title, link: "https://" + p.key }));
         }
         ((db.snapshots ??= {})[keyword] ??= {})[date] = snap;
+        // 이 키워드를 어느 프로젝트가 쓰는지 기록 (프로젝트별 검색 기록 분리용)
+        const owners = ((db.kwProjects ??= {})[keyword] ??= []);
+        const addOwner = (id) => { if (id && !owners.includes(id)) owners.push(id); };
+        if (projectId && keywords.includes(keyword)) addOwner(projectId);
+        db.items.filter((x) => x.keyword === keyword && (!itemIds || itemIds.includes(x.id))).forEach((x) => addOwner(x.projectId));
         prune(db.snapshots[keyword]);
         for (const it of db.items.filter((x) => x.keyword === keyword && (!itemIds || itemIds.includes(x.id)))) {
           const rec = {};
@@ -142,7 +147,7 @@ function mount(app, dataDir) {
     if (running) return res.status(409).json({ error: "busy" });
     const keywords = [...new Set(String((req.body || {}).keywords || "").split(/[\n,]/).map((k) => k.trim()).filter(Boolean))].slice(0, 20);
     if (keywords.length === 0) return res.status(400).json({ error: "no_keywords" });
-    runChecks({ keywords }).catch((e) => console.error("[rank] search failed:", e));
+    runChecks({ keywords, projectId: (req.body || {}).projectId || null }).catch((e) => console.error("[rank] search failed:", e));
     res.json({ started: keywords.length, keywords });
   });
 
@@ -150,7 +155,26 @@ function mount(app, dataDir) {
   app.get("/api/rank/snapshots", (req, res) => {
     const snaps = load().snapshots || {};
     if (req.query.keyword) return res.json({ keyword: req.query.keyword, byDate: snaps[req.query.keyword] || {} });
-    res.json({ keywords: Object.entries(snaps).map(([keyword, byDate]) => ({ keyword, dates: Object.keys(byDate).sort().reverse() })) });
+    const owners = load().kwProjects || {};
+    const pid = req.query.projectId;
+    // 프로젝트가 지정되면 그 프로젝트가 쓰는 키워드만 (프로젝트 기능 도입 전 기록은 소유자 정보가 없어 모든 프로젝트에 보임)
+    const mine = Object.entries(snaps).filter(([keyword]) => !pid || !owners[keyword] || owners[keyword].includes(pid));
+    res.json({ keywords: mine.map(([keyword, byDate]) => ({ keyword, dates: Object.keys(byDate).sort().reverse() })) });
+  });
+
+  // 프로젝트 삭제 시 순위 체크 데이터 정리 (프로젝트 자체는 /api/projects 에서 삭제)
+  app.post("/api/rank/purge", (req, res) => {
+    const pid = String((req.body || {}).projectId || "");
+    if (!pid) return res.status(400).json({ error: "invalid_input" });
+    const db = load();
+    for (const it of db.items.filter((i) => i.projectId === pid)) delete db.history[it.id];
+    db.items = db.items.filter((i) => i.projectId !== pid);
+    for (const [kw, owners] of Object.entries(db.kwProjects || {})) {
+      db.kwProjects[kw] = owners.filter((o) => o !== pid);
+      if (db.kwProjects[kw].length === 0 && !db.items.some((i) => i.keyword === kw)) { delete db.kwProjects[kw]; delete (db.snapshots || {})[kw]; }
+    }
+    save(db);
+    res.json({ ok: true });
   });
 
   app.get("/rank", (req, res) => res.redirect("/rank.html"));

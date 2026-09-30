@@ -6,9 +6,11 @@ const UA =
 
 const BASE = process.env.NAVER_SEARCH_BASE || "https://search.naver.com"; // 테스트용 override
 
-// 순위 조회 방식. 기본은 네이버 검색 오픈 API(공식, 차단 위험 없음): 카페·블로그 각각의 검색 결과 순위.
-// 통합검색 순위는 공식 API가 없어 RANK_SOURCE=scrape 로 화면을 읽는 방식(차단될 수 있음)을 켜야 한다.
-const SOURCE = process.env.RANK_SOURCE === "scrape" ? "scrape" : "api";
+// 순위 조회 방식. 기본(scrape)은 네이버 검색 화면을 읽어 통합검색·카페 탭 순위를 기록한다.
+// 카페 탭이 막히거나 결과가 비면 네이버 검색 오픈 API(카페글)로 대신 조회한다(키가 있을 때).
+// 통합검색은 공식 API가 없어 차단되면 조회 실패("-")로 기록된다.
+// RANK_SOURCE=api 로 하면 공식 API만 써서 카페·블로그 순위를 기록한다(화면 순위와 다를 수 있음).
+const SOURCE = process.env.RANK_SOURCE === "api" ? "api" : "scrape";
 
 const API_CHANNELS = {
   cafe: { label: "카페", api: "cafearticle" },
@@ -32,6 +34,7 @@ const SCRAPE_CHANNELS = {
     url: (q, start) => `${BASE}/search.naver?ssc=tab.cafe.all&query=${encodeURIComponent(q)}&start=${start}`,
     onlyTypes: ["cafe"],
     paged: true,
+    apiFallback: "cafearticle", // 화면 조회 실패 시 대체
   },
 };
 
@@ -108,6 +111,17 @@ async function collectApiPosts(ch, keyword, maxRank) {
 // 검색 범위(maxRank)까지의 게시글을 순서대로 모은다.
 async function collectPosts(ch, keyword, maxRank, delayMs) {
   if (ch.api) return collectApiPosts(ch, keyword, maxRank);
+  try {
+    const out = await collectScrapedPosts(ch, keyword, maxRank, delayMs);
+    if (out.length > 0 || !ch.apiFallback || !apiConfigured()) return out;
+  } catch (e) {
+    if (!ch.apiFallback || !apiConfigured()) throw e;
+    console.error(`[rank] ${keyword}/${ch.label}: 화면 조회 실패(${e.message}) → 공식 API로 대체`);
+  }
+  return collectApiPosts({ api: ch.apiFallback, label: ch.label }, keyword, maxRank);
+}
+
+async function collectScrapedPosts(ch, keyword, maxRank, delayMs) {
   const all = [];
   const seen = new Set();
   let pageText = "";

@@ -37,6 +37,27 @@ function normalize(href) {
   return null;
 }
 
+// 링크 주소로 게시글을 식별하지 못할 때를 위한 대체 순위 계산용:
+// 문서 순서대로 "제목처럼 보이는 링크"(텍스트가 충분히 길고, 같은 글은 한 번만)를 모은다.
+function titleAnchors($) {
+  const out = [];
+  const seenText = new Set();
+  const seenHref = new Set();
+  $("a[href]").each((_, el) => {
+    const href = String($(el).attr("href") || "");
+    if (!/^https?:\/\//.test(href)) return;
+    const text = $(el).text().replace(/\s+/g, " ").trim();
+    const sq = text.replace(/\s+/g, "");
+    if (sq.length < 12 || /^RE\b/.test(text) || /더보기|도움말|Keep/.test(text)) return; // 댓글 카드·메뉴성 링크 제외
+    const hk = href.split("#")[0].split("?")[0];
+    if (seenText.has(sq) || seenHref.has(hk)) return;
+    seenText.add(sq);
+    seenHref.add(hk);
+    out.push({ text, href });
+  });
+  return out;
+}
+
 function extractPosts(html, { onlyTypes } = {}) {
   const $ = cheerio.load(html);
   const seen = new Map(); // key -> post
@@ -56,6 +77,7 @@ function extractPosts(html, { onlyTypes } = {}) {
     seen.set(n.key, post);
     posts.push(post);
   });
+  posts.anchors = titleAnchors($);
   posts.pageText = $("body").text().replace(/\s+/g, " ").trim(); // 링크 패턴으로 못 잡은 경우의 제목 검색용
   return posts;
 }
@@ -64,7 +86,7 @@ const squash = (s) => String(s).replace(/\s+/g, "");
 
 // pageText 를 넘기면(통합검색용) 링크 주소로 식별하지 못한 글도 페이지 본문에 제목이 있으면 노출로 본다.
 // 이 경우 순위는 알 수 없어 rank 는 null.
-function findTarget(posts, target, { pageText } = {}) {
+function findTarget(posts, target, { pageText, anchors } = {}) {
   const t = target.titleContains ? squash(target.titleContains) : "";
   const hit = posts.find((p) => {
     if (target.match && p.key.includes(target.match.replace(/^https?:\/\//, "").replace(/^(m|www)\./, ""))) return true;
@@ -72,6 +94,10 @@ function findTarget(posts, target, { pageText } = {}) {
     return false;
   });
   if (hit) return hit;
+  if (t && anchors) {
+    const i = anchors.findIndex((a) => squash(a.text).includes(t));
+    if (i >= 0) return { rank: i + 1, title: anchors[i].text, estimated: true }; // 제목 링크 순서 기준 추정 순위
+  }
   if (t && pageText && squash(pageText).includes(t)) return { rank: null, title: target.titleContains, viaText: true };
   return null;
 }

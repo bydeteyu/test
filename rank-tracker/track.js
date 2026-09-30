@@ -32,7 +32,7 @@ async function main() {
       const posts = fetched[channel];
       if (posts && posts.length === 0) console.warn(`[경고] ${kw.keyword}/${ch.label}: 게시글 링크 0건 — 차단되었거나 페이지 구조가 바뀌었을 수 있음`);
       for (const t of kw.targets) {
-        const hit = posts ? findTarget(posts, t, channel === "integrated" ? { pageText: posts.pageText } : {}) : null;
+        const hit = posts ? findTarget(posts, t, channel === "integrated" ? { pageText: posts.pageText, anchors: posts.anchors } : {}) : null;
         // 조회 실패(posts===null)는 "미노출"과 구분해 빈 값으로 기록
         const exposed = posts === null ? "" : hit ? "Y" : "N";
         rows.push([date, kw.keyword, channel, t.label, exposed, hit ? (hit.rank ?? "") : "", hit ? hit.title : ""]);

@@ -146,7 +146,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <h2>순위표</h2>
-      <button class="primary" id="runBtn">지금 확인</button>
+      <button class="primary" id="runBtn">전체조회</button>
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
@@ -315,10 +315,10 @@ async function refresh() {
     h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l">${esc(i.label)}</td>`;
     const vb = viewsByChannel(i);
     h += dates.map((x) => channels.map((c) => cell(i.history[x]?.[c.key], vb[c.key][x]?.prev)).join("")).join("");
-    h += `<td class="act"><button class="ghost" data-run="${esc(i.id)}"${d.running ? " disabled" : ""}>확인</button><button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
+    h += `<td class="act"><button class="ghost" data-run="${esc(i.id)}"${d.running ? " disabled" : ""}>조회</button><button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
     if (expanded.has(i.id)) h += detailRow(i, 2 + dates.length * channels.length + 1);
   }
-  $("#table").innerHTML = h + "</tbody></table></div>" + (dates.length ? "" : '<div class="meta">"지금 확인"을 누르면 첫 기록이 만들어집니다.</div>');
+  $("#table").innerHTML = h + "</tbody></table></div>" + (dates.length ? "" : '<div class="meta">"전체조회"를 누르면 첫 기록이 만들어집니다.</div>');
 }
 
 let snapData = null;

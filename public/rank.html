@@ -72,7 +72,7 @@ td.t{text-align:left;white-space:normal;min-width:220px}
 td.act{white-space:nowrap}td.act button{margin-left:4px}
 button.ghost{background:transparent;color:var(--ink);border-color:var(--border);padding:5px 9px;font-size:.78rem}
 tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-align:left}
-.charts{position:sticky;left:0;width:min(calc(100vw - 96px),940px);display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.charts{position:sticky;left:0;width:min(calc(100vw - 96px),940px)}
 .chart{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}
 .chart h3{margin:0 0 6px;font-size:.86rem;font-family:var(--font-display)}
 .chart svg{width:100%;height:auto;display:block}
@@ -80,9 +80,9 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
 .legend{display:flex;gap:14px;font-size:.76rem;color:var(--ink-soft);margin-top:4px}
 .legend i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
 #tip{position:fixed;z-index:9;pointer-events:none;background:var(--ink);color:var(--surface);font-size:.76rem;padding:6px 9px;border-radius:7px;white-space:pre;display:none}
-:root{--s1:#2a78d6;--s2:#eb6834}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--s1:#3987e5;--s2:#d95926}}
-:root[data-theme="dark"]{--s1:#3987e5;--s2:#d95926}
+:root{--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--s1:#3987e5;--s2:#d95926;--s3:#199e70}}
+:root[data-theme="dark"]{--s1:#3987e5;--s2:#d95926;--s3:#199e70}
 </style>
 </head>
 <body>
@@ -221,70 +221,75 @@ function viewsByChannel(item) {
 
 function niceMax(v) { const p = 10 ** Math.floor(Math.log10(Math.max(v, 1))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
 
-function viewsChart(item) {
-  const vb = viewsByChannel(item);
-  // 같은 글이라 채널 값이 같으므로 날짜별로 조회수가 있는 첫 채널 값을 사용
+// 하나의 차트: 막대 = 일별 조회수 증가(오른쪽 축), 선 = 순위(왼쪽 축, 1위가 위)
+function comboChart(item) {
+  const W2 = 760, H2 = 300, M2 = { l: 50, r: 58, t: 24, b: 32 };
   const dates = Object.keys(item.history).sort();
-  const pts = [];
+  const vb = viewsByChannel(item);
+  const diffs = {};
   let prev = null;
   for (const d of dates) {
     const v = channels.map((c) => vb[c.key][d]?.views).find((x) => x != null);
     if (v == null) continue;
-    if (prev != null) pts.push({ date: d, diff: v - prev, views: v });
+    if (prev != null) diffs[d] = { diff: v - prev, views: v };
     prev = v;
   }
-  if (pts.length === 0) return '<div class="empty">조회수 기록이 2일 이상 쌓이면 일별 증가량이 표시됩니다.</div>';
-  const max = niceMax(Math.max(...pts.map((p) => p.diff), 1));
-  const iw = W - M.l - M.r, ih = H - M.t - M.b;
-  const bw = Math.min(28, (iw / pts.length) * 0.6);
-  const y = (v) => M.t + ih - (Math.max(v, 0) / max) * ih;
-  let g = "";
-  for (let k = 0; k <= 4; k++) {
-    const v = (max / 4) * k;
-    g += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border)" stroke-width="1"/><text x="${M.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--ink-soft)">${fmtN(Math.round(v))}</text>`;
-  }
-  pts.forEach((p, i) => {
-    const cx = M.l + (iw / pts.length) * (i + 0.5);
-    const top = y(p.diff), h = Math.max(M.t + ih - top, p.diff > 0 ? 2 : 0);
-    const r = Math.min(4, bw / 2, h);
-    g += h > 0 ? `<path d="M${cx - bw / 2},${M.t + ih} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${bw - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z" fill="var(--s1)"/>` : "";
-    g += `<text x="${cx}" y="${Math.min(top - 4, M.t + ih - 3)}" text-anchor="middle" font-size="10" fill="var(--ink)">${p.diff > 0 ? "+" : ""}${fmtN(p.diff)}</text>`;
-    g += `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--ink-soft)">${esc(p.date.slice(5))}</text>`;
-    g += `<rect x="${cx - iw / pts.length / 2}" y="${M.t}" width="${iw / pts.length}" height="${ih}" fill="transparent" data-tip="${esc(p.date)}\n조회수 ${fmtN(p.views)} (${p.diff >= 0 ? "+" : ""}${fmtN(p.diff)})"/>`;
-  });
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="일별 조회수 증가량 막대그래프">${g}</svg>`;
-}
-
-function rankChart(item) {
-  const dates = Object.keys(item.history).sort();
   const series = channels.map((c) => ({ c, pts: dates.map((d, i) => ({ d, i, rec: item.history[d]?.[c.key] })).filter((p) => p.rec && p.rec.status === "hit" && p.rec.rank != null) }));
-  const all = series.flatMap((s) => s.pts.map((p) => p.rec.rank));
-  if (all.length === 0) return '<div class="empty">순위가 기록된 날이 없습니다. (범위 밖이거나 조회 실패)</div>';
-  const rstep = Math.max(1, Math.ceil((Math.max(...all) * 1.1 - 1) / 4)), maxR = 1 + rstep * 4; // 눈금이 정수가 되도록
-  const iw = W - M.l - M.r, ih = H - M.t - M.b;
-  const x = (i) => M.l + (dates.length === 1 ? iw / 2 : (iw / (dates.length - 1)) * i);
-  const y = (r) => M.t + ((r - 1) / (maxR - 1)) * ih; // 1위가 위
+  const ranks = series.flatMap((s2) => s2.pts.map((p) => p.rec.rank));
+  const hasViews = Object.keys(diffs).length > 0, hasRank = ranks.length > 0;
+  if (!hasViews && !hasRank) return '<div class="empty">표시할 기록이 아직 없습니다. 조회를 여러 번 하면 추이가 쌓입니다.</div>';
+
+  const iw = W2 - M2.l - M2.r, ih = H2 - M2.t - M2.b;
+  const n = dates.length;
+  const x = (i) => M2.l + (iw / n) * (i + 0.5);
+  const rstep = hasRank ? Math.max(1, Math.ceil((Math.max(...ranks) * 1.1 - 1) / 4)) : 1, maxR = 1 + rstep * 4;
+  const yr = (r) => M2.t + ((r - 1) / (maxR - 1)) * ih; // 1위가 위
+  const maxV = hasViews ? niceMax(Math.max(...Object.values(diffs).map((o) => o.diff), 1)) : 4;
+  const yv = (v) => M2.t + ih - (Math.max(v, 0) / maxV) * ih;
+
   let g = "";
-  for (let k = 0; k <= 4; k++) {
-    const r = 1 + rstep * k;
-    g += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(r)}" y2="${y(r)}" stroke="var(--border)"/><text x="${M.l - 6}" y="${y(r) + 4}" text-anchor="end" font-size="10" fill="var(--ink-soft)">${r}위</text>`;
+  for (let k = 0; k <= 4; k++) { // 눈금 5개를 두 축이 공유 (위=상위 순위·큰 조회수)
+    const yy = M2.t + (ih / 4) * k;
+    g += `<line x1="${M2.l}" x2="${W2 - M2.r}" y1="${yy}" y2="${yy}" stroke="var(--border)"/>`;
+    if (hasRank) g += `<text x="${M2.l - 7}" y="${yy + 4}" text-anchor="end" font-size="11" fill="var(--ink-soft)">${1 + rstep * k}위</text>`;
+    if (hasViews) g += `<text x="${W2 - M2.r + 7}" y="${yy + 4}" font-size="11" fill="var(--ink-soft)">${fmtN(Math.round(maxV - (maxV / 4) * k))}</text>`;
   }
-  const step = Math.ceil(dates.length / 8);
-  dates.forEach((d, i) => { if (i % step === 0 || i === dates.length - 1) g += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--ink-soft)">${esc(d.slice(5))}</text>`; });
-  for (const s of series) {
-    const col = CH_COLOR[s.c.key] || "var(--s1)";
-    // 연속한 날만 선으로 잇고, 끊긴 날(밖/실패)은 이어 붙이지 않는다
+  g += `<text x="${M2.l - 7}" y="${M2.t - 9}" text-anchor="end" font-size="11" font-weight="600" fill="var(--ink)">순위</text><text x="${W2 - 2}" y="${M2.t - 9}" text-anchor="end" font-size="11" font-weight="600" fill="var(--ink)">조회수 증가</text>`;
+  const step = Math.ceil(n / 10);
+  dates.forEach((d, i) => { if (i % step === 0 || i === n - 1) g += `<text x="${x(i)}" y="${H2 - 10}" text-anchor="middle" font-size="11" fill="var(--ink-soft)">${esc(d.slice(5))}</text>`; });
+
+  const bw = Math.min(30, (iw / n) * 0.5);
+  dates.forEach((d, i) => { // 막대(뒤)
+    const o = diffs[d];
+    if (!o) return;
+    const top = yv(o.diff), h = Math.max(M2.t + ih - top, o.diff > 0 ? 2 : 0), r = Math.min(4, bw / 2, h);
+    if (h > 0) g += `<path d="M${x(i) - bw / 2},${M2.t + ih} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${bw - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z" fill="var(--s3)"/>`;
+    g += `<text x="${x(i)}" y="${Math.max(top - 5, M2.t + 8)}" text-anchor="middle" font-size="10" fill="var(--ink)">${o.diff > 0 ? "+" : ""}${fmtN(o.diff)}</text>`;
+  });
+  for (const s2 of series) { // 순위 선(앞)
+    const col = CH_COLOR[s2.c.key] || "var(--s1)";
     let path = "", last = null;
-    for (const p of s.pts) { path += (last !== null && p.i === last + 1 ? "L" : "M") + `${x(p.i)},${y(p.rec.rank)} `; last = p.i; }
+    for (const p of s2.pts) { path += (last !== null && p.i === last + 1 ? "L" : "M") + `${x(p.i)},${yr(p.rec.rank)} `; last = p.i; }
     g += `<path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-    for (const p of s.pts) g += `<circle cx="${x(p.i)}" cy="${y(p.rec.rank)}" r="4" fill="${col}" stroke="var(--surface)" stroke-width="2"/><circle cx="${x(p.i)}" cy="${y(p.rec.rank)}" r="12" fill="transparent" data-tip="${esc(p.d)}\n${esc(s.c.label)} ${p.rec.rank}위"/>`;
+    for (const p of s2.pts) g += `<circle cx="${x(p.i)}" cy="${yr(p.rec.rank)}" r="4" fill="${col}" stroke="var(--surface)" stroke-width="2"/>`;
+    const lp = s2.pts[s2.pts.length - 1];
+    if (lp) g += `<text x="${x(lp.i) + 8}" y="${yr(lp.rec.rank) - 8}" font-size="11" font-weight="600" fill="var(--ink)">${esc(s2.c.label)} ${lp.rec.rank}위</text>`;
   }
-  const legend = channels.map((c) => `<span><i style="border-color:${CH_COLOR[c.key] || "var(--s1)"}"></i>${esc(c.label)}</span>`).join("");
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="순위 추이 선그래프">${g}</svg><div class="legend">${legend}<span>위로 갈수록 상위</span></div>`;
+  dates.forEach((d, i) => { // 날짜별 툴팁 (맨 위, 투명)
+    const lines = [d];
+    for (const c of channels) { const rec = item.history[d]?.[c.key]; lines.push(`${c.label} ${rec ? (rec.status === "hit" ? (rec.rank != null ? rec.rank + "위" : "노출") : rec.status === "miss" ? "범위 밖" : "조회 실패") : "-"}`); }
+    const o = diffs[d];
+    const views = channels.map((c) => item.history[d]?.[c.key]?.views).find((v) => v != null);
+    if (views != null) lines.push(`조회수 ${fmtN(views)}${o ? ` (${o.diff >= 0 ? "+" : ""}${fmtN(o.diff)})` : ""}`);
+    g += `<rect x="${x(i) - iw / n / 2}" y="${M2.t}" width="${iw / n}" height="${ih}" fill="transparent" data-tip="${esc(lines.join("\n"))}"/>`;
+  });
+  const legend = channels.map((c) => `<span><i style="border-color:${CH_COLOR[c.key] || "var(--s1)"}"></i>${esc(c.label)} 순위</span>`).join("") + '<span><i style="border-top:8px solid var(--s3);border-radius:2px"></i>일별 조회수 증가</span>';
+  const note = !hasViews ? '<div class="meta">조회수 기록이 이틀 이상 쌓이면 막대가 나타납니다.</div>' : "";
+  return `<svg viewBox="0 0 ${W2} ${H2}" role="img" aria-label="순위 추이(선, 왼쪽 축)와 일별 조회수 증가(막대, 오른쪽 축)">${g}</svg><div class="legend">${legend}<span>순위: 위로 갈수록 상위</span></div>${note}`;
 }
 
 function detailRow(item, cols) {
-  return `<tr class="detail"><td colspan="${cols}"><div class="charts"><div class="chart"><h3>일별 조회수 증가</h3>${viewsChart(item)}</div><div class="chart"><h3>순위 추이</h3>${rankChart(item)}</div></div></td></tr>`;
+  return `<tr class="detail"><td colspan="${cols}"><div class="charts"><div class="chart"><h3>순위 추이 · 일별 조회수 증가</h3>${comboChart(item)}</div></div></td></tr>`;
 }
 
 async function refresh() {
@@ -307,18 +312,17 @@ async function refresh() {
   if (d.running && !pollTimer) pollTimer = setInterval(refresh, 5000);
   if (!d.running && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   if (d.items.length === 0) { $("#table").innerHTML = '<div class="meta">아직 추적 중인 콘텐츠가 없습니다.</div>'; return; }
-  const dates = [...new Set(d.items.flatMap((i) => Object.keys(i.history)))].sort().reverse().slice(0, 7);
-  let h = '<div class="table-scroll"><table><thead><tr><th class="l" rowspan="2">키워드</th><th class="l" rowspan="2">콘텐츠</th>';
-  h += dates.map((x) => `<th colspan="${channels.length}">${esc(x.slice(5))}</th>`).join("") + '<th rowspan="2"></th></tr><tr>';
-  h += dates.map(() => channels.map((c) => `<th>${esc(c.label)}</th>`).join("")).join("") + "</tr></thead><tbody>";
+  let h = '<div class="table-scroll"><table><thead><tr><th class="l">키워드</th><th class="l">콘텐츠</th><th>최종 조회일</th>';
+  h += channels.map((c) => `<th>${esc(c.label)}</th>`).join("") + "<th></th></tr></thead><tbody>";
   for (const i of d.items) {
-    h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l">${esc(i.label)}</td>`;
+    const last = Object.keys(i.history).sort().pop(); // 가장 최근 기록만 표에 표시 (누적 기록은 더보기 차트에서)
     const vb = viewsByChannel(i);
-    h += dates.map((x) => channels.map((c) => cell(i.history[x]?.[c.key], vb[c.key][x]?.prev)).join("")).join("");
+    h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l">${esc(i.label)}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
+    h += channels.map((c) => (last ? cell(i.history[last]?.[c.key], vb[c.key][last]?.prev) : '<td class="na">-</td>')).join("");
     h += `<td class="act"><button class="ghost" data-run="${esc(i.id)}"${d.running ? " disabled" : ""}>조회</button><button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
-    if (expanded.has(i.id)) h += detailRow(i, 2 + dates.length * channels.length + 1);
+    if (expanded.has(i.id)) h += detailRow(i, 3 + channels.length + 1);
   }
-  $("#table").innerHTML = h + "</tbody></table></div>" + (dates.length ? "" : '<div class="meta">"전체조회"를 누르면 첫 기록이 만들어집니다.</div>');
+  $("#table").innerHTML = h + "</tbody></table></div>" + (d.items.some((i) => Object.keys(i.history).length) ? "" : '<div class="meta">"전체조회"를 누르면 첫 기록이 만들어집니다.</div>');
 }
 
 let snapData = null;

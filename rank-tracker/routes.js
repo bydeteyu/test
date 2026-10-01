@@ -200,6 +200,12 @@ function mount(app, dataDir) {
     res.json({ ok: true });
   });
 
+  // 백업: 순위 체크 데이터 전체(rank.json)를 내려받는다. 배포/업데이트 전에 받아 두면 안전하다.
+  app.get("/api/rank/export", (req, res) => {
+    res.set("Content-Disposition", `attachment; filename="rank-backup-${today()}.json"`);
+    res.type("application/json").send(JSON.stringify(load(), null, 2));
+  });
+
   app.get("/rank", (req, res) => res.redirect("/rank.html"));
 
   // 매일 KST AUTO_HOUR 시 이후 첫 확인 시점에 전체 항목 1회 실행 (RANK_AUTO=off 로 끔)

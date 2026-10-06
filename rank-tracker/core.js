@@ -110,11 +110,13 @@ async function collectApiPosts(ch, keyword, maxRank) {
 
 // 카페 글 조회수 조회(비공식 카페 글 API, 공개 글만). 실패하면 null — 순위 기록에는 영향 없다.
 // key: "cafe.naver.com/{카페명 또는 카페번호}/{글번호}"
-const viewCache = new Map();
+const viewCache = new Map(); // key -> { t, v }  (같은 확인 중 통합/카페 중복 조회만 막는 짧은 캐시)
+const VIEW_CACHE_MS = 60 * 1000;
 async function fetchCafeViews(key, { debug = false } = {}) {
   const m = /^cafe\.naver\.com\/([^/]+)\/(\d+)$/.exec(key || "");
   if (!m) return debug ? { error: "카페 글 주소가 아님" } : null;
-  if (!debug && viewCache.has(key)) return viewCache.get(key);
+  const cached = viewCache.get(key);
+  if (!debug && cached && Date.now() - cached.t < VIEW_CACHE_MS) return cached.v;
   const headers = { "User-Agent": UA, "Accept": "application/json, text/plain, */*", "Accept-Language": "ko-KR,ko;q=0.9", "Referer": "https://cafe.naver.com/" };
   const trace = {};
   let views = null;
@@ -141,7 +143,7 @@ async function fetchCafeViews(key, { debug = false } = {}) {
     trace.error = e.message;
   }
   if (debug) return { views, ...trace };
-  viewCache.set(key, views);
+  if (views !== null) viewCache.set(key, { t: Date.now(), v: views }); // 실패(null)는 캐시하지 않음
   return views;
 }
 

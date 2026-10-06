@@ -200,10 +200,25 @@ function mount(app, dataDir) {
     res.json({ ok: true });
   });
 
-  // 백업: 순위 체크 데이터 전체(rank.json)를 내려받는다. 배포/업데이트 전에 받아 두면 안전하다.
+  // 백업/복원: 프로젝트(db.json)와 순위 체크 데이터(rank.json)를 한 파일로 내려받고 다시 올린다.
+  const dbFile = path.join(dataDir, "db.json");
   app.get("/api/rank/export", (req, res) => {
-    res.set("Content-Disposition", `attachment; filename="rank-backup-${today()}.json"`);
-    res.type("application/json").send(JSON.stringify(load(), null, 2));
+    const readJson = (f) => (fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf-8")) : null);
+    res.set("Content-Disposition", `attachment; filename="backup-${today()}.json"`);
+    res.type("application/json").send(JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), db: readJson(dbFile), rank: load() }, null, 2));
+  });
+  app.post("/api/rank/import", (req, res) => {
+    const b = req.body || {};
+    const rank = b.rank, db = b.db;
+    const okRank = rank && Array.isArray(rank.items) && rank.history && typeof rank.history === "object";
+    const okDb = !db || (Array.isArray(db.projects) && Array.isArray(db.keywords));
+    if (!okRank || !okDb) return res.status(400).json({ error: "invalid_backup" });
+    if (running) return res.status(409).json({ error: "busy" });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    for (const f of [file, dbFile]) if (fs.existsSync(f)) fs.copyFileSync(f, `${f}.before-import-${stamp}`); // 덮어쓰기 전 현재 파일 보관
+    fs.writeFileSync(file, JSON.stringify(rank, null, 2));
+    if (db) fs.writeFileSync(dbFile, JSON.stringify(db, null, 2));
+    res.json({ ok: true, items: rank.items.length, projects: db ? db.projects.length : null });
   });
 
   app.get("/rank", (req, res) => res.redirect("/rank.html"));

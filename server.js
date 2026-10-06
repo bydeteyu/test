@@ -31,8 +31,14 @@ if (process.env.APP_PASSWORD) {
 }
 
 app.use(express.json({ limit: "8mb" }));
+app.get("/api/storage", (req, res) => res.json({ dataDir: DATA_DIR, persistent: !VOLATILE_STORAGE }));
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+// 데이터 폴더: DATA_DIR > Railway 볼륨 마운트 경로(RAILWAY_VOLUME_MOUNT_PATH) > ./data
+const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, "data");
+// Railway 에서 볼륨 없이 실행 중이면 재배포 때마다 데이터가 초기화된다 — 화면에 경고하기 위한 정보
+const VOLATILE_STORAGE = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_ID) && !process.env.RAILWAY_VOLUME_MOUNT_PATH;
+if (VOLATILE_STORAGE) console.warn("[storage] 영구 볼륨이 연결되지 않았습니다. 재배포하면 데이터가 초기화됩니다. (Railway: 서비스에 Volume 추가)");
+console.log("[storage] data dir:", DATA_DIR);
 const DATA_FILE = path.join(DATA_DIR, "db.json");
 
 function seedData() {

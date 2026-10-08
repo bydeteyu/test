@@ -55,7 +55,7 @@ function mount(app, dataDir) {
             const hit = findTarget(posts.slice(0, MAX_RANK), it, channel === "integrated" ? { pageText: posts.pageText, anchors: posts.anchors } : {});
             rec[channel] = hit ? { status: "hit", rank: hit.rank ?? null, title: hit.title } : { status: "miss" };
             if (hit) { // 카페 글이면 조회수도 함께 기록 (실패해도 순위 기록은 유지, 사유는 화면에 표시)
-              const v = hit.key && hit.type === "cafe" ? await fetchCafeViews(hit.key) : { views: null, reason: hit.key ? "카페 글이 아님(블로그·지식iN 등)" : "글 주소를 알 수 없음" };
+              const v = hit.key && hit.type === "cafe" ? await fetchCafeViews(hit.key, { art: hit.art }) : { views: null, reason: hit.key ? "카페 글이 아님(블로그·지식iN 등)" : "글 주소를 알 수 없음" };
               if (v.views !== null) rec[channel].views = v.views;
               else rec[channel].viewsNote = v.reason;
             }
@@ -114,7 +114,9 @@ function mount(app, dataDir) {
     let key = raw.replace(/^https?:\/\//, "").split(/[?#]/)[0];
     const m = /cafes\/(\d+)\/articles\/(\d+)/.exec(raw);
     if (m) key = `cafe.naver.com/${m[1]}/${m[2]}`;
-    res.json(await fetchCafeViews(key, { debug: true }));
+    let art = null;
+    try { art = new URL(/^https?:\/\//.test(raw) ? raw : "https://" + raw).searchParams.get("art"); } catch { /* 무시 */ }
+    res.json(await fetchCafeViews(key, { debug: true, art: req.query.art || art }));
   });
 
   app.get("/api/rank", (req, res) => {

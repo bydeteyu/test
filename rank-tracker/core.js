@@ -126,19 +126,28 @@ async function resolveClubId(name, headers) {
   return null;
 }
 
-async function lookupCafeViews(key) {
+async function lookupCafeViews(key, art) {
   const m = /^cafe\.naver\.com\/([^/]+)\/(\d+)$/.exec(key || "");
   if (!m) return { views: null, reason: "카페 글이 아니거나 글 주소를 알 수 없음", trace: { key } };
   const headers = { "User-Agent": UA, "Accept": "application/json, text/plain, */*", "Accept-Language": "ko-KR,ko;q=0.9", "Referer": "https://cafe.naver.com/" };
   const trace = { key };
   try {
+    // art: 검색 결과 링크에 붙는 검색 유입 토큰. 회원공개 카페 글도 "검색에서 들어온 것"으로 열리게 해 주는 값이라 함께 보낸다.
+    const artQ = art ? `&art=${encodeURIComponent(art)}` : "";
+    trace.hasArt = !!art;
     const clubId = /^\d+$/.test(m[1]) ? m[1] : await resolveClubId(m[1], headers);
     trace.clubId = clubId;
-    if (!clubId) return { views: null, reason: "카페 번호를 찾지 못함", trace };
-    const url = `https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${clubId}/articles/${m[2]}?query=&useCafeId=true&requestFrom=A`;
-    const res = await fetch(url, { headers });
-    trace.status = res.status;
-    if (res.status === 401 || res.status === 403) return { views: null, reason: "가입 필요 또는 비공개 카페", trace };
+    const attempts = [];
+    if (clubId) attempts.push(`https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${clubId}/articles/${m[2]}?query=&useCafeId=true&requestFrom=A${artQ}`);
+    if (art) attempts.push(`https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${encodeURIComponent(m[1])}/articles/${m[2]}?query=&useCafeId=false&requestFrom=A${artQ}`); // 카페 번호를 모를 때 카페명으로
+    if (attempts.length === 0) return { views: null, reason: "카페 번호를 찾지 못함", trace };
+    let res;
+    for (const url of attempts) {
+      res = await fetch(url, { headers });
+      trace.status = res.status;
+      if (res.ok) break;
+    }
+    if (res.status === 401 || res.status === 403) return { views: null, reason: art ? "검색 유입으로도 열리지 않는 글(비공개)" : "가입 필요 또는 비공개 카페", trace };
     if (res.status === 429 || res.status >= 500) return { views: null, reason: "네이버가 조회를 제한함", trace };
     if (!res.ok) return { views: null, reason: `조회수 조회 실패(HTTP ${res.status})`, trace };
     const j = await res.json();
@@ -146,7 +155,7 @@ async function lookupCafeViews(key) {
     trace.resultKeys = Object.keys(j?.result || {});
     const n = j?.result?.article?.readCount ?? j?.result?.readCount;
     if (Number.isFinite(Number(n)) && n !== null && n !== undefined) return { views: Number(n), trace };
-    if (j?.result?.errorCode || j?.message?.error) return { views: null, reason: "가입 필요 또는 비공개 카페", trace: { ...trace, error: j.result?.errorCode || j.message.error } };
+    if (j?.result?.errorCode || j?.message?.error) return { views: null, reason: art ? "검색 유입으로도 열리지 않는 글(비공개)" : "가입 필요 또는 비공개 카페", trace: { ...trace, error: j.result?.errorCode || j.message.error } };
     return { views: null, reason: "응답에 조회수가 없음", trace };
   } catch (e) {
     trace.error = e.message;
@@ -154,10 +163,10 @@ async function lookupCafeViews(key) {
   }
 }
 
-async function fetchCafeViews(key, { debug = false } = {}) {
+async function fetchCafeViews(key, { debug = false, art = null } = {}) {
   const cached = viewCache.get(key);
   if (!debug && cached && Date.now() - cached.t < VIEW_CACHE_MS) return { views: cached.v };
-  const r = await lookupCafeViews(key);
+  const r = await lookupCafeViews(key, art);
   if (debug) return { views: r.views, reason: r.reason, ...r.trace };
   if (r.views !== null) viewCache.set(key, { t: Date.now(), v: r.views }); // 실패는 캐시하지 않음
   return { views: r.views, reason: r.reason };

@@ -195,6 +195,8 @@ function cell(rec, prevViews) {
     const diff = prevViews != null ? rec.views - prevViews : null;
     const dl = diff == null ? "" : ` <span class="delta${diff === 0 ? " zero" : ""}">(${diff > 0 ? "+" : diff < 0 ? "−" : "+"}${Math.abs(diff).toLocaleString()})</span>`;
     v = `<div class="sub">조회 ${Number(rec.views).toLocaleString()}${dl}</div>`;
+  } else if (rec.status === "hit" && rec.viewsNote) {
+    v = `<div class="sub" title="${esc(rec.viewsNote)}">조회수 확인 불가 · ${esc(rec.viewsNote)}</div>`;
   }
   if (rec.status === "hit" && rec.rank == null) return `<td class="hit">노출${v}</td>`;
   return rec.status === "hit" ? `<td class="hit">${rec.rank}위${v}</td>` : `<td class="miss">${$("#maxRank").textContent}위 밖</td>`;

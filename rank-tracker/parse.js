@@ -119,7 +119,7 @@ function findTarget(posts, target, { pageText, anchors } = {}) {
   if (hit) return hit;
   if (t && anchors) {
     const i = anchors.findIndex((a) => squash(a.text).includes(t));
-    if (i >= 0) return { rank: i + 1, title: anchors[i].text, estimated: true }; // 제목 링크 순서 기준 추정 순위
+    if (i >= 0) { const n = normalize(anchors[i].href); return { rank: i + 1, title: anchors[i].text, estimated: true, ...(n ? { key: n.key, type: n.type } : {}) }; } // 제목 링크 순서 기준 추정 순위
   }
   if (t && pageText && squash(pageText).includes(t)) return { rank: null, title: target.titleContains, viaText: true };
   return null;

@@ -54,9 +54,10 @@ function mount(app, dataDir) {
             if (posts === null || posts.length === 0) { rec[channel] = { status: "error" }; continue; }
             const hit = findTarget(posts.slice(0, MAX_RANK), it, channel === "integrated" ? { pageText: posts.pageText, anchors: posts.anchors } : {});
             rec[channel] = hit ? { status: "hit", rank: hit.rank ?? null, title: hit.title } : { status: "miss" };
-            if (hit && hit.key) { // 카페 글이면 조회수도 함께 기록 (실패해도 순위 기록은 유지)
-              const views = await fetchCafeViews(hit.key);
-              if (views !== null) rec[channel].views = views;
+            if (hit) { // 카페 글이면 조회수도 함께 기록 (실패해도 순위 기록은 유지, 사유는 화면에 표시)
+              const v = hit.key && hit.type === "cafe" ? await fetchCafeViews(hit.key) : { views: null, reason: hit.key ? "카페 글이 아님(블로그·지식iN 등)" : "글 주소를 알 수 없음" };
+              if (v.views !== null) rec[channel].views = v.views;
+              else rec[channel].viewsNote = v.reason;
             }
           }
           prune((db.history[it.id] ??= {}))[date] = rec;

@@ -4,6 +4,14 @@ const cheerio = require("cheerio");
 
 // 정규화된 게시글 키: 같은 글이 썸네일/제목/본문 링크로 여러 번 나와도 한 번만 센다.
 function normalize(href) {
+  const n = normalizeBase(href);
+  if (n && n.type === "cafe") {
+    try { const art = new URL(href, "https://search.naver.com").searchParams.get("art"); if (art) n.art = art; } catch { /* 무시 */ }
+  }
+  return n;
+}
+
+function normalizeBase(href) {
   let u;
   try {
     u = new URL(href, "https://search.naver.com");
@@ -77,9 +85,10 @@ function extractPosts(html, { onlyTypes } = {}) {
     if (existing) {
       // 제목 링크가 썸네일 링크(텍스트 없음)보다 뒤에 올 수 있어 더 긴 텍스트로 보강
       if (text.length > existing.title.length) existing.title = text;
+      if (!existing.art && n.art) existing.art = n.art;
       return;
     }
-    const post = { rank: posts.length + 1, type: n.type, key: n.key, title: text };
+    const post = { rank: posts.length + 1, type: n.type, key: n.key, title: text, ...(n.art ? { art: n.art } : {}) };
     seen.set(n.key, post);
     posts.push(post);
   });
@@ -119,7 +128,7 @@ function findTarget(posts, target, { pageText, anchors } = {}) {
   if (hit) return hit;
   if (t && anchors) {
     const i = anchors.findIndex((a) => squash(a.text).includes(t));
-    if (i >= 0) { const n = normalize(anchors[i].href); return { rank: i + 1, title: anchors[i].text, estimated: true, ...(n ? { key: n.key, type: n.type } : {}) }; } // 제목 링크 순서 기준 추정 순위
+    if (i >= 0) { const n = normalize(anchors[i].href); return { rank: i + 1, title: anchors[i].text, estimated: true, ...(n ? { key: n.key, type: n.type, ...(n.art ? { art: n.art } : {}) } : {}) }; } // 제목 링크 순서 기준 추정 순위
   }
   if (t && pageText && squash(pageText).includes(t)) return { rank: null, title: target.titleContains, viaText: true };
   return null;

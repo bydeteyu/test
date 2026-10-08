@@ -108,43 +108,59 @@ async function collectApiPosts(ch, keyword, maxRank) {
   return out;
 }
 
-// 카페 글 조회수 조회(비공식 카페 글 API, 공개 글만). 실패하면 null — 순위 기록에는 영향 없다.
+// 카페 글 조회수 조회(비공식 카페 글 API, 공개 글만).
 // key: "cafe.naver.com/{카페명 또는 카페번호}/{글번호}"
+// 결과: { views: 숫자|null, reason: 실패 사유(짧은 한글) | undefined } — 실패해도 순위 기록에는 영향 없다.
 const viewCache = new Map(); // key -> { t, v }  (같은 확인 중 통합/카페 중복 조회만 막는 짧은 캐시)
 const VIEW_CACHE_MS = 60 * 1000;
-async function fetchCafeViews(key, { debug = false } = {}) {
+const CLUB_ID_PATTERNS = [/g_sClubId\s*=\s*["'](\d+)["']/, /\/cafes\/(\d+)/, /clubid[=":\s]*(\d{5,})/i, /"cafeId"\s*:\s*"?(\d{5,})/];
+
+async function resolveClubId(name, headers) {
+  for (const [url, ua] of [[`https://cafe.naver.com/${encodeURIComponent(name)}`, UA], [`https://m.cafe.naver.com/${encodeURIComponent(name)}`, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"]]) {
+    try {
+      const res = await fetch(url, { headers: { ...headers, "User-Agent": ua, Accept: "text/html" } });
+      const html = await res.text();
+      for (const re of CLUB_ID_PATTERNS) { const m = re.exec(html); if (m) return m[1]; }
+    } catch { /* 다음 주소 시도 */ }
+  }
+  return null;
+}
+
+async function lookupCafeViews(key) {
   const m = /^cafe\.naver\.com\/([^/]+)\/(\d+)$/.exec(key || "");
-  if (!m) return debug ? { error: "카페 글 주소가 아님" } : null;
-  const cached = viewCache.get(key);
-  if (!debug && cached && Date.now() - cached.t < VIEW_CACHE_MS) return cached.v;
+  if (!m) return { views: null, reason: "카페 글이 아니거나 글 주소를 알 수 없음", trace: { key } };
   const headers = { "User-Agent": UA, "Accept": "application/json, text/plain, */*", "Accept-Language": "ko-KR,ko;q=0.9", "Referer": "https://cafe.naver.com/" };
-  const trace = {};
-  let views = null;
+  const trace = { key };
   try {
-    let clubId = /^\d+$/.test(m[1]) ? m[1] : null;
-    if (!clubId) { // 카페명 → 카페번호: 카페 첫 화면 HTML 에서 찾는다
-      const html = await (await fetch(`https://cafe.naver.com/${encodeURIComponent(m[1])}`, { headers: { ...headers, Accept: "text/html" } })).text();
-      const mm = /(?:clubid|clubId|cafes\/)[=":\s]*(\d{5,})/.exec(html);
-      clubId = mm ? mm[1] : null;
-    }
+    const clubId = /^\d+$/.test(m[1]) ? m[1] : await resolveClubId(m[1], headers);
     trace.clubId = clubId;
-    if (clubId) {
-      const url = `https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${clubId}/articles/${m[2]}?query=&useCafeId=true&requestFrom=A`;
-      const res = await fetch(url, { headers });
-      trace.status = res.status;
-      if (res.ok) {
-        const j = await res.json();
-        const n = j?.result?.article?.readCount ?? j?.result?.readCount;
-        views = Number.isFinite(Number(n)) ? Number(n) : null;
-        trace.shape = Object.keys(j?.result || {});
-      }
-    }
+    if (!clubId) return { views: null, reason: "카페 번호를 찾지 못함", trace };
+    const url = `https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${clubId}/articles/${m[2]}?query=&useCafeId=true&requestFrom=A`;
+    const res = await fetch(url, { headers });
+    trace.status = res.status;
+    if (res.status === 401 || res.status === 403) return { views: null, reason: "가입 필요 또는 비공개 카페", trace };
+    if (res.status === 429 || res.status >= 500) return { views: null, reason: "네이버가 조회를 제한함", trace };
+    if (!res.ok) return { views: null, reason: `조회수 조회 실패(HTTP ${res.status})`, trace };
+    const j = await res.json();
+    trace.keys = Object.keys(j || {});
+    trace.resultKeys = Object.keys(j?.result || {});
+    const n = j?.result?.article?.readCount ?? j?.result?.readCount;
+    if (Number.isFinite(Number(n)) && n !== null && n !== undefined) return { views: Number(n), trace };
+    if (j?.result?.errorCode || j?.message?.error) return { views: null, reason: "가입 필요 또는 비공개 카페", trace: { ...trace, error: j.result?.errorCode || j.message.error } };
+    return { views: null, reason: "응답에 조회수가 없음", trace };
   } catch (e) {
     trace.error = e.message;
+    return { views: null, reason: "조회수 조회 중 오류", trace };
   }
-  if (debug) return { views, ...trace };
-  if (views !== null) viewCache.set(key, { t: Date.now(), v: views }); // 실패(null)는 캐시하지 않음
-  return views;
+}
+
+async function fetchCafeViews(key, { debug = false } = {}) {
+  const cached = viewCache.get(key);
+  if (!debug && cached && Date.now() - cached.t < VIEW_CACHE_MS) return { views: cached.v };
+  const r = await lookupCafeViews(key);
+  if (debug) return { views: r.views, reason: r.reason, ...r.trace };
+  if (r.views !== null) viewCache.set(key, { t: Date.now(), v: r.views }); // 실패는 캐시하지 않음
+  return { views: r.views, reason: r.reason };
 }
 
 // 검색 범위(maxRank)까지의 게시글을 순서대로 모은다.

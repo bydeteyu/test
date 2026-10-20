@@ -89,7 +89,7 @@ function mount(app, { dataDir }) {
   }
 
   // ---- 회원(viewer)이 쓸 수 있는 것: 읽기 전용 순위 데이터뿐 ----
-  const VIEWER_API = [["GET", "/api/me"], ["GET", "/api/projects"], ["GET", "/api/rank"], ["POST", "/api/logout"]];
+  const VIEWER_API = [["GET", "/api/me"], ["GET", "/api/projects"], ["GET", "/api/rank"], ["GET", "/api/rank/xlsx"], ["POST", "/api/logout"]];
   const VIEWER_PAGES = new Set(["/rank.html", "/rank", "/login.html"]);
   function viewerGuard(req, res, next) {
     if (!req.path.startsWith("/api/")) {
@@ -97,7 +97,7 @@ function mount(app, { dataDir }) {
       return res.redirect("/rank.html");
     }
     if (!VIEWER_API.some(([m, p]) => m === req.method && p === req.path)) return res.status(403).json({ error: "forbidden" });
-    if (req.method === "GET" && req.path === "/api/rank") { // 허용된 프로젝트만
+    if (req.method === "GET" && (req.path === "/api/rank" || req.path === "/api/rank/xlsx")) { // 허용된 프로젝트만
       const allowed = req.user.projectIds || [];
       const pid = req.query.projectId;
       if (!pid) { if (allowed.length === 1) req.query.projectId = allowed[0]; else return res.status(403).json({ error: "forbidden" }); }

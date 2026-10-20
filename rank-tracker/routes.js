@@ -2,6 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { buildWorkbook } = require("./xlsx");
 const { normalize, fetchCafeViews, CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
 
 const MAX_RANK = Number(process.env.RANK_MAX || 30);
@@ -147,6 +148,24 @@ function mount(app, dataDir) {
       running,
       items: items.map((i) => ({ ...i, history: db.history[i.id] || {} })),
     });
+  });
+
+  // 순위표 엑셀 다운로드: 요약 시트 + 항목별 시트(기록 표와 "더보기"와 같은 차트)
+  app.get("/api/rank/xlsx", async (req, res) => {
+    const pid = req.query.projectId ? String(req.query.projectId) : null;
+    const db = load();
+    const items = db.items.filter((i) => !pid || i.projectId === pid).map((i) => ({ ...i, history: db.history[i.id] || {} }));
+    let projectName = "";
+    try { if (fs.existsSync(path.join(dataDir, "db.json"))) projectName = (JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf-8")).projects || []).find((p) => p.id === pid)?.name || ""; } catch { /* 이름 없이 진행 */ }
+    try {
+      const buf = await buildWorkbook({ projectName, items, channels: Object.entries(CHANNELS).map(([key, c]) => ({ key, label: c.label })), maxRank: MAX_RANK });
+      const filename = `순위표_${projectName || "전체"}_${today()}.xlsx`.replace(/[\\/:*?"<>|]/g, "_");
+      res.set("Content-Disposition", `attachment; filename="rank.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+      res.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").send(buf);
+    } catch (e) {
+      console.error("[rank] xlsx failed:", e);
+      res.status(500).json({ error: "xlsx_failed" });
+    }
   });
 
   app.post("/api/rank/items", (req, res) => {

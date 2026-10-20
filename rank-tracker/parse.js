@@ -6,7 +6,15 @@ const cheerio = require("cheerio");
 function normalize(href) {
   const n = normalizeBase(href);
   if (n && n.type === "cafe") {
-    try { const art = new URL(href, "https://search.naver.com").searchParams.get("art"); if (art) n.art = art; } catch { /* 무시 */ }
+    try {
+      const u = new URL(href, "https://search.naver.com");
+      let art = u.searchParams.get("art");
+      if (!art) { // 클릭 후 주소: /카페명?iframe_url_utf8=/ca-fe/cafes/..%3Fart%3D토큰 — 안쪽에 한 번 더 인코딩되어 있다
+        const inner = u.searchParams.get("iframe_url_utf8");
+        if (inner) { let d = inner; try { d = decodeURIComponent(inner); } catch { /* 그대로 */ } const m = /[?&]art=([^&#]+)/.exec(d); if (m) art = m[1]; }
+      }
+      if (art) n.art = art;
+    } catch { /* 무시 */ }
   }
   return n;
 }
@@ -119,10 +127,11 @@ const squash = (s) => String(s).normalize("NFKC").toLowerCase().replace(/[^\p{L}
 function findTarget(posts, target, { pageText, anchors } = {}) {
   const t = target.titleContains ? squash(target.titleContains) : "";
   const hit = posts.find((p) => {
-    if (target.match) {
-      const same = p.type === "cafe" ? sameCafePost(p.key, target.match) : null;
+    const matchStr = target.matchKey || target.match; // matchKey: 짧은 주소(naver.me)를 풀어서 얻은 카페 글 키
+    if (matchStr) {
+      const same = p.type === "cafe" ? sameCafePost(p.key, matchStr) : null;
       if (same !== null) { if (same) return true; }
-      else if (p.key.includes(target.match.replace(/^https?:\/\//, "").replace(/^(m|www)\./, ""))) return true;
+      else if (p.key.includes(matchStr.replace(/^https?:\/\//, "").replace(/^(m|www)\./, ""))) return true;
     }
     if (t && squash(p.title).includes(t)) return true;
     return false;

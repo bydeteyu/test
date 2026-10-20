@@ -216,6 +216,7 @@ function cell(rec, prevViews) {
 
 // ---- 중복 콘텐츠 판별: 같은 프로젝트에서 같은 글(글번호 또는 제목 문구)이 둘 이상 등록되면 중복 ----
 function contentId(i) {
+  if (i.matchKey) { const n = /\/(\d+)$/.exec(i.matchKey); if (n) return "a:" + n[1]; } // 짧은 주소를 풀어 둔 항목
   const m = String(i.match || "").trim();
   const art = /articles\/(\d+)|\/(\d{6,})(?:[/?#]|$)/.exec(m.replace(/^https?:\/\//, ""));
   if (m && art) return "a:" + (art[1] || art[2]);

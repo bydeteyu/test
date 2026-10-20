@@ -8,36 +8,17 @@ const app = express();
 // 헬스체크 (인증 없이 응답) — 배포 플랫폼용
 app.get("/healthz", (req, res) => res.type("text").send("ok"));
 
-// 공개 URL로 배포할 때를 위한 선택적 비밀번호 보호 (HTTP Basic).
-// APP_PASSWORD 를 설정하면 모든 페이지/API에 로그인이 필요합니다. APP_USER 기본값: admin
-if (process.env.APP_PASSWORD) {
-  const expectUser = process.env.APP_USER || "admin";
-  const expectPass = process.env.APP_PASSWORD;
-  const safeEq = (a, b) => {
-    const ha = crypto.createHash("sha256").update(String(a)).digest();
-    const hb = crypto.createHash("sha256").update(String(b)).digest();
-    return crypto.timingSafeEqual(ha, hb);
-  };
-  app.use((req, res, next) => {
-    const m = /^Basic (.+)$/.exec(req.headers.authorization || "");
-    if (m) {
-      const decoded = Buffer.from(m[1], "base64").toString("utf8");
-      const i = decoded.indexOf(":");
-      if (i >= 0 && safeEq(decoded.slice(0, i), expectUser) & safeEq(decoded.slice(i + 1), expectPass)) return next();
-    }
-    res.set("WWW-Authenticate", 'Basic realm="keyword-board", charset="UTF-8"');
-    res.status(401).send("로그인이 필요합니다.");
-  });
-}
-
-app.use(express.json({ limit: "8mb" }));
-app.get("/api/storage", (req, res) => res.json({ dataDir: DATA_DIR, persistent: !VOLATILE_STORAGE }));
-
 // 데이터 폴더: DATA_DIR > Railway 볼륨 마운트 경로(RAILWAY_VOLUME_MOUNT_PATH) > ./data
 const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, "data");
 // Railway 에서 볼륨 없이 실행 중이면 재배포 때마다 데이터가 초기화된다 — 화면에 경고하기 위한 정보
 const VOLATILE_STORAGE = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_ID) && !process.env.RAILWAY_VOLUME_MOUNT_PATH;
 if (VOLATILE_STORAGE) console.warn("[storage] 영구 볼륨이 연결되지 않았습니다. 재배포하면 데이터가 초기화됩니다. (Railway: 서비스에 Volume 추가)");
+
+app.use(express.json({ limit: "8mb" }));
+// 로그인/권한 (auth.js): 관리자는 APP_USER/APP_PASSWORD, 회원 계정은 관리자 화면에서 발급
+const auth = require("./auth").mount(app, { dataDir: DATA_DIR });
+app.locals.auth = auth;
+app.get("/api/storage", (req, res) => res.json({ dataDir: DATA_DIR, persistent: !VOLATILE_STORAGE }));
 console.log("[storage] data dir:", DATA_DIR);
 const DATA_FILE = path.join(DATA_DIR, "db.json");
 
@@ -95,7 +76,7 @@ const SCORE_FIELDS = ["volumeScore", "competitionScore", "trendScore", "brandFit
 
 // ---- projects ----
 app.get("/api/projects", (req, res) => {
-  res.json(loadDb().projects);
+  res.json(auth.filterProjects(req, loadDb().projects));
 });
 
 app.post("/api/projects", (req, res) => {
@@ -123,6 +104,7 @@ app.delete("/api/projects/:id", (req, res) => {
   db.projects = db.projects.filter((p) => p.id !== req.params.id);
   db.keywords = db.keywords.filter((k) => k.projectId !== req.params.id);
   saveDb(db);
+  auth.removeProject(req.params.id);
   res.json({ ok: true });
 });
 

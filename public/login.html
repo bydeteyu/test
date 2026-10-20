@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>로그인</title>
+<style>
+:root{color-scheme:light;--bg:#F7F5F0;--surface:#fff;--ink:#1E2420;--ink-soft:#63706A;--border:#DDD6C8;--accent:#0E6E58;--accent-ink:#fff;--bad:#AE4430;--bad-soft:#FBE9E3}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#14181A;--surface:#1C2220;--ink:#ECEFEC;--ink-soft:#9AA6A0;--border:#313A36;--accent:#3FCB9F;--accent-ink:#0B1512;--bad:#FF7A5C;--bad-soft:#2E1B16}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}
+.box{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:14px}
+h1{margin:0;font-size:1.2rem}
+p{margin:0;color:var(--ink-soft);font-size:.85rem}
+label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-soft)}
+input{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink)}
+button{font:inherit;font-weight:600;padding:11px;border-radius:9px;border:0;background:var(--accent);color:var(--accent-ink);cursor:pointer}
+button:disabled{opacity:.6}
+.err{background:var(--bad-soft);color:var(--bad);border-radius:8px;padding:8px 10px;font-size:.82rem}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<form class="box" id="f">
+  <h1>순위 체크 로그인</h1>
+  <p>발급받은 아이디와 비밀번호로 로그인하세요.</p>
+  <div class="err" id="err" hidden></div>
+  <label>아이디<input name="username" autocomplete="username" required autofocus></label>
+  <label>비밀번호<input name="password" type="password" autocomplete="current-password" required></label>
+  <button id="btn" type="submit">로그인</button>
+</form>
+<script>
+const f = document.getElementById("f"), err = document.getElementById("err"), btn = document.getElementById("btn");
+f.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  err.hidden = true; btn.disabled = true;
+  try {
+    const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(f))) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.message || "로그인하지 못했습니다.");
+    const next = new URLSearchParams(location.search).get("next");
+    location.href = d.role === "viewer" ? "/rank.html" : (next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
+  } catch (ex) { err.textContent = ex.message; err.hidden = false; btn.disabled = false; }
+});
+</script>
+</body>
+</html>

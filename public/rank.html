@@ -68,6 +68,8 @@ tr.tracked td{background:var(--good-soft);font-weight:600}
 td a{color:var(--accent)}
 td.t{text-align:left;white-space:normal;min-width:220px}
 [hidden]{display:none!important}
+.viewer .admin-only{display:none!important}
+#userbar{margin-top:6px}#userbar a{margin-left:6px}
 td.dup{background:var(--dup-soft)}
 .dupbadge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;font-size:.68rem;font-weight:700;background:var(--dup-ink);color:var(--surface);vertical-align:middle}
 :root{--dup-soft:#E1EEFA;--dup-ink:#2A6FB8}
@@ -94,15 +96,16 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
 <div class="wrap">
   <header>
     <h1>순위 체크</h1>
-    <p>키워드로 검색했을 때 지정한 콘텐츠가 <span class="chLabels">통합·카페</span> 검색 결과에서 각각 몇 위인지 매일 확인합니다. (<a href="/">← 키워드 리서치 보드</a>)</p>
+    <div class="meta" id="userbar"></div>
+    <p>키워드로 검색했을 때 지정한 콘텐츠가 <span class="chLabels">통합·카페</span> 검색 결과에서 각각 몇 위인지 매일 확인합니다. <span class="admin-only">(<a href="/">← 키워드 리서치 보드</a>)</span></p>
   </header>
 
-  <section class="card" id="volWarn" hidden>
+  <section class="card admin-only" id="volWarn" hidden>
     <b style="color:var(--bad)">영구 저장소(Volume)가 연결되지 않았습니다.</b>
     <div class="meta">지금 상태에서는 서버를 재배포할 때마다 프로젝트·순위 기록이 모두 초기화됩니다. Railway에서 이 서비스에 Volume을 추가하세요. 그 전에는 아래 "데이터 백업"에서 파일을 내려받아 두세요.</div>
   </section>
 
-  <section class="card" id="apiWarn" hidden>
+  <section class="card admin-only" id="apiWarn" hidden>
     <b style="color:var(--bad)">네이버 API 키가 설정되지 않았습니다.</b>
     <div class="meta">서버 환경 변수 <code>NAVER_CLIENT_ID</code>, <code>NAVER_CLIENT_SECRET</code>을 설정해야 순위를 확인할 수 있습니다. (네이버 개발자센터 → 애플리케이션 등록 → 검색 API)</div>
   </section>
@@ -111,16 +114,16 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
     <h2>프로젝트</h2>
     <div class="row">
       <label><b>프로젝트 선택</b><select id="project"></select></label>
-      <button id="delProject" class="danger" type="button">선택한 프로젝트 삭제</button>
+      <button id="delProject" class="danger admin-only" type="button">선택한 프로젝트 삭제</button>
     </div>
-    <form id="projForm" class="row">
+    <form id="projForm" class="row admin-only">
       <label><b>새 프로젝트 이름</b><input name="name" required maxlength="60" placeholder="예: 대추밭백한의원"></label>
       <button class="primary" type="submit">프로젝트 추가</button>
     </form>
-    <div class="meta">아래의 키워드 검색 · 추적 콘텐츠 · 순위표는 선택한 프로젝트별로 따로 관리됩니다.</div>
+    <div class="meta admin-only">아래의 키워드 검색 · 추적 콘텐츠 · 순위표는 선택한 프로젝트별로 따로 관리됩니다.</div>
   </section>
 
-  <section class="card">
+  <section class="card admin-only">
     <h2>키워드로 순위 검색</h2>
     <label><b>검색 키워드</b><span class="sub">한 줄에 하나씩 또는 쉼표(,)로 구분 · <span class="chLabels">통합·카페</span> 각각 상위 <span class="snapMax">30</span>위까지 수집하고 오늘 날짜로 기록합니다</span>
       <textarea id="kwInput" rows="3" placeholder="예: 대추밭백한의원"></textarea></label>
@@ -128,7 +131,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
     <div class="meta" id="searchStatus"></div>
   </section>
 
-  <section class="card" id="snapCard" hidden>
+  <section class="card admin-only" id="snapCard" hidden>
     <div class="row" style="justify-content:space-between">
       <h2>검색 결과 · 기록</h2>
       <button class="primary" id="csvBtn">CSV 내려받기</button>
@@ -142,7 +145,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
     <div class="meta">초록색 행은 아래에 등록한 추적 콘텐츠입니다. 검색한 키워드는 매일 자동으로 다시 기록됩니다.</div>
   </section>
 
-  <section class="card">
+  <section class="card admin-only">
     <h2>추적할 콘텐츠 추가 <span class="sub" id="projName"></span></h2>
     <form id="addForm" class="row">
       <label><b>검색 키워드</b><input name="keyword" required placeholder="예: 대추밭백한의원"></label>
@@ -157,14 +160,14 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <h2>순위표</h2>
-      <button class="primary" id="runBtn">전체조회</button>
+      <button class="primary admin-only" id="runBtn">전체조회</button>
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
     <div class="meta">검색 범위는 각 채널 <span id="maxRank">30</span>위까지입니다. 매일 오전 9시(KST) 이후 서버가 자동으로 확인합니다. 조회가 막히면 <b>-</b>로 표시됩니다.</div>
   </section>
 </div>
-<section class="wrap" style="margin-top:20px">
+<section class="wrap admin-only" style="margin-top:20px">
   <div class="card">
     <h2>데이터 백업</h2>
     <div class="row">
@@ -179,10 +182,13 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const api = async (url, opt) => {
   const r = await fetch(url, opt && { ...opt, headers: { "Content-Type": "application/json" }, body: JSON.stringify(opt.body) });
+  if (r.status === 401) { location.href = "/login.html"; throw Object.assign(new Error("login"), { status: 401 }); }
   if (!r.ok) throw Object.assign(new Error("HTTP " + r.status), { status: r.status });
   return r.json();
 };
 let channels = [{ key: "integrated", label: "통합" }, { key: "cafe", label: "카페" }];
+let me = { role: "admin" };
+const isViewer = () => me.role === "viewer";
 let pollTimer = null;
 let lastItems = [];
 
@@ -344,7 +350,7 @@ async function refresh() {
   document.querySelectorAll(".snapMax").forEach((e) => (e.textContent = d.snapMax));
   $("#searchBtn").disabled = d.running;
   $("#searchStatus").textContent = d.running ? "확인 중입니다… 키워드마다 수 초~수십 초가 걸립니다." : "";
-  await loadSnapKeywords();
+  if (!isViewer()) await loadSnapKeywords();
   $("#runBtn").disabled = d.running || d.items.length === 0;
   $("#status").textContent = d.running ? "확인 중입니다… 키워드마다 수 초가 걸리며 자동으로 갱신됩니다." : "";
   if (d.running && !pollTimer) pollTimer = setInterval(refresh, 5000);
@@ -361,7 +367,7 @@ async function refresh() {
     const dupTip = isDup ? `같은 콘텐츠가 ${sameAs.length}개 등록되어 있습니다 (키워드: ${sameAs.map((x) => x.keyword).join(", ")})` : "";
     h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l${isDup ? " dup" : ""}"${isDup ? ` title="${esc(dupTip)}"` : ""}>${esc(i.label)}${isDup ? '<span class="dupbadge">중복</span>' : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
     h += channels.map((c) => (last ? cell(i.history[last]?.[c.key], vb[c.key][last]?.prev) : '<td class="na">-</td>')).join("");
-    h += `<td class="act"><button class="ghost" data-run="${esc(i.id)}"${d.running ? " disabled" : ""}>조회</button><button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
+    h += `<td class="act">${isViewer() ? "" : `<button class="ghost" data-run="${esc(i.id)}"${d.running ? " disabled" : ""}>조회</button>`}<button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button>${isViewer() ? "" : `<button class="danger" data-del="${esc(i.id)}">삭제</button>`}</td></tr>`;
     if (expanded.has(i.id)) h += detailRow(i, 3 + channels.length + 1);
   }
   $("#table").innerHTML = h + "</tbody></table></div>" + (d.items.some((i) => Object.keys(i.history).length) ? "" : '<div class="meta">"전체조회"를 누르면 첫 기록이 만들어집니다.</div>');
@@ -479,8 +485,17 @@ $("#restoreFile").addEventListener("change", async (e) => {
   }
   e.target.value = "";
 });
-api("/api/storage").then((s) => { $("#volWarn").hidden = s.persistent; }).catch(() => {});
-loadProjects().then(refresh);
+(async () => {
+  me = await api("/api/me");
+  document.body.classList.toggle("viewer", isViewer());
+  const label = me.openMode ? "로그인 꺼짐(로컬)" : `${esc(me.name || me.username)} (${isViewer() ? "회원" : "관리자"})`;
+  $("#userbar").innerHTML = `${label}${me.openMode ? "" : ' · <a href="#" id="logoutLink">로그아웃</a>'}${me.role === "admin" && !me.openMode ? ' · <a href="/admin.html">계정 관리</a>' : ""}`;
+  const lo = $("#logoutLink");
+  if (lo) lo.addEventListener("click", async (e) => { e.preventDefault(); await fetch("/api/logout", { method: "POST" }); location.href = "/login.html"; });
+  if (!isViewer()) api("/api/storage").then((s) => { $("#volWarn").hidden = s.persistent; }).catch(() => {});
+  await loadProjects();
+  refresh();
+})();
 </script>
 </body>
 </html>

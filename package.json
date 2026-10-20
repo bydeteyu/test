@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "rank": "node rank-tracker/track.js",
-    "test": "node --test rank-tracker/test/parse.test.js"
+    "test": "node --test rank-tracker/test/parse.test.js test/auth.test.js"
   },
   "engines": {
     "node": ">=20.18.1"

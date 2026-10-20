@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { buildWorkbook } = require("./xlsx");
-const { normalize, fetchCafeViews, locatePost, CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
+const { normalize, fetchCafeViews, locatePost, resolveShortUrl, ensureMatchKey, CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
 
 const MAX_RANK = Number(process.env.RANK_MAX || 30);
 const DELAY_MS = Number(process.env.RANK_DELAY_MS || 3000);
@@ -49,6 +49,7 @@ function mount(app, dataDir) {
         db.items.filter((x) => x.keyword === keyword && (!itemIds || itemIds.includes(x.id))).forEach((x) => addOwner(x.projectId));
         prune(db.snapshots[keyword]);
         for (const it of db.items.filter((x) => x.keyword === keyword && (!itemIds || itemIds.includes(x.id)))) {
+          await ensureMatchKey(it); // naver.me 같은 단축 주소는 카페 글 키로 풀어 둔다
           const rec = {};
           const hits = {};
           for (const channel of Object.keys(CHANNELS)) {
@@ -64,6 +65,7 @@ function mount(app, dataDir) {
           if (cafeHit) { it.postKey = cafeHit.key; if (cafeHit.art) it.postArt = cafeHit.art; } // 다음에 범위 밖이어도 같은 글의 조회수를 볼 수 있게 기억
           let target = cafeHit ? { key: cafeHit.key, art: cafeHit.art } : null;
           if (!target && it.postKey) target = { key: it.postKey, art: it.postArt };
+          if (!target && it.matchKey) target = { key: it.matchKey, art: it.matchArt };
           if (!target && it.match) {
             const ref = normalize(/^https?:\/\//.test(it.match) ? it.match : "https://" + it.match);
             if (ref && ref.type === "cafe") target = { key: ref.key, art: ref.art };
@@ -142,13 +144,14 @@ function mount(app, dataDir) {
 
   // 진단용: 카페 글 조회수를 가져오는지 확인. 예) /api/rank/views?url=cafe.naver.com/imsanbu/80153775
   app.get("/api/rank/views", async (req, res) => {
-    const raw = String(req.query.url || "").trim();
-    let key = raw.replace(/^https?:\/\//, "").split(/[?#]/)[0];
-    const m = /cafes\/(\d+)\/articles\/(\d+)/.exec(raw);
-    if (m) key = `cafe.naver.com/${m[1]}/${m[2]}`;
-    let art = null;
-    try { art = new URL(/^https?:\/\//.test(raw) ? raw : "https://" + raw).searchParams.get("art"); } catch { /* 무시 */ }
-    res.json(await fetchCafeViews(key, { debug: true, art: req.query.art || art }));
+    let raw = String(req.query.url || "").trim();
+    let resolvedFrom = null;
+    if (/(^|\/\/)naver\.me\//.test(raw)) { const f = await resolveShortUrl(raw); if (f) { resolvedFrom = raw; raw = f; } } // 단축 주소는 풀어서 확인
+    const ref = normalize(/^https?:\/\//.test(raw) ? raw : "https://" + raw); // 카페 글 키와 검색 유입 토큰(art)을 모든 주소 형태에서 추출
+    const key = ref && ref.type === "cafe" ? ref.key : raw.replace(/^https?:\/\//, "").split(/[?#]/)[0];
+    const art = req.query.art || (ref && ref.art) || null;
+    const out = await fetchCafeViews(key, { debug: true, art });
+    res.json(resolvedFrom ? { resolvedFrom, finalUrl: raw.slice(0, 160) + (raw.length > 160 ? "…" : ""), ...out } : out);
   });
 
   app.get("/api/rank", (req, res) => {

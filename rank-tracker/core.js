@@ -172,6 +172,36 @@ async function fetchCafeViews(key, { debug = false, art = null } = {}) {
   return { views: r.views, reason: r.reason };
 }
 
+// 네이버 단축 주소(naver.me 등)를 따라가 최종 주소를 얻는다. 네이버 도메인만 허용(리다이렉트 중에도 확인).
+const isNaverHost = (h) => h === "naver.me" || h === "naver.com" || h.endsWith(".naver.com");
+async function resolveShortUrl(url, maxHops = 6) {
+  let cur = /^https?:\/\//.test(url) ? url : "https://" + url;
+  for (let i = 0; i < maxHops; i++) {
+    let u;
+    try { u = new URL(cur); } catch { return null; }
+    if (!isNaverHost(u.hostname)) return null;
+    if (u.hostname === "cafe.naver.com" || u.hostname === "m.cafe.naver.com") return cur;
+    const res = await fetch(cur, { redirect: "manual", headers: { "User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9" } });
+    const loc = res.headers.get("location");
+    if (!loc || res.status < 300 || res.status >= 400) return cur;
+    cur = new URL(loc, cur).toString();
+  }
+  return cur;
+}
+// 항목에 등록된 글 주소(match)가 카페 글 주소가 아니면(예: naver.me 단축 주소) 풀어서 카페 글 키(matchKey)와 토큰(matchArt)을 저장한다.
+async function ensureMatchKey(item) {
+  if (item.matchKey || !item.match) return;
+  const raw = String(item.match).trim();
+  let ref = normalize(/^https?:\/\//.test(raw) ? raw : "https://" + raw);
+  if (ref && ref.type === "cafe") { item.matchKey = ref.key; if (ref.art) item.matchArt = ref.art; return; }
+  try {
+    if (!isNaverHost(new URL(/^https?:\/\//.test(raw) ? raw : "https://" + raw).hostname)) return;
+    const final = await resolveShortUrl(raw);
+    ref = final ? normalize(final) : null;
+    if (ref && ref.type === "cafe") { item.matchKey = ref.key; if (ref.art) item.matchArt = ref.art; }
+  } catch { /* 풀지 못하면 다음 조회 때 다시 시도 */ }
+}
+
 // 순위 범위 밖이거나 글 주소를 모르는 항목: 제목 문구 자체를 카페 탭에서 검색해 글 주소와 검색 유입 토큰(art)을 새로 얻는다.
 // 회원공개 카페 글은 이 토큰이 있어야 조회수를 읽을 수 있다. 못 찾으면 null.
 async function locatePost(item) {
@@ -236,4 +266,4 @@ async function fetchKeyword(keyword, { maxRank = 30, delayMs = 3000 } = {}) {
   return out;
 }
 
-module.exports = { normalize, fetchCafeViews, locatePost, SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };
+module.exports = { normalize, fetchCafeViews, locatePost, resolveShortUrl, ensureMatchKey, SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };

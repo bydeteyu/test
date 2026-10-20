@@ -77,10 +77,21 @@ td.dup{background:var(--dup-soft)}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--dup-soft:#1A2B3C;--dup-ink:#6AAEF0}}
 :root[data-theme="dark"]{--dup-soft:#1A2B3C;--dup-ink:#6AAEF0}
 .delta{color:var(--good);font-weight:600}.delta.zero{color:var(--ink-soft);font-weight:400}
-td.act{white-space:nowrap}td.act button{margin-left:4px}
+td.act{white-space:normal;text-align:right}td.act button{margin:2px 0 2px 4px}
+#table table{table-layout:fixed}
+#table th,#table td{padding:8px 6px}
+#table td.l,#table th.l{white-space:normal;word-break:keep-all;overflow-wrap:anywhere;line-height:1.35}
+#table td .sub{white-space:nowrap}
+#table button.ghost,#table button.danger{padding:4px 7px;font-size:.74rem}
+@media (max-width:720px){
+  #table table{font-size:.78rem;min-width:640px} /* 좁은 화면(휴대폰)에서는 글자가 깨지지 않게 가로로 밀어서 본다 */
+  #table th,#table td{padding:6px 4px}
+  #table td .sub{white-space:normal}
+  #table button.ghost,#table button.danger{padding:3px 5px;font-size:.7rem}
+}
 button.ghost{background:transparent;color:var(--ink);border-color:var(--border);padding:5px 9px;font-size:.78rem}
 tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-align:left}
-.charts{position:sticky;left:0;width:min(calc(100vw - 96px),940px)}
+.charts{width:100%}
 .chart{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}
 .chart h3{margin:0 0 6px;font-size:.86rem;font-family:var(--font-display)}
 .chart svg{width:100%;height:auto;display:block}
@@ -359,7 +370,8 @@ async function refresh() {
   if (d.running && !pollTimer) pollTimer = setInterval(refresh, 5000);
   if (!d.running && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   if (d.items.length === 0) { $("#table").innerHTML = '<div class="meta">아직 추적 중인 콘텐츠가 없습니다.</div>'; return; }
-  let h = '<div class="table-scroll"><table><thead><tr><th class="l">키워드</th><th class="l">콘텐츠</th><th>최종 조회일</th>';
+  const colw = isViewer() ? ["16%", "auto", "64px", ...channels.map(() => "126px"), "64px"] : ["16%", "auto", "64px", ...channels.map(() => "126px"), "170px"];
+  let h = '<div class="table-scroll"><table><colgroup>' + colw.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr><th class="l">키워드</th><th class="l">콘텐츠</th><th>최종 조회일</th>';
   h += channels.map((c) => `<th>${esc(c.label)}</th>`).join("") + "<th></th></tr></thead><tbody>";
   const dups = dupInfo(d.items);
   for (const i of d.items) {

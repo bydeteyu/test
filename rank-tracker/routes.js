@@ -2,12 +2,12 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { fetchCafeViews, CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
+const { normalize, fetchCafeViews, CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
 
-const MAX_RANK = Number(process.env.RANK_MAX || 50);
+const MAX_RANK = Number(process.env.RANK_MAX || 30);
 const DELAY_MS = Number(process.env.RANK_DELAY_MS || 3000);
 const AUTO_HOUR = Number(process.env.RANK_AUTO_HOUR || 9); // KST
-const SNAP_MAX = Number(process.env.RANK_SNAPSHOT_MAX || 50); // 키워드 검색 시 저장할 상위 개수
+const SNAP_MAX = Number(process.env.RANK_SNAPSHOT_MAX || 30); // 키워드 검색 시 저장할 상위 개수
 const KEEP_DAYS = 120;
 
 function mount(app, dataDir) {
@@ -49,16 +49,32 @@ function mount(app, dataDir) {
         prune(db.snapshots[keyword]);
         for (const it of db.items.filter((x) => x.keyword === keyword && (!itemIds || itemIds.includes(x.id)))) {
           const rec = {};
+          const hits = {};
           for (const channel of Object.keys(CHANNELS)) {
             const posts = fetched[channel];
             if (posts === null || posts.length === 0) { rec[channel] = { status: "error" }; continue; }
             const hit = findTarget(posts.slice(0, MAX_RANK), it, channel === "integrated" ? { pageText: posts.pageText, anchors: posts.anchors } : {});
+            hits[channel] = hit;
             rec[channel] = hit ? { status: "hit", rank: hit.rank ?? null, title: hit.title } : { status: "miss" };
-            if (hit) { // 카페 글이면 조회수도 함께 기록 (실패해도 순위 기록은 유지, 사유는 화면에 표시)
-              const v = hit.key && hit.type === "cafe" ? await fetchCafeViews(hit.key, { art: hit.art }) : { views: null, reason: hit.key ? "카페 글이 아님(블로그·지식iN 등)" : "글 주소를 알 수 없음" };
-              if (v.views !== null) rec[channel].views = v.views;
-              else rec[channel].viewsNote = v.reason;
-            }
+          }
+          // 조회수는 순위 범위 밖이어도 기록한다: 이번에 잡힌 글 > 이전에 기억해 둔 글 > 등록한 글 주소 순으로 대상 글을 정한다.
+          const hitList = Object.values(hits).filter(Boolean);
+          const cafeHit = hitList.find((h) => h.key && h.type === "cafe");
+          if (cafeHit) { it.postKey = cafeHit.key; if (cafeHit.art) it.postArt = cafeHit.art; } // 다음에 범위 밖이어도 같은 글의 조회수를 볼 수 있게 기억
+          let target = cafeHit ? { key: cafeHit.key, art: cafeHit.art } : null;
+          if (!target && it.postKey) target = { key: it.postKey, art: it.postArt };
+          if (!target && it.match) {
+            const ref = normalize(/^https?:\/\//.test(it.match) ? it.match : "https://" + it.match);
+            if (ref && ref.type === "cafe") target = { key: ref.key, art: ref.art };
+          }
+          let v = null, note = null;
+          if (target) v = await fetchCafeViews(target.key, { art: target.art });
+          else if (hitList.length) note = hitList.find((h) => h.key) ? "카페 글이 아님(블로그·지식iN 등)" : "글 주소를 알 수 없음";
+          for (const rc of Object.values(rec)) {
+            if (rc.status === "error") continue;
+            if (v && v.views !== null) rc.views = v.views;
+            else if (v && v.reason) rc.viewsNote = v.reason;
+            else if (note && rc.status === "hit") rc.viewsNote = note;
           }
           prune((db.history[it.id] ??= {}))[date] = rec;
         }

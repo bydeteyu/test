@@ -207,7 +207,7 @@ async function collectScrapedPosts(ch, keyword, maxRank, delayMs) {
 }
 
 // 키워드 하나에 대해 채널별 게시글 목록을 가져온다. 실패한 채널은 null (미노출과 구분).
-async function fetchKeyword(keyword, { maxRank = 50, delayMs = 3000 } = {}) {
+async function fetchKeyword(keyword, { maxRank = 30, delayMs = 3000 } = {}) {
   const out = {};
   for (const [channel, ch] of Object.entries(CHANNELS)) {
     try {
@@ -221,4 +221,4 @@ async function fetchKeyword(keyword, { maxRank = 50, delayMs = 3000 } = {}) {
   return out;
 }
 
-module.exports = { fetchCafeViews, SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };
+module.exports = { normalize, fetchCafeViews, SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };

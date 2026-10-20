@@ -23,7 +23,7 @@ const client = (base) => {
     let data = null; try { data = await r.json(); } catch { /* 본문 없음 */ }
     return { status: r.status, data, location: r.headers.get("location") };
   };
-  return { call, clear: () => (cookie = "") };
+  return { call, cookie: () => cookie, clear: () => (cookie = "") };
 };
 
 test("관리자/회원 권한", async () => {
@@ -61,6 +61,13 @@ test("관리자/회원 권한", async () => {
     for (const [m, p, b] of [["POST", "/api/rank/run", { projectId: p1 }], ["POST", "/api/rank/items", { projectId: p1, keyword: "x", titleContains: "y" }], ["DELETE", "/api/rank/items/abc"], ["POST", "/api/rank/search", { keywords: "x" }], ["GET", "/api/users"], ["POST", "/api/users", { username: "evil", password: "evilpass1" }], ["GET", "/api/keywords"], ["POST", "/api/projects", { name: "x" }], ["DELETE", `/api/projects/${p1}`], ["GET", "/api/rank/export"], ["POST", "/api/rank/import", {}], ["GET", "/api/rank/debug?keyword=x"], ["GET", "/api/rank/snapshots"], ["POST", "/api/monitor/run", {}]]) {
       assert.strictEqual((await v.call(m, p, b)).status, 403, `${m} ${p} 는 회원에게 막혀야 함`);
     }
+    // 엑셀 다운로드: 회원은 자기 프로젝트만
+    const x = await fetch(`${s.base}/api/rank/xlsx?projectId=${p1}`, { headers: { cookie: v.cookie() } });
+    assert.strictEqual(x.status, 200);
+    assert.match(x.headers.get("content-type"), /spreadsheetml/);
+    assert.strictEqual(Buffer.from(await x.arrayBuffer()).subarray(0, 2).toString(), "PK");
+    assert.strictEqual((await v.call("GET", `/api/rank/xlsx?projectId=${p2}`)).status, 403);
+    assert.strictEqual((await v.call("GET", "/api/rank/xlsx")).status, 200); // 프로젝트가 하나면 자동 지정
     assert.strictEqual((await v.call("GET", "/")).location, "/rank.html");
     assert.strictEqual((await v.call("GET", "/admin.html")).location, "/rank.html");
     assert.strictEqual((await v.call("GET", "/rank.html")).status, 200);

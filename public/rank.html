@@ -132,10 +132,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
   </section>
 
   <section class="card admin-only" id="snapCard" hidden>
-    <div class="row" style="justify-content:space-between">
-      <h2>검색 결과 · 기록</h2>
-      <button class="primary" id="csvBtn">CSV 내려받기</button>
-    </div>
+    <h2>검색 결과 · 기록</h2>
     <div class="row">
       <label><b>키워드</b><select id="snapKw"></select></label>
       <label><b>날짜</b><select id="snapDate"></select></label>
@@ -160,7 +157,10 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <h2>순위표</h2>
-      <button class="primary admin-only" id="runBtn">전체조회</button>
+      <div class="row" style="gap:8px">
+        <button class="ghost" id="xlsxBtn" type="button" title="순위표와 항목별 차트를 엑셀 파일로 내려받습니다">엑셀 다운로드</button>
+        <button class="primary admin-only" id="runBtn">전체조회</button>
+      </div>
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
@@ -403,17 +403,6 @@ async function renderSnap(reloadDates) {
     posts.map((p) => `<tr class="${isMine(p) ? "tracked" : ""}"><td>${p.rank}</td><td>${esc(names[p.type] || p.type)}</td><td class="t">${esc(p.title) || '<span class="sub">(제목 없음)</span>'}</td><td><a href="${esc(p.link)}" target="_blank" rel="noopener">바로가기</a></td></tr>`).join("") + "</tbody></table></div>";
 }
 ["snapKw", "snapDate", "snapCh"].forEach((id) => $("#" + id).addEventListener("change", () => renderSnap(id === "snapKw")));
-$("#csvBtn").addEventListener("click", () => {
-  if (!snapData) return;
-  const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
-  const rows = [["날짜", "키워드", "채널", "순위", "종류", "제목", "링크"]];
-  for (const [date, snap] of Object.entries(snapData.byDate).sort())
-    for (const [ch, posts] of Object.entries(snap)) for (const p of posts || []) rows.push([date, snapData.keyword, (channels.find((c) => c.key === ch) || { label: ch }).label, p.rank, p.type, p.title, p.link]);
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob(["\ufeff" + rows.map((r) => r.map(q).join(",")).join("\n")], { type: "text/csv" }));
-  a.download = "rank-" + snapData.keyword + ".csv";
-  a.click();
-});
 $("#searchBtn").addEventListener("click", async () => {
   const v = $("#kwInput").value;
   if (!v.trim()) return alert("검색 키워드를 입력하세요.");
@@ -443,6 +432,7 @@ $("#delProject").addEventListener("click", async () => {
   await loadProjects();
   refresh();
 });
+$("#xlsxBtn").addEventListener("click", () => { const pid = $("#project").value; if (pid) location.href = "/api/rank/xlsx?projectId=" + encodeURIComponent(pid); });
 $("#project").addEventListener("change", () => { localStorage.setItem("rankProject", $("#project").value); refresh(); });
 $("#addForm").addEventListener("submit", async (e) => {
   e.preventDefault();

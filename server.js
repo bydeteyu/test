@@ -551,7 +551,8 @@ app.delete("/api/suggestions/:id", (req, res) => {
 // 순위 체크(통합검색/카페 탭) — 카페 모니터링과 별개 모듈
 require("./rank-tracker/routes").mount(app, DATA_DIR);
 
-app.use(express.static(path.join(__dirname, "public")));
+// HTML 은 항상 서버에 새 버전을 확인하게 해서, 업데이트 후 예전 화면이 남지 않게 한다
+app.use(express.static(path.join(__dirname, "public"), { setHeaders: (res, file) => { if (file.endsWith(".html")) res.setHeader("Cache-Control", "no-cache"); } }));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {

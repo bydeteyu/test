@@ -111,7 +111,8 @@ function sameCafePost(postKey, matchStr) {
 }
 
 // 제목 비교용: 띄어쓰기·문장부호·대소문자를 무시하고 글자·숫자만 남긴다
-const squash = (s) => String(s).toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+// (한글이 조합형/분리형으로 달라도, 전각/반각이 달라도 같게 취급하려고 NFKC 정규화)
+const squash = (s) => String(s).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
 // pageText 를 넘기면(통합검색용) 링크 주소로 식별하지 못한 글도 페이지 본문에 제목이 있으면 노출로 본다.
 // 이 경우 순위는 알 수 없어 rank 는 null.

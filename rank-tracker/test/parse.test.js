@@ -56,3 +56,10 @@ test("카페 글 주소: 카페명/카페번호/iframe 주소 형식이 달라�
   const q = extractPosts('<a href="https://cafe.naver.com/imsanbu?iframe_url_utf8=%2Fca-fe%2Fcafes%2F10094499%2Farticles%2F80153775%253Fart%3Dx">글</a>');
   assert.strictEqual(findTarget(q, { match: "cafe.naver.com/imsanbu/80153775" }).rank, 1);
 });
+
+test("제목 문구 매칭은 띄어쓰기·문장부호 차이를 무시한다", () => {
+  const p = extractPosts('<a href="https://cafe.naver.com/x/123456">성대결절 치료 에스앤비한의원, 급합니다.</a>');
+  assert.strictEqual(findTarget(p, { titleContains: "성대결절 치료 에스앤비한의원 급합니다" }).rank, 1);
+  assert.strictEqual(findTarget(p, { titleContains: "성대결절 치료 에스앤비한의원 급합니다." }).rank, 1);
+  assert.strictEqual(findTarget(p, { titleContains: "다른 문구" }), null);
+});

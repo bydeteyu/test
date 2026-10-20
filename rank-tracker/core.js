@@ -172,6 +172,21 @@ async function fetchCafeViews(key, { debug = false, art = null } = {}) {
   return { views: r.views, reason: r.reason };
 }
 
+// 순위 범위 밖이거나 글 주소를 모르는 항목: 제목 문구 자체를 카페 탭에서 검색해 글 주소와 검색 유입 토큰(art)을 새로 얻는다.
+// 회원공개 카페 글은 이 토큰이 있어야 조회수를 읽을 수 있다. 못 찾으면 null.
+async function locatePost(item) {
+  const q = String(item.titleContains || "").trim();
+  const ch = SCRAPE_CHANNELS.cafe;
+  if (!q || !ch) return null;
+  try {
+    const posts = extractPosts(await fetchHtml(ch.url(q, 1)), { onlyTypes: ["cafe"] });
+    const hit = findTarget(posts, item);
+    return hit && hit.key ? { key: hit.key, art: hit.art || null } : null;
+  } catch {
+    return null;
+  }
+}
+
 // 검색 범위(maxRank)까지의 게시글을 순서대로 모은다.
 async function collectPosts(ch, keyword, maxRank, delayMs) {
   if (ch.api) return collectApiPosts(ch, keyword, maxRank);
@@ -221,4 +236,4 @@ async function fetchKeyword(keyword, { maxRank = 30, delayMs = 3000 } = {}) {
   return out;
 }
 
-module.exports = { normalize, fetchCafeViews, SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };
+module.exports = { normalize, fetchCafeViews, locatePost, SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };

@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { buildWorkbook } = require("./xlsx");
-const { normalize, fetchCafeViews, CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
+const { normalize, fetchCafeViews, locatePost, CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
 
 const MAX_RANK = Number(process.env.RANK_MAX || 30);
 const DELAY_MS = Number(process.env.RANK_DELAY_MS || 3000);
@@ -71,11 +71,26 @@ function mount(app, dataDir) {
           let v = null, note = null;
           if (target) v = await fetchCafeViews(target.key, { art: target.art });
           else if (hitList.length) note = hitList.find((h) => h.key) ? "카페 글이 아님(블로그·지식iN 등)" : "글 주소를 알 수 없음";
+          // 조회수를 못 얻었고(글을 모르거나, 토큰 없이 열리지 않음) 이번 조회에서 새 토큰도 없으면: 제목으로 글을 직접 검색해 토큰을 새로 받아 다시 시도
+          const gotViews = v && v.views !== null;
+          if (!gotViews && !cafeHit && it.titleContains && !hitList.length) {
+            const loc = await locatePost(it);
+            if (loc) {
+              it.postKey = loc.key;
+              if (loc.art) it.postArt = loc.art;
+              v = await fetchCafeViews(loc.key, { art: loc.art });
+              note = null;
+            } else if (!(v && v.reason)) {
+              note = "제목으로 검색해도 글을 찾지 못해 조회수를 알 수 없음";
+            } else {
+              v = { views: null, reason: `${v.reason} (제목 검색으로도 글을 찾지 못함)` };
+            }
+          }
           for (const rc of Object.values(rec)) {
             if (rc.status === "error") continue;
             if (v && v.views !== null) rc.views = v.views;
             else if (v && v.reason) rc.viewsNote = v.reason;
-            else if (note && rc.status === "hit") rc.viewsNote = note;
+            else if (note && (rc.status === "hit" || !hitList.length)) rc.viewsNote = note;
           }
           prune((db.history[it.id] ??= {}))[date] = rec;
         }

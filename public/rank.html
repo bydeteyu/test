@@ -219,7 +219,8 @@ function contentId(i) {
   const m = String(i.match || "").trim();
   const art = /articles\/(\d+)|\/(\d{6,})(?:[/?#]|$)/.exec(m.replace(/^https?:\/\//, ""));
   if (m && art) return "a:" + (art[1] || art[2]);
-  if (i.titleContains) return "t:" + String(i.titleContains).replace(/\s+/g, "");
+  // 띄어쓰기·마침표·물음표 같은 문장부호와 대소문자는 무시하고 글자·숫자만 비교
+  if (i.titleContains) return "t:" + String(i.titleContains).toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
   if (m) return "m:" + m.replace(/^https?:\/\//, "").split(/[?#]/)[0];
   return "id:" + i.id;
 }

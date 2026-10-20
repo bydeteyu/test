@@ -224,7 +224,8 @@ function mount(app, dataDir) {
   app.get("/api/rank/export", (req, res) => {
     const readJson = (f) => (fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf-8")) : null);
     res.set("Content-Disposition", `attachment; filename="backup-${today()}.json"`);
-    res.type("application/json").send(JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), db: readJson(dbFile), rank: load() }, null, 2));
+    const au = app.locals.auth;
+    res.type("application/json").send(JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), db: readJson(dbFile), rank: load(), users: au ? au.exportUsers() : [] }, null, 2));
   });
   app.post("/api/rank/import", (req, res) => {
     const b = req.body || {};
@@ -235,6 +236,11 @@ function mount(app, dataDir) {
     if (running) return res.status(409).json({ error: "busy" });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     for (const f of [file, dbFile]) if (fs.existsSync(f)) fs.copyFileSync(f, `${f}.before-import-${stamp}`); // 덮어쓰기 전 현재 파일 보관
+    const au = app.locals.auth;
+    if (Array.isArray(b.users) && au && !req.user?.open) { // 계정 정보도 백업에 있으면 함께 복원 (관리자 전용 API)
+      if (fs.existsSync(au.usersFile)) fs.copyFileSync(au.usersFile, `${au.usersFile}.before-import-${stamp}`);
+      au.importUsers(b.users);
+    }
     fs.writeFileSync(file, JSON.stringify(rank, null, 2));
     if (db) fs.writeFileSync(dbFile, JSON.stringify(db, null, 2));
     res.json({ ok: true, items: rank.items.length, projects: db ? db.projects.length : null });

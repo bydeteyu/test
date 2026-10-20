@@ -63,3 +63,9 @@ test("제목 문구 매칭은 띄어쓰기·문장부호 차이를 무시한다"
   assert.strictEqual(findTarget(p, { titleContains: "성대결절 치료 에스앤비한의원 급합니다." }).rank, 1);
   assert.strictEqual(findTarget(p, { titleContains: "다른 문구" }), null);
 });
+
+test("제목 비교는 한글 조합형/분리형(NFC/NFD) 차이도 무시한다", () => {
+  const nfd = "성대결절 치료 에스앤비한의원 급합니다".normalize("NFD");
+  const p = extractPosts('<a href="https://cafe.naver.com/x/123456">성대결절 치료 에스앤비한의원 급합니다.</a>');
+  assert.strictEqual(findTarget(p, { titleContains: nfd }).rank, 1);
+});

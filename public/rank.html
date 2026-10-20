@@ -68,6 +68,11 @@ tr.tracked td{background:var(--good-soft);font-weight:600}
 td a{color:var(--accent)}
 td.t{text-align:left;white-space:normal;min-width:220px}
 [hidden]{display:none!important}
+td.dup{background:var(--dup-soft)}
+.dupbadge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;font-size:.68rem;font-weight:700;background:var(--dup-ink);color:var(--surface);vertical-align:middle}
+:root{--dup-soft:#E1EEFA;--dup-ink:#2A6FB8}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--dup-soft:#1A2B3C;--dup-ink:#6AAEF0}}
+:root[data-theme="dark"]{--dup-soft:#1A2B3C;--dup-ink:#6AAEF0}
 .delta{color:var(--good);font-weight:600}.delta.zero{color:var(--ink-soft);font-weight:400}
 td.act{white-space:nowrap}td.act button{margin-left:4px}
 button.ghost{background:transparent;color:var(--ink);border-color:var(--border);padding:5px 9px;font-size:.78rem}
@@ -117,7 +122,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
 
   <section class="card">
     <h2>키워드로 순위 검색</h2>
-    <label><b>검색 키워드</b><span class="sub">한 줄에 하나씩 또는 쉼표(,)로 구분 · <span class="chLabels">통합·카페</span> 각각 상위 <span class="snapMax">50</span>위까지 수집하고 오늘 날짜로 기록합니다</span>
+    <label><b>검색 키워드</b><span class="sub">한 줄에 하나씩 또는 쉼표(,)로 구분 · <span class="chLabels">통합·카페</span> 각각 상위 <span class="snapMax">30</span>위까지 수집하고 오늘 날짜로 기록합니다</span>
       <textarea id="kwInput" rows="3" placeholder="예: 대추밭백한의원"></textarea></label>
     <button class="primary" id="searchBtn">순위 확인 시작</button>
     <div class="meta" id="searchStatus"></div>
@@ -145,7 +150,8 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
       <label><b>또는 글 주소(선택)</b><input name="match" placeholder="예: cafe.naver.com/카페명/12345"></label>
       <button class="primary" type="submit">추가</button>
     </form>
-    <div class="meta">제목 문구나 글 주소 중 하나는 필요합니다. 주소는 <code>cafe.naver.com/카페명/글번호</code> 형태의 일부만 입력해도 됩니다.</div>
+    <div class="meta">제목 문구나 글 주소 중 하나는 필요합니다. 주소는 <code>cafe.naver.com/카페명/글번호</code> 형태의 일부만 입력해도 됩니다. 같은 글이 이미 등록되어 있으면 순위표의 콘텐츠 칸이 연한 파란색 <b>중복</b>으로 표시됩니다.</div>
+    <div class="meta" id="addMsg"></div>
   </section>
 
   <section class="card">
@@ -155,7 +161,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
-    <div class="meta">검색 범위는 각 채널 <span id="maxRank">50</span>위까지입니다. 매일 오전 9시(KST) 이후 서버가 자동으로 확인합니다. 조회가 막히면 <b>-</b>로 표시됩니다.</div>
+    <div class="meta">검색 범위는 각 채널 <span id="maxRank">30</span>위까지입니다. 매일 오전 9시(KST) 이후 서버가 자동으로 확인합니다. 조회가 막히면 <b>-</b>로 표시됩니다.</div>
   </section>
 </div>
 <section class="wrap" style="margin-top:20px">
@@ -195,11 +201,26 @@ function cell(rec, prevViews) {
     const diff = prevViews != null ? rec.views - prevViews : null;
     const dl = diff == null ? "" : ` <span class="delta${diff === 0 ? " zero" : ""}">(${diff > 0 ? "+" : diff < 0 ? "−" : "+"}${Math.abs(diff).toLocaleString()})</span>`;
     v = `<div class="sub">조회 ${Number(rec.views).toLocaleString()}${dl}</div>`;
-  } else if (rec.status === "hit" && rec.viewsNote) {
+  } else if (rec.viewsNote) {
     v = `<div class="sub" title="${esc(rec.viewsNote)}">조회수 확인 불가 · ${esc(rec.viewsNote)}</div>`;
   }
   if (rec.status === "hit" && rec.rank == null) return `<td class="hit">노출${v}</td>`;
-  return rec.status === "hit" ? `<td class="hit">${rec.rank}위${v}</td>` : `<td class="miss">${$("#maxRank").textContent}위 밖</td>`;
+  return rec.status === "hit" ? `<td class="hit">${rec.rank}위${v}</td>` : `<td class="miss">${$("#maxRank").textContent}위 밖${v}</td>`;
+}
+
+// ---- 중복 콘텐츠 판별: 같은 프로젝트에서 같은 글(글번호 또는 제목 문구)이 둘 이상 등록되면 중복 ----
+function contentId(i) {
+  const m = String(i.match || "").trim();
+  const art = /articles\/(\d+)|\/(\d{6,})(?:[/?#]|$)/.exec(m.replace(/^https?:\/\//, ""));
+  if (m && art) return "a:" + (art[1] || art[2]);
+  if (i.titleContains) return "t:" + String(i.titleContains).replace(/\s+/g, "");
+  if (m) return "m:" + m.replace(/^https?:\/\//, "").split(/[?#]/)[0];
+  return "id:" + i.id;
+}
+function dupInfo(items) {
+  const by = {};
+  for (const i of items) (by[contentId(i)] ??= []).push(i);
+  return by;
 }
 
 // ---- 더보기 차트: 왼쪽 일별 조회수 증가(막대) / 오른쪽 순위(선) ----
@@ -331,10 +352,14 @@ async function refresh() {
   if (d.items.length === 0) { $("#table").innerHTML = '<div class="meta">아직 추적 중인 콘텐츠가 없습니다.</div>'; return; }
   let h = '<div class="table-scroll"><table><thead><tr><th class="l">키워드</th><th class="l">콘텐츠</th><th>최종 조회일</th>';
   h += channels.map((c) => `<th>${esc(c.label)}</th>`).join("") + "<th></th></tr></thead><tbody>";
+  const dups = dupInfo(d.items);
   for (const i of d.items) {
     const last = Object.keys(i.history).sort().pop(); // 가장 최근 기록만 표에 표시 (누적 기록은 더보기 차트에서)
     const vb = viewsByChannel(i);
-    h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l">${esc(i.label)}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
+    const sameAs = dups[contentId(i)] || [];
+    const isDup = sameAs.length > 1;
+    const dupTip = isDup ? `같은 콘텐츠가 ${sameAs.length}개 등록되어 있습니다 (키워드: ${sameAs.map((x) => x.keyword).join(", ")})` : "";
+    h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l${isDup ? " dup" : ""}"${isDup ? ` title="${esc(dupTip)}"` : ""}>${esc(i.label)}${isDup ? '<span class="dupbadge">중복</span>' : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
     h += channels.map((c) => (last ? cell(i.history[last]?.[c.key], vb[c.key][last]?.prev) : '<td class="na">-</td>')).join("");
     h += `<td class="act"><button class="ghost" data-run="${esc(i.id)}"${d.running ? " disabled" : ""}>조회</button><button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button><button class="danger" data-del="${esc(i.id)}">삭제</button></td></tr>`;
     if (expanded.has(i.id)) h += detailRow(i, 3 + channels.length + 1);
@@ -417,8 +442,10 @@ $("#addForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
   if (!f.titleContains.trim() && !f.match.trim()) return alert("제목 문구나 글 주소 중 하나를 입력하세요.");
+  const wasDup = (dupInfo(lastItems)[contentId({ ...f, id: "new" })] || []).length > 0;
   await api("/api/rank/items", { method: "POST", body: { ...f, projectId: $("#project").value } });
   e.target.reset();
+  $("#addMsg").textContent = wasDup ? "이미 등록된 콘텐츠와 중복입니다. 순위표에서 연한 파란색 '중복'으로 표시됩니다." : "";
   refresh();
 });
 $("#runBtn").addEventListener("click", async () => {

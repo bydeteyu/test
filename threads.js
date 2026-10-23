@@ -324,6 +324,18 @@ function mount(app, { dataDir }) {
     res.json({ ok: true });
   });
 
+  // 진단(관리자): 서버가 공개 페이지로 실제로 받는 내용을 요약해 보여준다(조회수를 못 읽을 때 원인 확인용)
+  app.get("/api/threads/debug", requireAdmin, async (req, res) => {
+    try {
+      const u = new URL(String(req.query.url || ""));
+      if (!WEB_HOSTS.includes(u.hostname)) return res.status(400).json({ error: "invalid_url" });
+      const r = await fetch(u, { headers: { "User-Agent": WEB_UA, "Accept-Language": "ko-KR,ko;q=0.9", Accept: "text/html" }, redirect: "follow", signal: AbortSignal.timeout(20000) });
+      const html = await r.text();
+      const around = (re) => [...html.matchAll(re)].slice(0, 8).map((m) => html.slice(Math.max(0, m.index - 80), m.index + 120).replace(/\s+/g, " "));
+      res.json({ status: r.status, finalUrl: r.url, length: html.length, title: (/<title[^>]*>([^<]*)/i.exec(html) || [])[1] || "", ogTitle: metaOf(html, "og:title"), ogDescription: metaOf(html, "og:description").slice(0, 200), parsedViews: parseViews(html), viewMentions: around(/조회|views?\b|view_count|impression/gi), loginWall: /login|log in|로그인/i.test(html.slice(0, 20000)), head: html.slice(0, 300) });
+    } catch (e) { res.status(400).json({ error: "fetch_failed", message: e.message }); }
+  });
+
   app.post("/api/threads/run", requireAdmin, async (req, res) => {
     const { projectId, postId } = req.body || {};
     const r = await runAll((p) => (postId ? p.id === postId : !projectId || p.projectId === projectId));

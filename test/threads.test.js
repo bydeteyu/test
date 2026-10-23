@@ -262,3 +262,9 @@ test("Threads: 자바스크립트로 조회수를 채우는 페이지는 가상 
     assert.strictEqual(Object.values(p.history)[0].views, 77);
   } finally { child.kill(); web.close(); }
 });
+
+test("bodyOf: 아이디·시간·조회수 줄을 건너뛰고 본문을 고른다", () => {
+  const { bodyOf } = require("../threads");
+  assert.strictEqual(bodyOf("스레드\n조회 289회\nkangaroo.22260327\n3시간\n오랜만에 괜찮은 앱테크 발견!\n추천"), "오랜만에 괜찮은 앱테크 발견!");
+  assert.strictEqual(bodyOf("kangaroo.22260327\n조회 5회"), "");
+});

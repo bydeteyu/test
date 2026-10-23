@@ -43,6 +43,11 @@ const metaOf = (html, prop) => {
 };
 // Threads 페이지는 글·조회수를 자바스크립트로 나중에 채우므로, 단순 요청으로 못 읽으면 가상 브라우저(Chromium)로 열어 화면에 보이는 글자를 읽는다.
 // 한 번에 하나씩만 열어 메모리를 아낀다. THREADS_BROWSER=off 로 끌 수 있고, 실행 파일 위치는 CHROMIUM_PATH(기본 /usr/bin/chromium).
+// 화면 글자에서 게시글 본문을 고른다: 아이디·시간·"조회 N회"·메뉴 같은 줄은 건너뛰고 처음 나오는 문장형 줄
+function bodyOf(t) {
+  const skip = /^[\w.]+$|^\d+\s*(초|분|시간|일|주)|조회|^스레드$|^(추천|검색|메시지|활동|프로필|인사이트|팔로우|팔로잉|저장됨|좋아요|보관함|답글|공유|더 보기|\d+)$/;
+  return String(t || "").split("\n").map((x) => x.trim()).find((x) => x.length >= 8 && !skip.test(x) && /[^\x00-\x7F]|\s/.test(x))?.slice(0, 200) || "";
+}
 let browserQueue = Promise.resolve();
 function browserText(url) {
   const job = browserQueue.then(async () => {
@@ -73,7 +78,7 @@ async function fetchPublic(url) {
     try {
       const b = await browserText(u.href);
       views = parseViews(b.text);
-      if (!text) text = b.text.split("\n").map((x) => x.trim()).filter((x) => x.length > 15)[0]?.slice(0, 200) || "";
+      if (!text) text = bodyOf(b.text);
     } catch (e) { why = ` · 브라우저 읽기 실패: ${e.message.split("\n")[0].slice(0, 120)}`; }
   }
   if (views == null) throw new Error(`공개 페이지에서 조회수를 찾지 못했습니다(로그인이 필요하거나 화면 구조가 다릅니다${why}). 숫자를 직접 입력할 수 있습니다.`);
@@ -152,7 +157,7 @@ function mount(app, { dataDir }) {
       try {
         const r = await fetchPublic(post.url);
         (post.history ??= {})[today()] = { views: r.views };
-        if (!post.text && r.text) post.text = r.text;
+        if ((!post.text || /^[\w.]+$/.test(post.text)) && r.text) post.text = r.text; // 예전에 아이디가 제목으로 잡힌 글도 고친다
         post.lastError = null;
         return true;
       } catch (e) { post.lastError = e.name === "TimeoutError" ? "공개 페이지 응답 시간이 초과되었습니다" : e.message; return false; }
@@ -394,4 +399,4 @@ function mount(app, { dataDir }) {
   return { exportData: () => load(), importData: (d) => save(d), file };
 }
 
-module.exports = { mount, parseViews };
+module.exports = { mount, parseViews, bodyOf };

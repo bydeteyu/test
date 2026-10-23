@@ -242,7 +242,7 @@ test("Threads: 자바스크립트로 조회수를 채우는 페이지는 가상 
   if (!exe) return t.skip("Chromium 이 없는 환경");
   const web = http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end('<html><body><div id="r">로딩…</div><script>setTimeout(()=>{document.getElementById("r").innerHTML="<h1>스레드</h1><span>조회 77회</span><p>본문 글입니다 본문 글입니다</p>"},400)</script></body></html>');
+    res.end('<html><body><div id="r">로딩…</div><script>setTimeout(()=>{document.getElementById("r").innerHTML="<h1>스레드</h1><span>조회 "+(70+7)+"회</span><p>본문 글입니다 본문 글입니다</p><div role=\\"button\\"><svg aria-label=\\"좋아요 취소\\"></svg><span>2</span></div><div role=\\"button\\"><svg aria-label=\\"답글\\"></svg><span>1,234</span></div><div role=\\"button\\"><svg aria-label=\\"리포스트\\"></svg></div><div role=\\"button\\"><svg aria-label=\\"공유\\"></svg><span>3</span></div>"},400)</script></body></html>');
   });
   await new Promise((r) => web.listen(0, "127.0.0.1", r));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "threads-test6-"));
@@ -259,7 +259,9 @@ test("Threads: 자바스크립트로 조회수를 채우는 페이지는 가상 
     assert.strictEqual(add.status, 201);
     const p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
     assert.strictEqual(p.lastError, null);
-    assert.strictEqual(Object.values(p.history)[0].views, 77);
+    const h = Object.values(p.history)[0];
+    assert.strictEqual(h.views, 77);
+    assert.deepStrictEqual([h.likes, h.replies, h.reposts, h.shares], [2, 1234, 0, 3]); // 숫자가 안 보이는 리포스트는 0
   } finally { child.kill(); web.close(); }
 });
 

@@ -61,7 +61,27 @@ function browserText(url) {
       const page = await ctx.newPage();
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
       await page.waitForFunction(() => /조회\s*\d|\d\s*views?\b/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
-      return { text: await page.evaluate(() => document.body.innerText), title: await page.title() };
+      // 글 아래 버튼(좋아요·답글·리포스트·공유)은 아이콘(svg aria-label) + 숫자 글자. 화면 맨 위(본문)의 첫 번째 것을 읽고, 숫자가 안 보이면 0.
+      const acts = await page.evaluate(() => {
+        const KEYS = { likes: /^(좋아요|좋아요 취소|like|unlike)$/i, replies: /^(답글|댓글|reply|comment)$/i, reposts: /^(리포스트|repost)$/i, shares: /^(공유|공유하기|share)$/i };
+        const out = {}, seen = [];
+        for (const svg of document.querySelectorAll("svg[aria-label]")) {
+          const label = svg.getAttribute("aria-label").trim();
+          for (const [k, re] of Object.entries(KEYS)) {
+            if (out[k] !== undefined || !re.test(label)) continue;
+            const btn = svg.closest('[role="button"]');
+            let el = btn || svg.parentElement, txt = el ? el.innerText || "" : "";
+            for (let i = 0; !btn && i < 2 && el && !/\d/.test(txt); i++) { el = el.parentElement; txt = el ? el.innerText || "" : ""; }
+            const m = /([\d][\d,.]*)\s*(천|만|억|[KkMm])?/.exec(txt);
+            out[k] = m ? [m[1], m[2] || ""] : [null, ""];
+            seen.push(label);
+          }
+        }
+        return { out, seen };
+      });
+      const counts = {};
+      for (const [k, [n, u]] of Object.entries(acts.out)) counts[k] = n == null ? 0 : toCount(n, u);
+      return { text: await page.evaluate(() => document.body.innerText), title: await page.title(), counts, seen: acts.seen };
     } finally { await browser.close().catch(() => {}); }
   });
   browserQueue = job.catch(() => {});
@@ -73,16 +93,17 @@ async function fetchPublic(url) {
   const res = await fetch(u, { headers: { "User-Agent": WEB_UA, "Accept-Language": "ko-KR,ko;q=0.9", Accept: "text/html" }, redirect: "follow", signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`공개 페이지를 열지 못했습니다(HTTP ${res.status}). 숫자를 직접 입력할 수 있습니다.`);
   const html = await res.text();
-  let views = parseViews(html), text = (metaOf(html, "og:description") || metaOf(html, "og:title")).slice(0, 200), why = "";
+  let views = parseViews(html), counts = {}, text = (metaOf(html, "og:description") || metaOf(html, "og:title")).slice(0, 200), why = "";
   if (views == null) {
     try {
       const b = await browserText(u.href);
       views = parseViews(b.text);
+      counts = b.counts || {};
       if (!text) text = bodyOf(b.text);
     } catch (e) { why = ` · 브라우저 읽기 실패: ${e.message.split("\n")[0].slice(0, 120)}`; }
   }
   if (views == null) throw new Error(`공개 페이지에서 조회수를 찾지 못했습니다(로그인이 필요하거나 화면 구조가 다릅니다${why}). 숫자를 직접 입력할 수 있습니다.`);
-  return { views, text };
+  return { views, text, counts };
 }
 
 // 공유 링크(/share/코드)는 게시글 주소(/@계정/post/코드)로 이동하는 짧은 주소 → 따라가서 실제 주소를 얻는다
@@ -156,7 +177,7 @@ function mount(app, { dataDir }) {
     if (post.source === "public") {
       try {
         const r = await fetchPublic(post.url);
-        (post.history ??= {})[today()] = { views: r.views };
+        (post.history ??= {})[today()] = { views: r.views, ...r.counts };
         if ((!post.text || /^[\w.]+$/.test(post.text)) && r.text) post.text = r.text; // 예전에 아이디가 제목으로 잡힌 글도 고친다
         post.lastError = null;
         return true;
@@ -364,7 +385,7 @@ function mount(app, { dataDir }) {
       if (!WEB_HOSTS.includes(u.hostname)) return res.status(400).json({ error: "invalid_url" });
       if (req.query.browser) {
         const b = await browserText(u.href);
-        return res.json({ mode: "browser", title: b.title, parsedViews: parseViews(b.text), length: b.text.length, text: b.text.slice(0, 1500) });
+        return res.json({ mode: "browser", title: b.title, parsedViews: parseViews(b.text), counts: b.counts, iconLabels: b.seen, length: b.text.length, text: b.text.slice(0, 1500) });
       }
       const r = await fetch(u, { headers: { "User-Agent": WEB_UA, "Accept-Language": "ko-KR,ko;q=0.9", Accept: "text/html" }, redirect: "follow", signal: AbortSignal.timeout(20000) });
       const html = await r.text();

@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Threads 조회수 추적</title>
+<style>
+:root{color-scheme:light;--bg:#F7F5F0;--surface:#fff;--surface-2:#F0ECE3;--ink:#1E2420;--ink-soft:#63706A;--border:#DDD6C8;--accent:#0E6E58;--accent-ink:#fff;--bad:#AE4430;--bad-soft:#FBE9E3;--good:#1F7A4D;--good-soft:#E4F5EA;--warn:#A6741A;--warn-soft:#FBF0DA;--s1:#2a78d6;--s3:#1baf7a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#14181A;--surface:#1C2220;--surface-2:#232B28;--ink:#ECEFEC;--ink-soft:#9AA6A0;--border:#313A36;--accent:#3FCB9F;--accent-ink:#0B1512;--bad:#FF7A5C;--bad-soft:#2E1B16;--good:#4ADE94;--good-soft:#17281F;--warn:#E3B24E;--warn-soft:#2E2716;--s1:#3987e5;--s3:#199e70}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 48px}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2{margin:0}h1{font-size:1.4rem}h2{font-size:1.02rem}
+a{color:var(--accent)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-soft);flex:1 1 200px}
+label b{color:var(--ink)}
+input,select{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--ink);padding:6px 10px;font-size:.78rem}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;padding:9px 16px;font-size:.9rem}
+button.danger{color:var(--bad);border-color:var(--bad-soft)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.meta{font-size:.8rem;color:var(--ink-soft)}.sub{color:var(--ink-soft);font-size:.76rem}
+.msg{border-radius:8px;padding:9px 12px;font-size:.85rem}.msg.ok{background:var(--good-soft);color:var(--good)}.msg.err{background:var(--bad-soft);color:var(--bad)}.msg.warn{background:var(--warn-soft);color:var(--warn)}
+ol{margin:6px 0 0;padding-left:20px;font-size:.84rem;line-height:1.7}code{background:var(--surface-2);padding:1px 5px;border-radius:5px;font-size:.82em;word-break:break-all}
+.table-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:.86rem;table-layout:fixed}
+th,td{padding:8px 6px;border-bottom:1px solid var(--border);text-align:center}
+th{background:var(--surface-2);font-weight:600;color:var(--ink-soft)}
+tbody tr:last-child td{border-bottom:none}
+td.l,th.l{text-align:left;word-break:keep-all;overflow-wrap:anywhere;line-height:1.35}
+td.act{text-align:right}td.act button{margin:2px 0 2px 4px}
+a.plink{color:inherit;text-decoration:none}a.plink:hover{color:var(--accent);text-decoration:underline}a.plink::after{content:"↗";font-size:.7em;margin-left:3px;opacity:.55}
+.num{font-weight:700}.delta{color:var(--good);font-weight:600;font-size:.76rem}.delta.zero{color:var(--ink-soft);font-weight:400}
+tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
+.chart{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}
+.chart h3{margin:0 0 6px;font-size:.86rem}.chart svg{width:100%;height:auto;display:block}
+.chart .empty{color:var(--ink-soft);font-size:.82rem;padding:36px 8px;text-align:center}
+.legend{display:flex;gap:14px;font-size:.76rem;color:var(--ink-soft);margin-top:4px}.legend i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+#tip{position:fixed;z-index:9;pointer-events:none;background:var(--ink);color:var(--surface);font-size:.76rem;padding:6px 9px;border-radius:7px;white-space:pre;display:none}
+.viewer .admin-only{display:none!important}
+[hidden]{display:none!important}
+@media (max-width:720px){table{min-width:560px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Threads 조회수 추적</h1>
+    <div class="meta" id="userbar"></div>
+    <p class="meta">연결한 Threads 계정의 게시글 조회수·좋아요·댓글을 매일 기록합니다. (Meta 공식 API · 연결을 허용한 계정의 글만 조회할 수 있습니다)</p>
+  </header>
+
+  <div class="msg" id="flash" hidden></div>
+
+  <section class="card admin-only" id="setup" hidden>
+    <h2>처음 한 번: Meta 개발자 앱 연결 준비</h2>
+    <div class="msg warn">서버에 <code>THREADS_APP_ID</code>, <code>THREADS_APP_SECRET</code> 환경 변수가 아직 없습니다. 아래 순서대로 준비한 뒤 설정하세요.</div>
+    <ol>
+      <li>https://developers.facebook.com 에서 앱을 만들고 <b>Threads API</b> 사용 사례를 추가합니다.</li>
+      <li>Threads 설정에서 <b>리디렉션 콜백 URL</b>에 아래 주소를 등록합니다: <code id="redirectUri"></code></li>
+      <li>권한 <code>threads_basic</code>, <code>threads_manage_insights</code>를 사용 설정합니다.</li>
+      <li>앱 역할에서 연결할 Threads 계정을 <b>Threads 테스터</b>로 추가하고, 그 계정에서 초대를 수락합니다.</li>
+      <li>Threads 앱 ID / 앱 시크릿을 Railway 환경 변수 <code>THREADS_APP_ID</code>, <code>THREADS_APP_SECRET</code>에 넣고 재배포합니다.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>프로젝트</h2>
+    <div class="row"><label><b>프로젝트 선택</b><select id="project"></select></label></div>
+  </section>
+
+  <section class="card admin-only" id="accountCard">
+    <h2>연결된 Threads 계정</h2>
+    <div id="accounts" class="meta"></div>
+    <div><button class="primary" id="connectBtn" type="button">Threads 계정 연결</button></div>
+    <div class="meta">버튼을 누르면 Threads 로그인 창으로 이동합니다. 조회수를 보려는 <b>계정 본인이 로그인해서 허용</b>해야 합니다. 연결은 약 60일마다 서버가 자동으로 갱신합니다.</div>
+  </section>
+
+  <section class="card admin-only" id="addCard">
+    <h2>추적할 게시글 추가</h2>
+    <form id="addForm" class="row">
+      <label><b>Threads 게시글 주소</b><input name="url" required placeholder="예: https://www.threads.com/@계정/post/AbCdEfG"></label>
+      <button class="primary" type="submit">추가</button>
+    </form>
+    <div class="meta">연결한 계정이 올린 게시글만 등록할 수 있습니다. 주소는 게시글의 공유 버튼 → 링크 복사로 얻습니다.</div>
+    <div class="msg err" id="addErr" hidden></div>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h2>조회수 현황</h2>
+      <div class="row" style="gap:8px"><button class="primary admin-only" id="runBtn" type="button">전체조회</button></div>
+    </div>
+    <div class="meta" id="status"></div>
+    <div id="table"></div>
+    <div class="meta">매일 오전 9시(KST) 이후 서버가 자동으로 기록합니다. 조회수 증감은 직전 기록 대비입니다.</div>
+  </section>
+</div>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtN = (n) => Number(n).toLocaleString();
+const api = async (url, method = "GET", body) => {
+  const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401) { location.href = "/login.html"; throw Object.assign(new Error("login"), { status: 401 }); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(d.message || "요청에 실패했습니다."), { status: r.status, data: d });
+  return d;
+};
+let me = { role: "admin" };
+const isViewer = () => me.role === "viewer";
+const expanded = new Set();
+let data = { posts: [], accounts: [] };
+
+// ---- 표 ----
+function lastTwo(p) {
+  const dates = Object.keys(p.history).sort();
+  return { last: dates[dates.length - 1], prev: dates[dates.length - 2], dates };
+}
+function metricCell(p, k, strong) {
+  const { last, prev } = lastTwo(p);
+  const v = last ? p.history[last][k] : null;
+  if (v == null) return '<td class="sub">-</td>';
+  const pv = prev ? p.history[prev][k] : null;
+  const d = pv != null ? v - pv : null;
+  const dl = d == null ? "" : ` <span class="delta${d === 0 ? " zero" : ""}">(${d > 0 ? "+" : d < 0 ? "−" : "+"}${fmtN(Math.abs(d))})</span>`;
+  return `<td><div class="${strong ? "num" : ""}">${fmtN(v)}</div><div>${dl}</div></td>`;
+}
+function render() {
+  const posts = data.posts;
+  if (!posts.length) { $("#table").innerHTML = '<div class="meta">등록된 게시글이 없습니다.</div>'; return; }
+  const cols = isViewer() ? ["auto", "70px", "108px", "86px", "86px", "86px", "70px"] : ["auto", "70px", "108px", "86px", "86px", "86px", "170px"];
+  let h = '<div class="table-scroll"><table><colgroup>' + cols.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr><th class="l">게시글</th><th>최종 조회일</th><th>조회수</th><th>좋아요</th><th>댓글</th><th>리포스트</th><th></th></tr></thead><tbody>';
+  for (const p of posts) {
+    const { last } = lastTwo(p);
+    const title = esc(p.text || p.url);
+    h += `<tr><td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
+    h += metricCell(p, "views", true) + metricCell(p, "likes") + metricCell(p, "replies") + metricCell(p, "reposts");
+    h += `<td class="act">${isViewer() ? "" : `<button data-run="${esc(p.id)}">조회</button>`}<button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button>${isViewer() ? "" : `<button class="danger" data-del="${esc(p.id)}">삭제</button>`}</td></tr>`;
+    if (expanded.has(p.id)) h += `<tr class="detail"><td colspan="7"><div class="chart"><h3>누적 조회수 · 일별 조회수 증가</h3>${chart(p)}</div></td></tr>`;
+  }
+  $("#table").innerHTML = h + "</tbody></table></div>";
+}
+
+// ---- 차트: 선 = 누적 조회수(왼쪽 축), 막대 = 일별 조회수 증가(오른쪽 축) ----
+const tip = document.createElement("div"); tip.id = "tip"; document.body.appendChild(tip);
+document.addEventListener("mouseover", (e) => { const t = e.target.closest("[data-tip]"); if (!t) { tip.style.display = "none"; return; } tip.textContent = t.dataset.tip; tip.style.display = "block"; });
+document.addEventListener("mousemove", (e) => { if (tip.style.display === "block") { tip.style.left = e.clientX + 12 + "px"; tip.style.top = e.clientY + 12 + "px"; } });
+const niceMax = (v) => { const p = 10 ** Math.floor(Math.log10(Math.max(v, 1))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; };
+function chart(p) {
+  const dates = Object.keys(p.history).sort().filter((d) => p.history[d].views != null);
+  if (!dates.length) return '<div class="empty">조회수 기록이 아직 없습니다. "조회"를 눌러 첫 기록을 만드세요.</div>';
+  const W = 760, H = 300, M = { l: 56, r: 56, t: 24, b: 32 }, iw = W - M.l - M.r, ih = H - M.t - M.b, n = dates.length;
+  const total = dates.map((d) => p.history[d].views);
+  const gain = dates.map((d, i) => (i ? total[i] - total[i - 1] : null));
+  const minV = Math.min(...total), maxV = Math.max(...total);
+  const lo = minV === maxV ? Math.max(0, minV - 1) : Math.floor(minV - (maxV - minV) * 0.1), hi = minV === maxV ? maxV + 1 : Math.ceil(maxV + (maxV - minV) * 0.1);
+  const maxG = niceMax(Math.max(...gain.filter((x) => x != null), 1));
+  const x = (i) => M.l + (iw / n) * (i + 0.5), yT = (v) => M.t + ih - ((v - lo) / (hi - lo)) * ih, yG = (v) => M.t + ih - (Math.max(v, 0) / maxG) * ih;
+  let g = "";
+  for (let k = 0; k <= 4; k++) {
+    const yy = M.t + (ih / 4) * k;
+    g += `<line x1="${M.l}" x2="${W - M.r}" y1="${yy}" y2="${yy}" stroke="var(--border)"/><text x="${M.l - 7}" y="${yy + 4}" text-anchor="end" font-size="11" fill="var(--ink-soft)">${fmtN(Math.round(hi - ((hi - lo) / 4) * k))}</text><text x="${W - M.r + 7}" y="${yy + 4}" font-size="11" fill="var(--ink-soft)">${fmtN(Math.round(maxG - (maxG / 4) * k))}</text>`;
+  }
+  g += `<text x="4" y="${M.t - 9}" font-size="11" font-weight="600" fill="var(--ink)">누적 조회수</text><text x="${W - 2}" y="${M.t - 9}" text-anchor="end" font-size="11" font-weight="600" fill="var(--ink)">일별 증가</text>`;
+  const step = Math.ceil(n / 10), bw = Math.min(30, (iw / n) * 0.5);
+  dates.forEach((d, i) => { if (i % step === 0 || i === n - 1) g += `<text x="${x(i)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--ink-soft)">${esc(d.slice(5))}</text>`; });
+  gain.forEach((v, i) => {
+    if (v == null) return;
+    const top = yG(v), h = Math.max(M.t + ih - top, v > 0 ? 2 : 0), r = Math.min(4, bw / 2, h);
+    if (h > 0) g += `<path d="M${x(i) - bw / 2},${M.t + ih} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${bw - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z" fill="var(--s3)"/>`;
+    g += `<text x="${x(i)}" y="${Math.max(top - 5, M.t + 8)}" text-anchor="middle" font-size="10" fill="var(--ink)">${v > 0 ? "+" : ""}${fmtN(v)}</text>`;
+  });
+  let path = "";
+  total.forEach((v, i) => { path += (i ? "L" : "M") + `${x(i)},${yT(v)} `; });
+  g += `<path d="${path}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  total.forEach((v, i) => { g += `<circle cx="${x(i)}" cy="${yT(v)}" r="4" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"/>`; });
+  dates.forEach((d, i) => { const h = p.history[d]; g += `<rect x="${x(i) - iw / n / 2}" y="${M.t}" width="${iw / n}" height="${ih}" fill="transparent" data-tip="${esc(`${d}\n조회수 ${fmtN(h.views)}${gain[i] != null ? ` (${gain[i] >= 0 ? "+" : ""}${fmtN(gain[i])})` : ""}\n좋아요 ${fmtN(h.likes ?? 0)} · 댓글 ${fmtN(h.replies ?? 0)}\n리포스트 ${fmtN(h.reposts ?? 0)} · 인용 ${fmtN(h.quotes ?? 0)}`)}"/>`; });
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="누적 조회수(선)와 일별 조회수 증가(막대)">${g}</svg><div class="legend"><span><i style="border-color:var(--s1)"></i>누적 조회수</span><span><i style="border-top:8px solid var(--s3);border-radius:2px"></i>일별 조회수 증가</span></div>`;
+}
+
+// ---- 불러오기/동작 ----
+async function loadProjects() {
+  const ps = await api("/api/projects");
+  $("#project").innerHTML = ps.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  const saved = localStorage.getItem("threadsProject");
+  if (saved && ps.some((p) => p.id === saved)) $("#project").value = saved;
+}
+const flash = (t, kind = "ok") => { const f = $("#flash"); f.textContent = t; f.className = "msg " + kind; f.hidden = false; };
+async function refresh() {
+  const pid = $("#project").value;
+  if (!pid) { $("#table").innerHTML = '<div class="meta">프로젝트가 없습니다.</div>'; return; }
+  data = await api("/api/threads?projectId=" + encodeURIComponent(pid));
+  if (!isViewer()) {
+    $("#setup").hidden = data.configured;
+    $("#addCard").hidden = !data.configured;
+    $("#accountCard").hidden = !data.configured;
+    $("#connectBtn").disabled = !data.configured;
+    $("#accounts").innerHTML = data.accounts.length ? data.accounts.map((a) => `<div class="row" style="align-items:center;gap:8px"><b>@${esc(a.username)}</b><span class="sub">만료 ${esc((a.expiresAt || "").slice(0, 10))}</span>${a.error ? '<span class="msg err" style="padding:2px 8px">다시 연결 필요</span>' : ""}<button class="danger" data-delacc="${esc(a.id)}">연결 해제</button></div>`).join("") : "아직 연결된 계정이 없습니다.";
+    $("#runBtn").disabled = data.running || !data.posts.length;
+  }
+  $("#status").textContent = data.running ? "기록 중입니다…" : "";
+  render();
+}
+$("#project").addEventListener("change", () => { localStorage.setItem("threadsProject", $("#project").value); refresh(); });
+$("#connectBtn").addEventListener("click", () => { location.href = "/api/threads/connect?projectId=" + encodeURIComponent($("#project").value); });
+$("#addForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#addErr").hidden = true;
+  try { await api("/api/threads/posts", "POST", { projectId: $("#project").value, url: new FormData(e.target).get("url").trim() }); e.target.reset(); flash("게시글을 등록하고 첫 조회수를 기록했습니다."); await refresh(); }
+  catch (er) { $("#addErr").textContent = er.message; $("#addErr").hidden = false; }
+});
+$("#runBtn").addEventListener("click", async () => {
+  $("#runBtn").disabled = true;
+  try { const r = await api("/api/threads/run", "POST", { projectId: $("#project").value }); flash(`조회 완료: 성공 ${r.ok}건` + (r.fail ? `, 실패 ${r.fail}건(표의 빨간 글씨 확인)` : "")); } catch (er) { flash(er.message, "err"); }
+  await refresh();
+});
+$("#table").addEventListener("click", async (e) => {
+  const run = e.target.dataset.run, more = e.target.dataset.more, del = e.target.dataset.del;
+  try {
+    if (run) { await api("/api/threads/run", "POST", { postId: run }); await refresh(); }
+    else if (more) { expanded.has(more) ? expanded.delete(more) : expanded.add(more); render(); }
+    else if (del && confirm("이 게시글과 기록을 삭제할까요?")) { await api("/api/threads/posts/" + del, "DELETE"); await refresh(); }
+  } catch (er) { flash(er.message, "err"); }
+});
+$("#accounts").addEventListener("click", async (e) => {
+  const id = e.target.dataset.delacc;
+  if (id && confirm("계정 연결을 해제할까요? 이 계정의 등록 게시글과 기록도 함께 삭제됩니다.")) { await api("/api/threads/accounts/" + id, "DELETE"); await refresh(); }
+});
+(async () => {
+  me = await api("/api/me");
+  document.body.classList.toggle("viewer", isViewer());
+  $("#userbar").innerHTML = `<a href="/home.html">← 홈</a> · ${esc(me.name || me.username)} (${isViewer() ? "회원" : "관리자"})${me.openMode ? "" : ' · <a href="#" id="lo">로그아웃</a>'}`;
+  const lo = $("#lo"); if (lo) lo.addEventListener("click", async (e) => { e.preventDefault(); await fetch("/api/logout", { method: "POST" }); location.href = "/login.html"; });
+  const q = new URLSearchParams(location.search);
+  if (q.get("connected") !== null) flash(`Threads 계정(@${q.get("connected")})을 연결했습니다.`);
+  if (q.get("error")) flash(q.get("error"), "err");
+  if (!isViewer()) { try { const c = await api("/api/threads/config"); $("#redirectUri").textContent = c.redirectUri; } catch { /* 무시 */ } }
+  await loadProjects();
+  refresh();
+})();
+</script>
+</body>
+</html>

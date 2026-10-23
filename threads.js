@@ -162,6 +162,26 @@ function mount(app, { dataDir }) {
     }
   });
 
+  // 토큰으로 연결: Meta 앱의 "사용자 토큰 생성기"에서 받은 장기 액세스 토큰을 붙여넣는다(OAuth 콜백 주소 설정이 필요 없다).
+  app.post("/api/threads/accounts/token", requireAdmin, async (req, res) => {
+    const projectId = String((req.body || {}).projectId || "");
+    const token = String((req.body || {}).token || "").trim();
+    if (!projectId || token.length < 20) return res.status(400).json({ error: "invalid_input", message: "프로젝트와 액세스 토큰을 입력하세요." });
+    try {
+      const me = await graph("GET", `${GRAPH}/v1.0/me`, { fields: "id,username", access_token: token });
+      const db = load();
+      const existing = db.accounts.find((a) => a.userId === String(me.id) && a.projectId === projectId);
+      const acc = existing || { id: crypto.randomUUID(), projectId, userId: String(me.id), createdAt: new Date().toISOString() };
+      // 생성기 토큰은 장기 토큰(약 60일). 만료 10일 전부터 서버가 자동 갱신한다.
+      Object.assign(acc, { username: me.username, token, expiresAt: new Date(Date.now() + 60 * 86400e3).toISOString(), error: null, via: "token" });
+      if (!existing) db.accounts.push(acc);
+      save(db);
+      res.status(201).json({ username: me.username });
+    } catch (e) {
+      res.status(400).json({ error: "bad_token", message: `토큰을 확인하지 못했습니다: ${e.message}` });
+    }
+  });
+
   app.delete("/api/threads/accounts/:id", requireAdmin, (req, res) => {
     const db = load();
     db.accounts = db.accounts.filter((a) => a.id !== req.params.id);
@@ -170,7 +190,7 @@ function mount(app, { dataDir }) {
     res.json({ ok: true });
   });
 
-  app.post("/api/threads/posts", requireAdmin, needConfig, async (req, res) => {
+  app.post("/api/threads/posts", requireAdmin, async (req, res) => {
     const { projectId, url } = req.body || {};
     const code = shortcodeOf(url);
     if (!projectId || !code) return res.status(400).json({ error: "invalid_url", message: "Threads 게시글 주소(…/post/코드)를 입력하세요." });
@@ -198,7 +218,7 @@ function mount(app, { dataDir }) {
     res.json({ ok: true });
   });
 
-  app.post("/api/threads/run", requireAdmin, needConfig, async (req, res) => {
+  app.post("/api/threads/run", requireAdmin, async (req, res) => {
     const { projectId, postId } = req.body || {};
     const r = await runAll((p) => (postId ? p.id === postId : !projectId || p.projectId === projectId));
     if (r.busy) return res.status(409).json({ error: "busy" });
@@ -210,7 +230,7 @@ function mount(app, { dataDir }) {
     setInterval(async () => {
       try {
         const kst = new Date(Date.now() + 9 * 3600e3);
-        if (running || kst.getUTCHours() < AUTO_HOUR || !configured()) return;
+        if (running || kst.getUTCHours() < AUTO_HOUR) return;
         const db = load();
         if (db.meta.lastAutoDate === today() || !db.posts.length) return;
         db.meta.lastAutoDate = today();

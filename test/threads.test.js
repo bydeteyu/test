@@ -270,3 +270,54 @@ test("bodyOf: 아이디·시간·조회수 줄을 건너뛰고 본문을 고른�
   assert.strictEqual(bodyOf("스레드\n조회 289회\nkangaroo.22260327\n3시간\n오랜만에 괜찮은 앱테크 발견!\n추천"), "오랜만에 괜찮은 앱테크 발견!");
   assert.strictEqual(bodyOf("kangaroo.22260327\n조회 5회"), "");
 });
+
+test("Threads: 확장 프로그램 키로 대상 조회·숫자 보고, 키 없으면 거부, 서버 조회가 확장 숫자를 지우지 않는다", async () => {
+  const web = http.createServer((req, res) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end("<html><body>조회 50회</body></html>"); });
+  await new Promise((r) => web.listen(0, "127.0.0.1", r));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "threads-test7-"));
+  const port = 6800 + Math.floor(Math.random() * 400);
+  const child = spawn("node", [path.join(__dirname, "..", "server.js")], { env: { ...process.env, PORT: String(port), DATA_DIR: dir, RANK_AUTO: "off", APP_PASSWORD: "adminpass123", THREADS_WEB_ALLOW: "127.0.0.1", THREADS_BROWSER: "off" }, stdio: "ignore" });
+  const base = `http://127.0.0.1:${port}`;
+  let cookie = "";
+  const call = async (m, p, b, h = {}) => { const r = await fetch(base + p, { method: m, headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}), ...h }, body: b ? JSON.stringify(b) : undefined }); const sc = r.headers.get("set-cookie"); if (sc && p === "/api/login") cookie = sc.split(";")[0]; let data = null; try { data = await r.json(); } catch { /* */ } return { status: r.status, data, res: r }; };
+  try {
+    for (let i = 0; i < 50; i++) { try { await fetch(base + "/healthz"); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+    // 로그인 전: 키 없는 확장 요청은 401, 관리자 화면 API 는 로그인 필요
+    assert.strictEqual((await call("GET", "/api/threads/ext/tasks")).status, 401);
+    assert.strictEqual((await call("GET", "/api/threads/ext-key")).status, 401);
+    await call("POST", "/api/login", { username: "admin", password: "adminpass123" });
+    const pid = (await call("POST", "/api/projects", { name: "p" })).data.id;
+    const key = (await call("GET", "/api/threads/ext-key")).data.key;
+    assert.ok(key && key.length >= 32);
+    const add = await call("POST", "/api/threads/posts", { projectId: pid, url: `http://127.0.0.1:${web.address().port}/@a/post/ExtPost1` });
+    const id = add.data.id;
+    // 쿠키 없이 키만으로 접근
+    const saved = cookie; cookie = "";
+    assert.strictEqual((await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": "wrong" })).status, 401);
+    const tasks = await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": key });
+    assert.strictEqual(tasks.status, 200);
+    assert.deepStrictEqual(tasks.data.posts.map((p) => p.id), [id]);
+    assert.strictEqual((await call("POST", "/api/threads/ext/report", { postId: id }, { "X-Ext-Key": key })).status, 400);
+    assert.strictEqual((await call("POST", "/api/threads/ext/report", { postId: "nope", views: 1 }, { "X-Ext-Key": key })).status, 404);
+    assert.strictEqual((await call("POST", "/api/threads/ext/report", { postId: id, views: 55, likes: 2, replies: 3, reposts: 0 }, { "X-Ext-Key": key })).status, 200);
+    cookie = saved;
+    let p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
+    assert.deepStrictEqual(Object.values(p.history)[0], { views: 55, likes: 2, replies: 3, reposts: 0 });
+    assert.ok(p.extAt);
+    await call("POST", "/api/threads/run", { postIds: [id] }); // 서버 조회(조회수만)가 확장이 넣은 좋아요·댓글을 지우면 안 된다
+    p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
+    assert.deepStrictEqual(Object.values(p.history)[0], { views: 50, likes: 2, replies: 3, reposts: 0 });
+    // 키 재발급 → 예전 키는 무효
+    const key2 = (await call("POST", "/api/threads/ext-key")).data.key;
+    assert.notStrictEqual(key2, key);
+    cookie = "";
+    assert.strictEqual((await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": key })).status, 401);
+    cookie = saved;
+    // 설치 파일 zip
+    const z = await fetch(base + "/api/threads/extension.zip", { headers: { cookie } });
+    assert.strictEqual(z.status, 200);
+    const JSZip = require("jszip");
+    const names = Object.keys((await JSZip.loadAsync(Buffer.from(await z.arrayBuffer()))).files);
+    assert.ok(names.includes("threads-extension/manifest.json") && names.includes("threads-extension/reader.js"));
+  } finally { child.kill(); web.close(); }
+});

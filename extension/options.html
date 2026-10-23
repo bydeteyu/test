@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>Threads 조회수 수집기 설정</title>
+<style>body{font-family:system-ui,"Segoe UI",sans-serif;max-width:560px;margin:32px auto;padding:0 16px;color:#1E2420}label{display:block;margin:14px 0 4px;font-weight:600}input{width:100%;padding:8px 10px;font:inherit;border:1px solid #ccc;border-radius:8px;box-sizing:border-box}button{margin-top:16px;padding:9px 18px;font:inherit;font-weight:600;background:#0E6E58;color:#fff;border:0;border-radius:9px;cursor:pointer}.s{color:#63706A;font-size:.85rem}#msg{margin-top:12px}</style></head>
+<body><h1>Threads 조회수 수집기 설정</h1>
+<label for="server">서버 주소</label><input id="server" placeholder="https://test-production-f232.up.railway.app">
+<label for="key">확장 프로그램 키</label><input id="key" type="password" autocomplete="off" placeholder="순위 체크(Threads) 화면에서 복사한 키">
+<label for="hour">매일 실행 시각 (한국시간, 이후 첫 기회에 실행)</label><input id="hour" type="number" min="0" max="23" value="9">
+<p class="s">PC가 켜져 있고 Chrome 이 열려 있어야 실행됩니다. 이 Chrome 에서 Threads 에 로그인해 두세요.</p>
+<button id="save">저장</button><div id="msg"></div><script src="options.js"></script></body></html>

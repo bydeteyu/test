@@ -189,7 +189,8 @@ function mount(app, { dataDir }) {
     if (post.source === "public") {
       try {
         const r = await fetchPublic(post.url);
-        (post.history ??= {})[today()] = { views: r.views, ...r.counts };
+        const h = (post.history ??= {});
+        h[today()] = { ...(h[today()] || {}), views: r.views, ...r.counts }; // 확장 프로그램이 기록한 좋아요·댓글을 지우지 않는다
         if ((!post.text || /^[\w.]+$/.test(post.text)) && r.text) post.text = r.text; // 예전에 아이디가 제목으로 잡힌 글도 고친다
         post.lastError = null;
         return true;
@@ -266,7 +267,7 @@ function mount(app, { dataDir }) {
     res.json({
       configured: configured(),
       accounts: db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
-      posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError, source }) => ({ id, projectId, url, text, postedAt, source: source || "api", history: history || {}, lastError: lastError || null })),
+      posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null })),
       running,
       lastAutoDate: db.meta.lastAutoDate || null,
     });
@@ -388,6 +389,47 @@ function mount(app, { dataDir }) {
     db.posts = db.posts.filter((p) => p.id !== req.params.id);
     save(db);
     res.json({ ok: true });
+  });
+
+  // ---- Chrome 확장 프로그램 연동: 담당자 PC 의 로그인된 Chrome 이 글을 열어 좋아요·댓글까지 읽어 보낸다 ----
+  // 확장 프로그램은 로그인 쿠키 대신 전용 키(X-Ext-Key)로 인증한다. 키는 관리자가 화면에서 확인·재발급한다.
+  const extKey = (db) => (db.meta.extKey ||= crypto.randomBytes(24).toString("hex"));
+  const extAuth = (req, res, next) => {
+    const db = load();
+    const given = Buffer.from(String(req.get("x-ext-key") || ""));
+    const want = Buffer.from(extKey(db));
+    if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) return res.status(401).json({ error: "bad_key", message: "확장 프로그램 키가 올바르지 않습니다." });
+    next();
+  };
+  app.get("/api/threads/ext-key", requireAdmin, (req, res) => { const db = load(); const k = extKey(db); save(db); res.json({ key: k }); });
+  app.post("/api/threads/ext-key", requireAdmin, (req, res) => { const db = load(); db.meta.extKey = crypto.randomBytes(24).toString("hex"); save(db); res.json({ key: db.meta.extKey }); });
+  app.get("/api/threads/ext/tasks", extAuth, (req, res) => {
+    const db = load();
+    res.json({ date: today(), posts: db.posts.filter((p) => p.source === "public").map((p) => ({ id: p.id, url: p.url })) });
+  });
+  app.post("/api/threads/ext/report", extAuth, (req, res) => {
+    const db = load();
+    const p = db.posts.find((x) => x.id === String((req.body || {}).postId || "") && x.source === "public");
+    if (!p) return res.status(404).json({ error: "not_found" });
+    const num = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
+    const got = {};
+    for (const k of ["views", "likes", "replies", "reposts", "shares"]) { const v = num((req.body || {})[k]); if (v != null) got[k] = v; }
+    if (!Object.keys(got).length) return res.status(400).json({ error: "invalid_input", message: "기록할 숫자가 없습니다." });
+    const h = (p.history ??= {});
+    h[today()] = { ...(h[today()] || {}), ...got };
+    p.lastError = null;
+    p.extAt = new Date().toISOString();
+    save(db);
+    res.json({ ok: true, saved: got });
+  });
+  // 확장 프로그램 설치 파일(zip) 내려받기: extension/ 폴더를 묶어 보낸다
+  app.get("/api/threads/extension.zip", requireAdmin, async (req, res) => {
+    const JSZip = require("jszip");
+    const dir = path.join(__dirname, "extension");
+    const zip = new JSZip();
+    for (const f of fs.readdirSync(dir)) zip.file(`threads-extension/${f}`, fs.readFileSync(path.join(dir, f)));
+    res.set({ "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="threads-extension.zip"' });
+    res.send(await zip.generateAsync({ type: "nodebuffer" }));
   });
 
   // 진단(관리자): 서버가 공개 페이지로 실제로 받는 내용을 요약해 보여준다(조회수를 못 읽을 때 원인 확인용)

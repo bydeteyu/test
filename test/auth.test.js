@@ -74,8 +74,8 @@ test("관리자/회원 권한", async () => {
     assert.strictEqual(Buffer.from(await x.arrayBuffer()).subarray(0, 2).toString(), "PK");
     assert.strictEqual((await v.call("GET", `/api/rank/xlsx?projectId=${p2}`)).status, 403);
     assert.strictEqual((await v.call("GET", "/api/rank/xlsx")).status, 200); // 프로젝트가 하나면 자동 지정
-    assert.strictEqual((await v.call("GET", "/")).location, "/rank.html");
-    assert.strictEqual((await v.call("GET", "/admin.html")).location, "/rank.html");
+    assert.strictEqual((await v.call("GET", "/")).location, "/home.html");
+    assert.strictEqual((await v.call("GET", "/admin.html")).location, "/home.html");
     assert.strictEqual((await v.call("GET", "/rank.html")).status, 200);
 
     // 비밀번호를 바꾸면 기존 세션이 끊긴다

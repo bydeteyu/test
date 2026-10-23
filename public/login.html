@@ -39,7 +39,7 @@ f.addEventListener("submit", async (e) => {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.message || "로그인하지 못했습니다.");
     const next = new URLSearchParams(location.search).get("next");
-    location.href = d.role === "viewer" ? "/rank.html" : (next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
+    location.href = d.role === "viewer" ? "/home.html" : (next && next.startsWith("/") && !next.startsWith("//") ? next : "/home.html");
   } catch (ex) { err.textContent = ex.message; err.hidden = false; btn.disabled = false; }
 });
 </script>

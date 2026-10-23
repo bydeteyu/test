@@ -28,6 +28,15 @@ npm start
 - 회원 계정은 `DATA_DIR/users.json` 에 비밀번호 해시로 저장되며 백업 파일에도 포함됩니다. 로그인 쿠키는 7일간 유지되고, 같은 IP에서 10분에 10번 틀리면 잠깁니다.
 - `APP_PASSWORD` 가 없고 회원 계정도 없으면 로그인 없이 열린 상태로 동작합니다(로컬 개발용). 이 상태에서는 회원 계정을 만들 수 없습니다.
 
+## Threads 조회수 추적 (`/threads.html`)
+
+Meta 공식 Threads API 로 **연결을 허용한 계정의 게시글**만 조회합니다(남의 계정 글은 불가).
+
+1. Meta 개발자 앱(Threads API 사용 사례)을 만들고 리디렉션 콜백 URL 에 `https://배포주소/api/threads/callback` 을 등록합니다. 권한: `threads_basic`, `threads_manage_insights`. 연결할 계정은 앱의 Threads 테스터로 추가·수락합니다.
+2. 서버 환경 변수 `THREADS_APP_ID`, `THREADS_APP_SECRET` 을 설정합니다(선택: `THREADS_REDIRECT_URI`).
+3. 관리자가 `/threads.html` 에서 프로젝트별로 계정을 연결하고 게시글 주소를 등록하면, 매일 조회수·좋아요·댓글·리포스트를 기록하고 더보기에서 누적 조회수(선)·일별 증가(막대) 차트를 봅니다. 회원 계정은 자기 프로젝트의 현황만 볼 수 있습니다.
+4. 계정 토큰은 약 60일 만료이며 서버가 만료 10일 전부터 자동 갱신합니다. 데이터는 `DATA_DIR/threads.json` 에 저장됩니다(토큰 포함, 볼륨 필수).
+
 ## 데이터 보존 (중요)
 
 데이터는 `DATA_DIR`(없으면 Railway 볼륨 마운트 경로 `RAILWAY_VOLUME_MOUNT_PATH`, 그것도 없으면 `./data`)의 `db.json`, `rank.json`에 저장됩니다. **Railway에서 Volume을 연결하지 않으면 재배포할 때마다 초기화됩니다.**

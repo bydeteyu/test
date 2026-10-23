@@ -42,6 +42,12 @@ test("관리자/회원 권한", async () => {
     const p2 = (await admin.call("POST", "/api/projects", { name: "윤후여성한의원" })).data.id;
     await admin.call("POST", "/api/rank/items", { projectId: p1, keyword: "k1", titleContains: "a" });
     await admin.call("POST", "/api/rank/items", { projectId: p2, keyword: "k2", titleContains: "b" });
+    // 콘텐츠 링크: 등록한 네이버 주소는 그대로, 네이버가 아닌 주소(javascript: 등)는 링크로 만들지 않는다
+    await admin.call("POST", "/api/rank/items", { projectId: p1, keyword: "k1b", match: "https://naver.me/abc" });
+    await admin.call("POST", "/api/rank/items", { projectId: p1, keyword: "k1c", match: "javascript:alert(1)" });
+    const links = Object.fromEntries((await admin.call("GET", `/api/rank?projectId=${p1}`)).data.items.map((i) => [i.keyword, i.link]));
+    assert.strictEqual(links.k1b, "https://naver.me/abc");
+    assert.strictEqual(links.k1c, null);
     assert.strictEqual((await admin.call("POST", "/api/users", { username: "short", password: "1234" })).status, 400);
     assert.strictEqual((await admin.call("POST", "/api/users", { username: "kyobo", password: "kyobopass1", name: "교보", projectIds: [p1] })).status, 201);
     assert.strictEqual((await admin.call("POST", "/api/users", { username: "kyobo", password: "kyobopass1" })).status, 409);
@@ -55,9 +61,9 @@ test("관리자/회원 권한", async () => {
     assert.deepStrictEqual(names, ["교보라이프플래닛"]);
     const ok = await v.call("GET", `/api/rank?projectId=${p1}`);
     assert.strictEqual(ok.status, 200);
-    assert.deepStrictEqual(ok.data.items.map((i) => i.keyword), ["k1"]);
+    assert.deepStrictEqual(ok.data.items.map((i) => i.keyword).sort(), ["k1", "k1b", "k1c"]);
     assert.strictEqual((await v.call("GET", `/api/rank?projectId=${p2}`)).status, 403);
-    assert.strictEqual((await v.call("GET", "/api/rank")).data.items.length, 1); // 프로젝트가 하나면 자동 지정
+    assert.strictEqual((await v.call("GET", "/api/rank")).data.items.length, 3); // 프로젝트가 하나면 자동 지정
     for (const [m, p, b] of [["POST", "/api/rank/run", { projectId: p1 }], ["POST", "/api/rank/items", { projectId: p1, keyword: "x", titleContains: "y" }], ["DELETE", "/api/rank/items/abc"], ["POST", "/api/rank/search", { keywords: "x" }], ["GET", "/api/users"], ["POST", "/api/users", { username: "evil", password: "evilpass1" }], ["GET", "/api/keywords"], ["POST", "/api/projects", { name: "x" }], ["DELETE", `/api/projects/${p1}`], ["GET", "/api/rank/export"], ["POST", "/api/rank/import", {}], ["GET", "/api/rank/debug?keyword=x"], ["GET", "/api/rank/snapshots"], ["POST", "/api/monitor/run", {}]]) {
       assert.strictEqual((await v.call(m, p, b)).status, 403, `${m} ${p} 는 회원에게 막혀야 함`);
     }

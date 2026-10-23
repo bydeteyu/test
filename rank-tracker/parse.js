@@ -145,4 +145,4 @@ function findTarget(posts, target, { pageText, anchors } = {}) {
   return null;
 }
 
-module.exports = { extractPosts, findTarget, normalize };
+module.exports = { extractPosts, findTarget, normalize, squash };

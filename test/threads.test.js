@@ -192,7 +192,7 @@ test("Threads: 공개 링크 등록 → 페이지의 조회수 자동 기록 →
   await new Promise((r) => web.listen(0, "127.0.0.1", r));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "threads-test5-"));
   const port = 5800 + Math.floor(Math.random() * 400);
-  const child = spawn("node", [path.join(__dirname, "..", "server.js")], { env: { ...process.env, PORT: String(port), DATA_DIR: dir, RANK_AUTO: "off", APP_PASSWORD: "adminpass123", THREADS_WEB_ALLOW: "127.0.0.1" }, stdio: "ignore" });
+  const child = spawn("node", [path.join(__dirname, "..", "server.js")], { env: { ...process.env, PORT: String(port), DATA_DIR: dir, RANK_AUTO: "off", APP_PASSWORD: "adminpass123", THREADS_WEB_ALLOW: "127.0.0.1", THREADS_BROWSER: "off" }, stdio: "ignore" });
   const base = `http://127.0.0.1:${port}`;
   let cookie = "";
   const call = async (m, p, b) => { const r = await fetch(base + p, { method: m, headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) }, body: b ? JSON.stringify(b) : undefined }); const sc = r.headers.get("set-cookie"); if (sc) cookie = sc.split(";")[0]; let data = null; try { data = await r.json(); } catch { /* */ } return { status: r.status, data }; };
@@ -235,4 +235,30 @@ test("parseViews: 여러 표기에서 조회수를 읽는다", () => {
   assert.strictEqual(parseViews("12.5K views"), 12500);
   assert.strictEqual(parseViews('{"view_count":881}'), 881);
   assert.strictEqual(parseViews("<html>로그인</html>"), null);
+});
+
+test("Threads: 자바스크립트로 조회수를 채우는 페이지는 가상 브라우저로 읽는다", async (t) => {
+  const exe = process.env.CHROMIUM_PATH || ["/usr/bin/chromium", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"].find((f) => fs.existsSync(f));
+  if (!exe) return t.skip("Chromium 이 없는 환경");
+  const web = http.createServer((req, res) => {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end('<html><body><div id="r">로딩…</div><script>setTimeout(()=>{document.getElementById("r").innerHTML="<h1>스레드</h1><span>조회 77회</span><p>본문 글입니다 본문 글입니다</p>"},400)</script></body></html>');
+  });
+  await new Promise((r) => web.listen(0, "127.0.0.1", r));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "threads-test6-"));
+  const port = 6300 + Math.floor(Math.random() * 400);
+  const child = spawn("node", [path.join(__dirname, "..", "server.js")], { env: { ...process.env, PORT: String(port), DATA_DIR: dir, RANK_AUTO: "off", APP_PASSWORD: "adminpass123", THREADS_WEB_ALLOW: "127.0.0.1", CHROMIUM_PATH: exe }, stdio: "ignore" });
+  const base = `http://127.0.0.1:${port}`;
+  let cookie = "";
+  const call = async (m, p, b) => { const r = await fetch(base + p, { method: m, headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) }, body: b ? JSON.stringify(b) : undefined }); const sc = r.headers.get("set-cookie"); if (sc) cookie = sc.split(";")[0]; let data = null; try { data = await r.json(); } catch { /* */ } return { status: r.status, data }; };
+  try {
+    for (let i = 0; i < 50; i++) { try { await fetch(base + "/healthz"); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+    await call("POST", "/api/login", { username: "admin", password: "adminpass123" });
+    const pid = (await call("POST", "/api/projects", { name: "p" })).data.id;
+    const add = await call("POST", "/api/threads/posts", { projectId: pid, url: `http://127.0.0.1:${web.address().port}/@a/post/JsPage1` });
+    assert.strictEqual(add.status, 201);
+    const p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
+    assert.strictEqual(p.lastError, null);
+    assert.strictEqual(Object.values(p.history)[0].views, 77);
+  } finally { child.kill(); web.close(); }
 });

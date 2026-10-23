@@ -101,22 +101,40 @@ function mount(app, { dataDir }) {
     } finally { running = false; }
   }
 
-  // ---- 토큰 갱신(약 60일 만료): 만료 10일 전부터 매일 갱신 시도 ----
+  // ---- 토큰 갱신(장기 토큰은 약 60일 만료) ----
+  // 갱신하면 만료가 다시 60일로 늘어나고 응답의 expires_in 으로 실제 만료일을 알 수 있다. (발급 후 24시간이 지나야 갱신 가능)
+  // 일주일마다 갱신해 항상 만료일이 한참 남아 있게 한다.
+  const REFRESH_EVERY_MS = 7 * 86400e3;
+  async function refreshAccount(a) {
+    try {
+      const d = await graph("GET", `${GRAPH}/refresh_access_token`, { grant_type: "th_refresh_token", access_token: a.token });
+      a.token = d.access_token || a.token;
+      a.expiresAt = new Date(Date.now() + (d.expires_in || 5184000) * 1000).toISOString();
+      a.lastRefreshAt = new Date().toISOString();
+      a.error = null;
+      a.refreshError = null;
+      return { ok: true };
+    } catch (e) {
+      a.refreshError = e.message;
+      if (e.code === 190 || e.status === 401) a.error = "expired"; // 이미 만료됨 → 다시 연결 필요
+      return { ok: false, message: e.message };
+    }
+  }
   async function refreshTokens() {
     const db = load();
     let changed = false;
     for (const a of db.accounts) {
-      if (a.expiresAt && new Date(a.expiresAt).getTime() - Date.now() > 10 * 86400e3) continue;
-      try {
-        const d = await graph("GET", `${GRAPH}/refresh_access_token`, { grant_type: "th_refresh_token", access_token: a.token });
-        a.token = d.access_token; a.expiresAt = new Date(Date.now() + (d.expires_in || 5184000) * 1000).toISOString(); a.error = null; changed = true;
-      } catch (e) { a.error = "refresh_failed"; changed = true; }
+      const last = new Date(a.lastRefreshAt || a.createdAt || 0).getTime();
+      const nearExpiry = a.expiresAt && new Date(a.expiresAt).getTime() - Date.now() < 10 * 86400e3;
+      if (Date.now() - last < REFRESH_EVERY_MS && !nearExpiry) continue;
+      await refreshAccount(a);
+      changed = true;
     }
     if (changed) save(db);
   }
 
   // ---- API ----
-  const publicAccount = (a) => ({ id: a.id, projectId: a.projectId, username: a.username, expiresAt: a.expiresAt, error: a.error || null });
+  const publicAccount = (a) => ({ id: a.id, projectId: a.projectId, username: a.username, expiresAt: a.expiresAt, lastRefreshAt: a.lastRefreshAt || null, refreshError: a.refreshError || null, error: a.error || null });
   app.get("/api/threads/config", requireAdmin, (req, res) => res.json({ configured: configured(), redirectUri: redirectUri(req), scopes: SCOPES.split(",") }));
 
   app.get("/api/threads", (req, res) => {
@@ -127,6 +145,7 @@ function mount(app, { dataDir }) {
       accounts: db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
       posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError }) => ({ id, projectId, url, text, postedAt, history: history || {}, lastError: lastError || null })),
       running,
+      lastAutoDate: db.meta.lastAutoDate || null,
     });
   });
 
@@ -180,6 +199,17 @@ function mount(app, { dataDir }) {
     } catch (e) {
       res.status(400).json({ error: "bad_token", message: `토큰을 확인하지 못했습니다: ${e.message}` });
     }
+  });
+
+  // 지금 갱신: 토큰 갱신이 동작하는지 바로 확인(발급 후 24시간이 지나야 성공)
+  app.post("/api/threads/accounts/:id/refresh", requireAdmin, async (req, res) => {
+    const db = load();
+    const a = db.accounts.find((x) => x.id === req.params.id);
+    if (!a) return res.status(404).json({ error: "not_found" });
+    const r = await refreshAccount(a);
+    save(db);
+    if (!r.ok) return res.status(400).json({ error: "refresh_failed", message: `갱신하지 못했습니다: ${r.message}` });
+    res.json({ ok: true, expiresAt: a.expiresAt });
   });
 
   app.delete("/api/threads/accounts/:id", requireAdmin, (req, res) => {
@@ -238,7 +268,7 @@ function mount(app, { dataDir }) {
         await refreshTokens();
         await runAll();
       } catch (e) { console.error("[threads] auto run failed:", e.message); }
-    }, 10 * 60 * 1000).unref();
+    }, Number(process.env.THREADS_AUTO_INTERVAL_MS || 10 * 60 * 1000)).unref(); // 테스트에서만 짧게 바꾼다
   }
 
   return { exportData: () => load(), importData: (d) => save(d), file };

@@ -23,6 +23,7 @@ function startMock() {
         return p.get("code") === "GOODCODE" && p.get("client_secret") === "sec" ? json({ access_token: "SHORT", user_id: "42" }) : json({ error: { message: "bad code" } }, 400);
       }
       if (u.pathname === "/access_token") return u.searchParams.get("access_token") === "SHORT" ? json({ access_token: "LONGTOKEN", expires_in: 5184000 }) : json({ error: { message: "bad" } }, 400);
+      if (u.pathname === "/refresh_access_token") return u.searchParams.get("grant_type") === "th_refresh_token" ? json({ access_token: "REFRESHED", expires_in: 5184000 }) : json({ error: { message: "bad" } }, 400);
       if (u.pathname === "/v1.0/me") return json({ id: "42", username: "lifeplanet_official" });
       if (u.pathname === "/v1.0/me/threads") {
         return u.searchParams.get("after") ? json({ data: [{ id: "M2", permalink: "https://www.threads.com/@lifeplanet_official/post/TargetPost1", text: "교보라이프플래닛 게시글", timestamp: "2026-10-20T01:00:00+0000" }] })
@@ -137,8 +138,46 @@ test("Threads: OAuth 설정 없이 액세스 토큰만으로 연결 → 등록 �
     const p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
     assert.strictEqual(Object.values(p.history)[0].views, 125);
     assert.strictEqual((await call("POST", "/api/threads/run", { postId: p.id })).data.ok, 1);
+    // 토큰 갱신: 새 토큰과 실제 만료일(expires_in)로 바뀐다
+    const accId = list.accounts[0].id;
+    const rf = await call("POST", `/api/threads/accounts/${accId}/refresh`);
+    assert.strictEqual(rf.status, 200);
+    assert.ok(Date.parse(rf.data.expiresAt) > Date.now() + 59 * 86400e3);
+    assert.ok((await call("GET", `/api/threads?projectId=${pid}`)).data.accounts[0].lastRefreshAt);
     // 같은 계정을 다시 붙여넣어도 중복 계정이 생기지 않는다
     await call("POST", "/api/threads/accounts/token", { projectId: pid, token: "LONGTOKEN-abcdefghijklmnop" });
     assert.strictEqual((await call("GET", `/api/threads?projectId=${pid}`)).data.accounts.length, 1);
+  } finally { child.kill(); mock.srv.close(); }
+});
+
+test("Threads: 매일 자동 기록이 서버 스케줄로 실행되고 하루에 한 번만 돈다", async () => {
+  const mock = await startMock();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "threads-test4-"));
+  const port = 5300 + Math.floor(Math.random() * 400);
+  // 자동 실행 켬(RANK_AUTO 미설정), 시각 제한 0시, 확인 주기 200ms
+  const child = spawn("node", [path.join(__dirname, "..", "server.js")], { env: { ...process.env, PORT: String(port), DATA_DIR: dir, RANK_AUTO: "", RANK_AUTO_HOUR: "0", THREADS_AUTO_INTERVAL_MS: "200", APP_PASSWORD: "adminpass123", THREADS_APP_ID: "", THREADS_APP_SECRET: "", THREADS_GRAPH_BASE: mock.base }, stdio: "ignore" });
+  const base = `http://127.0.0.1:${port}`;
+  let cookie = "";
+  const call = async (m, p, b) => { const r = await fetch(base + p, { method: m, headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) }, body: b ? JSON.stringify(b) : undefined }); const sc = r.headers.get("set-cookie"); if (sc) cookie = sc.split(";")[0]; let data = null; try { data = await r.json(); } catch { /* */ } return { status: r.status, data }; };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    for (let i = 0; i < 50; i++) { try { await fetch(base + "/healthz"); break; } catch { await sleep(100); } }
+    await call("POST", "/api/login", { username: "admin", password: "adminpass123" });
+    const pid = (await call("POST", "/api/projects", { name: "p" })).data.id;
+    await call("POST", "/api/threads/accounts/token", { projectId: pid, token: "LONGTOKEN-abcdefghijklmnop" });
+    // 게시글이 아직 없으면 자동 실행이 오늘 분을 소모하지 않는다 → 등록 후에 실행된다
+    await sleep(600);
+    assert.strictEqual((await call("GET", `/api/threads?projectId=${pid}`)).data.lastAutoDate, null);
+    await call("POST", "/api/threads/posts", { projectId: pid, url: "https://www.threads.com/@lifeplanet_official/post/TargetPost1" });
+    const day = () => Object.keys((x) => x)[0];
+    const first = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
+    const v1 = Object.values(first.history)[0].views; // 등록 시 첫 기록
+    let after = null;
+    for (let i = 0; i < 30 && !after; i++) { await sleep(200); const d = (await call("GET", `/api/threads?projectId=${pid}`)).data; if (d.lastAutoDate) after = d; }
+    assert.ok(after, "자동 기록이 실행되어 lastAutoDate 가 생겨야 함");
+    assert.ok(Object.values(after.posts[0].history)[0].views > v1, "자동 기록으로 조회수가 갱신되어야 함");
+    const viewsAfter = Object.values(after.posts[0].history)[0].views;
+    await sleep(900); // 오늘 분은 이미 했으므로 더 돌지 않는다
+    assert.strictEqual(Object.values((await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0].history)[0].views, viewsAfter);
   } finally { child.kill(); mock.srv.close(); }
 });

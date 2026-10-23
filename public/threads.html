@@ -48,7 +48,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
 <div class="wrap">
   <header>
     <h1>순위 체크 (Threads)</h1>
-    <p class="meta">연결한 Threads 계정의 게시글 조회수·좋아요·댓글을 매일 기록합니다. (Meta 공식 API · 연결을 허용한 계정의 글만 조회할 수 있습니다)</p>
+    <p class="meta">게시글 링크를 등록하면 매일 조회수를 기록합니다. 연결한 계정의 글은 Meta 공식 API로, 그 밖의 글은 공개 페이지의 조회수를 읽습니다.</p>
   </header>
 
   <div class="msg" id="flash" hidden></div>
@@ -88,7 +88,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
       <label><b>Threads 게시글 주소</b><input name="url" required placeholder="예: https://www.threads.com/@계정/post/AbCdEfG"></label>
       <button class="primary" type="submit">추가</button>
     </form>
-    <div class="meta">연결한 계정이 올린 게시글만 등록할 수 있습니다. 주소는 게시글의 공유 버튼 → 링크 복사로 얻습니다.</div>
+    <div class="meta">주소는 게시글의 공유 버튼 → 링크 복사로 얻습니다. 연결한 계정의 글이면 공식 API로 조회수·좋아요·댓글을 기록하고, 그 밖의 글(의뢰한 외부 계정 등)은 <b>공개 링크</b>로 등록되어 매일 공개 페이지에 보이는 <b>조회수</b>를 읽어 기록합니다.</div>
     <div class="msg err" id="addErr" hidden></div>
   </section>
 
@@ -137,14 +137,15 @@ function metricCell(p, k, strong) {
 function render() {
   const posts = data.posts;
   if (!posts.length) { $("#table").innerHTML = '<div class="meta">등록된 게시글이 없습니다.</div>'; return; }
-  const cols = isViewer() ? ["auto", "70px", "108px", "86px", "86px", "86px", "70px"] : ["auto", "70px", "108px", "86px", "86px", "86px", "170px"];
+  const cols = isViewer() ? ["auto", "70px", "108px", "86px", "86px", "86px", "70px"] : ["auto", "70px", "108px", "86px", "86px", "86px", "220px"];
   let h = '<div class="table-scroll"><table><colgroup>' + cols.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr><th class="l">게시글</th><th>최종 조회일</th><th>조회수</th><th>좋아요</th><th>댓글</th><th>리포스트</th><th></th></tr></thead><tbody>';
   for (const p of posts) {
     const { last } = lastTwo(p);
     const title = esc(p.text || p.url);
-    h += `<tr><td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
+    const pub = p.source === "public";
+    h += `<tr><td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${pub ? '<div class="sub">공개 링크</div>' : ""}${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
     h += metricCell(p, "views", true) + metricCell(p, "likes") + metricCell(p, "replies") + metricCell(p, "reposts");
-    h += `<td class="act">${isViewer() ? "" : `<button data-run="${esc(p.id)}">조회</button>`}<button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button>${isViewer() ? "" : `<button class="danger" data-del="${esc(p.id)}">삭제</button>`}</td></tr>`;
+    h += `<td class="act">${isViewer() ? "" : `<button data-run="${esc(p.id)}">조회</button>${pub ? `<button data-manual="${esc(p.id)}">직접입력</button>` : ""}`}<button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button>${isViewer() ? "" : `<button class="danger" data-del="${esc(p.id)}">삭제</button>`}</td></tr>`;
     if (expanded.has(p.id)) h += `<tr class="detail"><td colspan="7"><div class="chart"><h3>누적 조회수 · 일별 조회수 증가</h3>${chart(p)}</div></td></tr>`;
   }
   $("#table").innerHTML = h + "</tbody></table></div>";
@@ -220,7 +221,7 @@ $("#tokenForm").addEventListener("submit", async (e) => {
 $("#addForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("#addErr").hidden = true;
-  try { await api("/api/threads/posts", "POST", { projectId: $("#project").value, url: new FormData(e.target).get("url").trim() }); e.target.reset(); flash("게시글을 등록하고 첫 조회수를 기록했습니다."); await refresh(); }
+  try { const r = await api("/api/threads/posts", "POST", { projectId: $("#project").value, url: new FormData(e.target).get("url").trim() }); e.target.reset(); flash("게시글을 등록했습니다." + (r.lastError ? " 조회수는 " + r.lastError : " 첫 조회수를 기록했습니다."), r.lastError ? "warn" : "ok"); await refresh(); }
   catch (er) { $("#addErr").textContent = er.message; $("#addErr").hidden = false; }
 });
 $("#runBtn").addEventListener("click", async () => {
@@ -229,9 +230,10 @@ $("#runBtn").addEventListener("click", async () => {
   await refresh();
 });
 $("#table").addEventListener("click", async (e) => {
-  const run = e.target.dataset.run, more = e.target.dataset.more, del = e.target.dataset.del;
+  const manual = e.target.dataset.manual, run = e.target.dataset.run, more = e.target.dataset.more, del = e.target.dataset.del;
   try {
-    if (run) { await api("/api/threads/run", "POST", { postId: run }); await refresh(); }
+    if (manual) { const v = prompt("오늘 조회수를 숫자로 입력하세요"); if (v !== null && v.trim() !== "") { await api("/api/threads/posts/" + manual + "/manual", "POST", { views: Number(v.replace(/,/g, "")) }); await refresh(); } }
+    else if (run) { await api("/api/threads/run", "POST", { postId: run }); await refresh(); }
     else if (more) { expanded.has(more) ? expanded.delete(more) : expanded.add(more); render(); }
     else if (del && confirm("이 게시글과 기록을 삭제할까요?")) { await api("/api/threads/posts/" + del, "DELETE"); await refresh(); }
   } catch (er) { flash(er.message, "err"); }

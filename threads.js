@@ -13,9 +13,44 @@ const SCOPES = "threads_basic,threads_manage_insights";
 const METRICS = ["views", "likes", "replies", "reposts", "quotes", "shares"];
 const AUTO_HOUR = Number(process.env.RANK_AUTO_HOUR || 9); // 순위 체크와 같은 시각(KST)
 const KEEP_DAYS = 400;
+// 공개 게시글 페이지 읽기: 허용 호스트(서버가 임의 주소를 열지 못하게 제한). 테스트에서만 THREADS_WEB_ALLOW 로 추가한다.
+const WEB_HOSTS = ["threads.com", "www.threads.com", "threads.net", "www.threads.net", ...String(process.env.THREADS_WEB_ALLOW || "").split(",").filter(Boolean)];
+const WEB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
 const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+
+// "57", "1,234", "1.2천", "3.4만", "1.2K", "2M" → 숫자
+function toCount(num, unit) {
+  const n = parseFloat(String(num).replace(/,/g, ""));
+  if (!Number.isFinite(n)) return null;
+  const mul = { 천: 1e3, 만: 1e4, 억: 1e8, k: 1e3, m: 1e6 }[String(unit || "").toLowerCase()] || 1;
+  return Math.round(n * mul);
+}
+// 공개 게시글 페이지(HTML)에서 조회수를 찾는다. "조회 57회" / "57 views" / 내장 JSON 의 view_count 순으로 시도.
+function parseViews(html) {
+  const t = String(html || "");
+  let m = /조회\s*(?:수\s*)?([\d][\d,.]*)\s*(천|만|억|[KkMm])?\s*회/.exec(t) || /(?:조회수?\s*)([\d][\d,.]*)\s*(천|만|억|[KkMm])?(?![\d,.]*\s*(?:개|명))/.exec(t);
+  if (m) return toCount(m[1], m[2]);
+  m = /([\d][\d,.]*)\s*([KkMm])?\s*views?\b/i.exec(t);
+  if (m) return toCount(m[1], m[2]);
+  m = /"(?:view_count|views_count|impression_count)"\s*:\s*(\d+)/.exec(t);
+  return m ? Number(m[1]) : null;
+}
+const metaOf = (html, prop) => {
+  const m = new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]*content=["']([^"']*)["']`, "i").exec(html) || new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]*(?:property|name)=["']${prop}["']`, "i").exec(html);
+  return m ? m[1].replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, "&") : "";
+};
+async function fetchPublic(url) {
+  const u = new URL(url);
+  if (!WEB_HOSTS.includes(u.hostname)) throw new Error("Threads 게시글 주소가 아닙니다.");
+  const res = await fetch(u, { headers: { "User-Agent": WEB_UA, "Accept-Language": "ko-KR,ko;q=0.9", Accept: "text/html" }, redirect: "follow", signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error(`공개 페이지를 열지 못했습니다(HTTP ${res.status}). 숫자를 직접 입력할 수 있습니다.`);
+  const html = await res.text();
+  const views = parseViews(html);
+  if (views == null) throw new Error("공개 페이지에서 조회수를 찾지 못했습니다(로그인이 필요하거나 화면 구조가 다릅니다). 숫자를 직접 입력할 수 있습니다.");
+  return { views, text: (metaOf(html, "og:description") || metaOf(html, "og:title")).slice(0, 200) };
+}
 
 function mount(app, { dataDir }) {
   const file = path.join(dataDir, "threads.json");
@@ -72,6 +107,15 @@ function mount(app, { dataDir }) {
     return out;
   }
   async function refreshPost(db, post) {
+    if (post.source === "public") {
+      try {
+        const r = await fetchPublic(post.url);
+        (post.history ??= {})[today()] = { views: r.views };
+        if (!post.text && r.text) post.text = r.text;
+        post.lastError = null;
+        return true;
+      } catch (e) { post.lastError = e.name === "TimeoutError" ? "공개 페이지 응답 시간이 초과되었습니다" : e.message; return false; }
+    }
     const acc = db.accounts.find((a) => a.id === post.accountId);
     if (!acc) { post.lastError = "연결된 계정이 없습니다"; return false; }
     try {
@@ -143,7 +187,7 @@ function mount(app, { dataDir }) {
     res.json({
       configured: configured(),
       accounts: db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
-      posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError }) => ({ id, projectId, url, text, postedAt, history: history || {}, lastError: lastError || null })),
+      posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError, source }) => ({ id, projectId, url, text, postedAt, source: source || "api", history: history || {}, lastError: lastError || null })),
       running,
       lastAutoDate: db.meta.lastAutoDate || null,
     });
@@ -225,20 +269,38 @@ function mount(app, { dataDir }) {
     const code = shortcodeOf(url);
     if (!projectId || !code) return res.status(400).json({ error: "invalid_url", message: "Threads 게시글 주소(…/post/코드)를 입력하세요." });
     const db = load();
-    const accounts = db.accounts.filter((a) => a.projectId === projectId);
-    if (!accounts.length) return res.status(400).json({ error: "no_account", message: "이 프로젝트에 연결된 Threads 계정이 없습니다. 먼저 계정을 연결하세요." });
     if (db.posts.some((p) => p.projectId === projectId && p.shortcode === code)) return res.status(409).json({ error: "exists", message: "이미 등록된 게시글입니다." });
-    let found = null, account = null, lastErr = null;
-    for (const a of accounts) {
-      try { found = await findMedia(a, code); } catch (e) { lastErr = e; }
+    let found = null, account = null;
+    for (const a of db.accounts.filter((x) => x.projectId === projectId && !x.error)) {
+      try { found = await findMedia(a, code); } catch { /* 이 계정에서 못 찾으면 공개 링크로 등록 */ }
       if (found) { account = a; break; }
     }
-    if (!found) return res.status(404).json({ error: "not_found", message: lastErr ? `게시글을 확인하지 못했습니다: ${lastErr.message}` : "연결된 계정의 게시글 중에서 이 주소의 글을 찾지 못했습니다. (연결한 계정이 올린 글만 조회할 수 있습니다)" });
-    const post = { id: crypto.randomUUID(), projectId, accountId: account.id, url: found.permalink || String(url), shortcode: code, mediaId: found.id, text: String(found.text || "").slice(0, 200), postedAt: found.timestamp || null, history: {}, createdAt: new Date().toISOString() };
+    const base = { id: crypto.randomUUID(), projectId, shortcode: code, history: {}, createdAt: new Date().toISOString() };
+    let post;
+    if (found) post = { ...base, accountId: account.id, url: found.permalink || String(url), mediaId: found.id, text: String(found.text || "").slice(0, 200), postedAt: found.timestamp || null };
+    else {
+      let u;
+      try { u = new URL(String(url)); } catch { /* 아래에서 처리 */ }
+      if (!u || !WEB_HOSTS.includes(u.hostname)) return res.status(400).json({ error: "invalid_url", message: "threads.com 게시글 주소를 입력하세요." });
+      post = { ...base, source: "public", url: u.origin + u.pathname, text: "", postedAt: null };
+    }
     db.posts.push(post);
     await refreshPost(db, post);
     save(db);
-    res.status(201).json({ id: post.id, lastError: post.lastError });
+    res.status(201).json({ id: post.id, source: post.source || "api", lastError: post.lastError });
+  });
+
+  // 숫자 직접 입력(공개 링크로 등록한 글): 자동으로 못 읽을 때 오늘 조회수를 손으로 기록한다.
+  app.post("/api/threads/posts/:id/manual", requireAdmin, (req, res) => {
+    const db = load();
+    const p = db.posts.find((x) => x.id === req.params.id);
+    const views = Number((req.body || {}).views);
+    if (!p || p.source !== "public") return res.status(404).json({ error: "not_found" });
+    if (!Number.isInteger(views) || views < 0) return res.status(400).json({ error: "invalid_input", message: "조회수는 0 이상의 정수로 입력하세요." });
+    (p.history ??= {})[today()] = { views };
+    p.lastError = null;
+    save(db);
+    res.json({ ok: true });
   });
 
   app.delete("/api/threads/posts/:id", requireAdmin, (req, res) => {
@@ -274,4 +336,4 @@ function mount(app, { dataDir }) {
   return { exportData: () => load(), importData: (d) => save(d), file };
 }
 
-module.exports = { mount };
+module.exports = { mount, parseViews };

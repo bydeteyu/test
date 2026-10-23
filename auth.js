@@ -109,7 +109,7 @@ function mount(app, { dataDir }) {
   app.set("trust proxy", 1); // Railway 등 프록시 뒤: 실제 IP, https 여부 인식
 
   app.use((req, res, next) => {
-    if (req.path === "/healthz" || req.path === "/login.html" || (req.method === "POST" && req.path === "/api/login")) return next();
+    if (req.path === "/healthz" || req.path.startsWith("/api/threads/ext/") || req.path === "/login.html" || (req.method === "POST" && req.path === "/api/login")) return next();
     if (!authEnabled()) { req.user = { username: "(로컬)", role: "admin", name: "로컬 관리자", projectIds: null, open: true }; return next(); }
     const u = authenticate(req);
     if (!u) {

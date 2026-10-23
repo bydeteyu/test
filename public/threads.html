@@ -82,6 +82,18 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
     <div class="row"><button type="button" id="connectBtn">Threads 로그인 창으로 연결(OAuth)</button><span class="sub" id="oauthNote"></span></div>
   </section>
 
+  <section class="card admin-only" id="extCard">
+    <h2>좋아요·댓글 수집: Chrome 확장 프로그램</h2>
+    <div class="meta">공개 링크 글은 서버가 조회수만 읽을 수 있습니다. 담당자 PC의 <b>로그인된 Chrome</b>에 확장 프로그램을 설치하면, 매일 등록된 글을 열어 <b>조회수·좋아요·댓글</b>을 읽어 이 화면에 기록합니다. (PC가 켜져 있고 Chrome이 열려 있어야 합니다)</div>
+    <ol>
+      <li><a href="/api/threads/extension.zip">확장 프로그램 내려받기(zip)</a> 후 압축을 풉니다.</li>
+      <li>Chrome 주소창에 <code>chrome://extensions</code> → 오른쪽 위 <b>개발자 모드</b> 켜기 → <b>압축해제된 확장 프로그램을 로드합니다</b> → 압축 푼 <code>threads-extension</code> 폴더 선택.</li>
+      <li>확장 프로그램의 <b>설정</b>에서 서버 주소 <code id="extServer"></code> 와 아래 키를 붙여넣고 저장합니다. 이 Chrome에서 Threads에 로그인해 두세요.</li>
+    </ol>
+    <div class="row"><label><b>확장 프로그램 키</b><input id="extKey" readonly placeholder="불러오는 중…"></label><button type="button" id="extCopy">복사</button><button type="button" id="extNew" class="danger">키 다시 만들기</button></div>
+    <div class="meta">키는 이 서버에 글 숫자를 보내는 용도로만 쓰입니다. 유출되면 "키 다시 만들기"로 바꾸세요(기존 확장 프로그램은 새 키로 다시 설정해야 합니다).</div>
+  </section>
+
   <section class="card admin-only" id="addCard">
     <h2>추적할 게시글 추가</h2>
     <form id="addForm" class="row">
@@ -129,7 +141,7 @@ function lastTwo(p) {
 function metricCell(p, k, strong) {
   const { last, prev } = lastTwo(p);
   const v = last ? p.history[last][k] : null;
-  if (v == null) return p.source === "public" && k !== "views" ? '<td class="sub" title="로그인하지 않은 공개 페이지에는 이 숫자가 표시되지 않습니다">미제공</td>' : '<td class="sub">-</td>';
+  if (v == null) return p.source === "public" && k !== "views" ? '<td class="sub" title="서버는 로그인 없이 읽어 이 숫자를 얻을 수 없습니다. Chrome 확장 프로그램을 설치하면 기록됩니다">미제공</td>' : '<td class="sub">-</td>';
   const pv = prev ? p.history[prev][k] : null;
   const d = pv != null ? v - pv : null;
   const dl = d == null ? "" : ` <span class="delta${d === 0 ? " zero" : ""}">(${d > 0 ? "+" : d < 0 ? "−" : "+"}${fmtN(Math.abs(d))})</span>`;
@@ -260,6 +272,15 @@ $("#accounts").addEventListener("click", async (e) => {
   const id = e.target.dataset.delacc;
   if (id && confirm("계정 연결을 해제할까요? 이 계정의 등록 게시글과 기록도 함께 삭제됩니다.")) { await api("/api/threads/accounts/" + id, "DELETE"); await refresh(); }
 });
+async function loadExt() {
+  if (isViewer()) return;
+  try { $("#extKey").value = (await api("/api/threads/ext-key")).key; $("#extServer").textContent = location.origin; } catch { /* 무시 */ }
+}
+$("#extCopy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("#extKey").value); flash("키를 복사했습니다."); } catch { $("#extKey").select(); } });
+$("#extNew").addEventListener("click", async () => {
+  if (!confirm("키를 새로 만들면 설치한 확장 프로그램은 새 키로 다시 설정해야 합니다. 계속할까요?")) return;
+  try { $("#extKey").value = (await api("/api/threads/ext-key", "POST")).key; flash("새 키를 만들었습니다. 확장 프로그램 설정에 붙여넣으세요."); } catch (er) { flash(er.message, "err"); }
+});
 (async () => {
   me = await api("/api/me");
   document.body.classList.toggle("viewer", isViewer());
@@ -268,6 +289,7 @@ $("#accounts").addEventListener("click", async (e) => {
   if (q.get("error")) flash(q.get("error"), "err");
   if (!isViewer()) { try { const c = await api("/api/threads/config"); $("#redirectUri").textContent = c.redirectUri; } catch { /* 무시 */ } }
   await loadProjects();
+  loadExt();
   refresh();
 })();
 </script>

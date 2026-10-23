@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Threads 조회수 추적</title>
+<title>순위 체크 (Threads)</title>
 <style>
 :root{color-scheme:light;--bg:#F7F5F0;--surface:#fff;--surface-2:#F0ECE3;--ink:#1E2420;--ink-soft:#63706A;--border:#DDD6C8;--accent:#0E6E58;--accent-ink:#fff;--bad:#AE4430;--bad-soft:#FBE9E3;--good:#1F7A4D;--good-soft:#E4F5EA;--warn:#A6741A;--warn-soft:#FBF0DA;--s1:#2a78d6;--s3:#1baf7a}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#14181A;--surface:#1C2220;--surface-2:#232B28;--ink:#ECEFEC;--ink-soft:#9AA6A0;--border:#313A36;--accent:#3FCB9F;--accent-ink:#0B1512;--bad:#FF7A5C;--bad-soft:#2E1B16;--good:#4ADE94;--good-soft:#17281F;--warn:#E3B24E;--warn-soft:#2E2716;--s1:#3987e5;--s3:#199e70}}
@@ -47,8 +47,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
 <body>
 <div class="wrap">
   <header>
-    <h1>Threads 조회수 추적</h1>
-    <div class="meta" id="userbar"></div>
+    <h1>순위 체크 (Threads)</h1>
     <p class="meta">연결한 Threads 계정의 게시글 조회수·좋아요·댓글을 매일 기록합니다. (Meta 공식 API · 연결을 허용한 계정의 글만 조회할 수 있습니다)</p>
   </header>
 
@@ -98,7 +97,9 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
     <div class="meta">매일 오전 9시(KST) 이후 서버가 자동으로 기록합니다. 조회수 증감은 직전 기록 대비입니다.</div>
   </section>
 </div>
+<script src="/programs.js"></script>
 <script>
+Programs.mountBar("threads");
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmtN = (n) => Number(n).toLocaleString();
@@ -232,8 +233,6 @@ $("#accounts").addEventListener("click", async (e) => {
 (async () => {
   me = await api("/api/me");
   document.body.classList.toggle("viewer", isViewer());
-  $("#userbar").innerHTML = `<a href="/home.html">← 홈</a> · ${esc(me.name || me.username)} (${isViewer() ? "회원" : "관리자"})${me.openMode ? "" : ' · <a href="#" id="lo">로그아웃</a>'}`;
-  const lo = $("#lo"); if (lo) lo.addEventListener("click", async (e) => { e.preventDefault(); await fetch("/api/logout", { method: "POST" }); location.href = "/login.html"; });
   const q = new URLSearchParams(location.search);
   if (q.get("connected") !== null) flash(`Threads 계정(@${q.get("connected")})을 연결했습니다.`);
   if (q.get("error")) flash(q.get("error"), "err");

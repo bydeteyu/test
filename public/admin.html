@@ -34,7 +34,6 @@ tbody tr:last-child td{border-bottom:0}
 <div class="wrap">
   <header class="row" style="justify-content:space-between;align-items:center">
     <h1>계정 관리</h1>
-    <div class="meta"><a href="/rank.html">← 순위 체크</a> · <a href="#" id="logout">로그아웃</a></div>
   </header>
 
   <div class="msg err" id="openWarn" hidden>로그인이 꺼져 있습니다. 서버 환경 변수 <code>APP_PASSWORD</code>를 설정해 관리자 로그인을 먼저 켜야 회원 계정을 만들 수 있습니다.</div>
@@ -61,7 +60,9 @@ tbody tr:last-child td{border-bottom:0}
     </table></div>
   </section>
 </div>
+<script src="/programs.js"></script>
 <script>
+Programs.mountBar("admin");
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const api = async (url, method = "GET", body) => {
@@ -115,7 +116,6 @@ $("#rows").addEventListener("click", async (e) => {
     }
   } catch (er) { say(er.message, false); }
 });
-$("#logout").addEventListener("click", async (e) => { e.preventDefault(); await fetch("/api/logout", { method: "POST" }); location.href = "/login.html"; });
 load().catch(() => {});
 </script>
 </body>

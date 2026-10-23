@@ -90,7 +90,7 @@ function mount(app, { dataDir }) {
 
   // ---- 회원(viewer)이 쓸 수 있는 것: 읽기 전용 순위 데이터뿐 ----
   const VIEWER_API = [["GET", "/api/me"], ["GET", "/api/projects"], ["GET", "/api/rank"], ["GET", "/api/rank/xlsx"], ["GET", "/api/threads"], ["POST", "/api/logout"]];
-  const VIEWER_PAGES = new Set(["/rank.html", "/rank", "/threads.html", "/home.html", "/login.html"]);
+  const VIEWER_PAGES = new Set(["/rank.html", "/rank", "/threads.html", "/home.html", "/programs.js", "/login.html"]);
   function viewerGuard(req, res, next) {
     if (!req.path.startsWith("/api/")) {
       if (req.method === "GET" && VIEWER_PAGES.has(req.path)) return next();

@@ -110,8 +110,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
 <div class="wrap">
   <header>
     <h1>순위 체크</h1>
-    <div class="meta" id="userbar"></div>
-    <p>키워드로 검색했을 때 지정한 콘텐츠가 <span class="chLabels">통합·카페</span> 검색 결과에서 각각 몇 위인지 매일 확인합니다. (<a href="/home.html">← 홈</a>)</p>
+    <p>키워드로 검색했을 때 지정한 콘텐츠가 <span class="chLabels">통합·카페</span> 검색 결과에서 각각 몇 위인지 매일 확인합니다.</p>
   </header>
 
   <section class="card admin-only" id="volWarn" hidden>
@@ -191,7 +190,9 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
     <div class="meta" id="restoreMsg">프로젝트와 순위 기록 전체가 한 파일로 저장됩니다. 복원하면 현재 데이터가 파일 내용으로 바뀝니다(바꾸기 전 파일은 서버에 따로 보관).</div>
   </div>
 </section>
+<script src="/programs.js"></script>
 <script>
+Programs.mountBar("rank");
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const api = async (url, opt) => {
@@ -504,10 +505,6 @@ $("#restoreFile").addEventListener("change", async (e) => {
 (async () => {
   me = await api("/api/me");
   document.body.classList.toggle("viewer", isViewer());
-  const label = me.openMode ? "로그인 꺼짐(로컬)" : `${esc(me.name || me.username)} (${isViewer() ? "회원" : "관리자"})`;
-  $("#userbar").innerHTML = `${label}${me.openMode ? "" : ' · <a href="#" id="logoutLink">로그아웃</a>'}${me.role === "admin" && !me.openMode ? ' · <a href="/admin.html">계정 관리</a>' : ""}`;
-  const lo = $("#logoutLink");
-  if (lo) lo.addEventListener("click", async (e) => { e.preventDefault(); await fetch("/api/logout", { method: "POST" }); location.href = "/login.html"; });
   if (!isViewer()) api("/api/storage").then((s) => { $("#volWarn").hidden = s.persistent; }).catch(() => {});
   await loadProjects();
   refresh();

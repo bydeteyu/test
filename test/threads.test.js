@@ -71,8 +71,6 @@ test("Threads: 연결 → 게시글 등록 → 조회수 기록 → 회원 권�
 
     // 게시글 등록(두 번째 페이지에서 찾음) → 첫 조회수 기록
     assert.strictEqual((await admin.call("POST", "/api/threads/posts", { projectId: pid, url: "https://example.com/x" })).status, 400);
-    assert.strictEqual((await admin.call("POST", "/api/threads/posts", { projectId: pid2, url: "https://www.threads.com/@a/post/TargetPost1" })).status, 400); // 계정 없는 프로젝트
-    assert.strictEqual((await admin.call("POST", "/api/threads/posts", { projectId: pid, url: "https://www.threads.com/@lifeplanet_official/post/NoSuchPost" })).status, 404);
     const add = await admin.call("POST", "/api/threads/posts", { projectId: pid, url: "https://www.threads.com/@lifeplanet_official/post/TargetPost1?x=1" });
     assert.strictEqual(add.status, 201);
     assert.strictEqual((await admin.call("POST", "/api/threads/posts", { projectId: pid, url: "https://www.threads.com/@lifeplanet_official/post/TargetPost1" })).status, 409);
@@ -180,4 +178,61 @@ test("Threads: 매일 자동 기록이 서버 스케줄로 실행되고 하루�
     await sleep(900); // 오늘 분은 이미 했으므로 더 돌지 않는다
     assert.strictEqual(Object.values((await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0].history)[0].views, viewsAfter);
   } finally { child.kill(); mock.srv.close(); }
+});
+
+
+test("Threads: 공개 링크 등록 → 페이지의 조회수 자동 기록 → 못 읽으면 직접 입력", async () => {
+  let views = 57, mode = "ok";
+  const web = http.createServer((req, res) => {
+    if (req.url.startsWith("/share/")) { res.writeHead(302, { location: "/@duck_kkyu/post/BAleszFlmW" }); return res.end(); }
+    if (mode === "blocked") { res.writeHead(403); return res.end("no"); }
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(mode === "nonum" ? "<html>로그인</html>" : `<html><head><meta property="og:description" content="협찬 후기 &quot;좋아요&quot;"></head><body><h1>스레드</h1><span>조회 ${views.toLocaleString()}회</span></body></html>`);
+  });
+  await new Promise((r) => web.listen(0, "127.0.0.1", r));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "threads-test5-"));
+  const port = 5800 + Math.floor(Math.random() * 400);
+  const child = spawn("node", [path.join(__dirname, "..", "server.js")], { env: { ...process.env, PORT: String(port), DATA_DIR: dir, RANK_AUTO: "off", APP_PASSWORD: "adminpass123", THREADS_WEB_ALLOW: "127.0.0.1" }, stdio: "ignore" });
+  const base = `http://127.0.0.1:${port}`;
+  let cookie = "";
+  const call = async (m, p, b) => { const r = await fetch(base + p, { method: m, headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) }, body: b ? JSON.stringify(b) : undefined }); const sc = r.headers.get("set-cookie"); if (sc) cookie = sc.split(";")[0]; let data = null; try { data = await r.json(); } catch { /* */ } return { status: r.status, data }; };
+  const url = `http://127.0.0.1:${web.address().port}/@duck_kkyu/post/BAleszFlmW`;
+  try {
+    for (let i = 0; i < 50; i++) { try { await fetch(base + "/healthz"); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+    await call("POST", "/api/login", { username: "admin", password: "adminpass123" });
+    const pid = (await call("POST", "/api/projects", { name: "p" })).data.id;
+    assert.strictEqual((await call("POST", "/api/threads/posts", { projectId: pid, url: "https://example.com/@a/post/XYZ" })).status, 400); // 허용 호스트 아님
+    const add = await call("POST", "/api/threads/posts", { projectId: pid, url: `http://127.0.0.1:${web.address().port}/share/AbC123/` }); // 공유 링크
+    assert.strictEqual(add.status, 201);
+    assert.strictEqual(add.data.source, "public");
+    assert.strictEqual((await call("POST", "/api/threads/posts", { projectId: pid, url })).status, 409); // 같은 글
+    let p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
+    assert.strictEqual(Object.values(p.history)[0].views, 57);
+    assert.ok(p.text.includes("협찬 후기"));
+    views = 1234; await call("POST", "/api/threads/run", { projectId: pid });
+    p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
+    assert.strictEqual(Object.values(p.history)[0].views, 1234); // 같은 날은 덮어쓴다
+    mode = "nonum"; await call("POST", "/api/threads/run", { postId: p.id });
+    p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
+    assert.match(p.lastError, /조회수를 찾지 못했습니다/);
+    assert.strictEqual(Object.values(p.history)[0].views, 1234); // 실패해도 기존 기록 유지
+    mode = "blocked"; await call("POST", "/api/threads/run", { postId: p.id });
+    assert.match((await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0].lastError, /HTTP 403/);
+    assert.strictEqual((await call("POST", `/api/threads/posts/${p.id}/manual`, { views: -1 })).status, 400);
+    assert.strictEqual((await call("POST", `/api/threads/posts/${p.id}/manual`, { views: 2000 })).status, 200);
+    p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
+    assert.strictEqual(Object.values(p.history)[0].views, 2000);
+    assert.strictEqual(p.lastError, null);
+  } finally { child.kill(); web.close(); }
+});
+
+test("parseViews: 여러 표기에서 조회수를 읽는다", () => {
+  const { parseViews } = require("../threads");
+  assert.strictEqual(parseViews("<span>스레드</span><span>조회 57회</span>"), 57);
+  assert.strictEqual(parseViews("조회 1,234회"), 1234);
+  assert.strictEqual(parseViews("조회 1.2천회"), 1200);
+  assert.strictEqual(parseViews("조회 3.4만회"), 34000);
+  assert.strictEqual(parseViews("12.5K views"), 12500);
+  assert.strictEqual(parseViews('{"view_count":881}'), 881);
+  assert.strictEqual(parseViews("<html>로그인</html>"), null);
 });

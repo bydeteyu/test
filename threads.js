@@ -63,25 +63,37 @@ function browserText(url) {
       await page.waitForFunction(() => /조회\s*\d|\d\s*views?\b/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
       // 글 아래 버튼(좋아요·답글·리포스트·공유)은 아이콘(svg aria-label) + 숫자 글자. 화면 맨 위(본문)의 첫 번째 것을 읽고, 숫자가 안 보이면 0.
       const acts = await page.evaluate(() => {
-        const KEYS = { likes: /^(좋아요|좋아요 취소|like|unlike)$/i, replies: /^(답글|댓글|reply|comment)$/i, reposts: /^(리포스트|repost)$/i, shares: /^(공유|공유하기|share)$/i };
-        const out = {}, seen = [];
-        for (const svg of document.querySelectorAll("svg[aria-label]")) {
-          const label = svg.getAttribute("aria-label").trim();
+        const KEYS = { likes: /^(좋아요|좋아요 취소|likes?|unlike)$/i, replies: /^(답글|댓글|reply|comment)$/i, reposts: /^(리포스트|repost)$/i, shares: /^(공유|공유하기|share)$/i };
+        const labelOf = (svg) => (svg.getAttribute("aria-label") || "").trim();
+        const all = [...document.querySelectorAll("svg[aria-label]")];
+        const labels = [...new Set(all.map(labelOf))].slice(0, 40);
+        // 왼쪽 메뉴에도 "좋아요" 아이콘이 있으므로, 좋아요·답글 아이콘이 함께 들어 있는 작은 줄(글 아래 버튼 줄)을 찾는다
+        let row = null;
+        for (const svg of all.filter((x) => KEYS.likes.test(labelOf(x)))) {
+          let el = svg;
+          for (let i = 0; i < 8 && el && !row; i++) {
+            el = el.parentElement;
+            if (el && [...el.querySelectorAll("svg[aria-label]")].some((x) => KEYS.replies.test(labelOf(x))) && el.getBoundingClientRect().height < 100) row = el;
+          }
+          if (row) break;
+        }
+        const out = {};
+        if (row) {
           for (const [k, re] of Object.entries(KEYS)) {
-            if (out[k] !== undefined || !re.test(label)) continue;
+            const svg = [...row.querySelectorAll("svg[aria-label]")].find((x) => re.test(labelOf(x)));
+            if (!svg) continue;
             const btn = svg.closest('[role="button"]');
             let el = btn || svg.parentElement, txt = el ? el.innerText || "" : "";
-            for (let i = 0; !btn && i < 2 && el && !/\d/.test(txt); i++) { el = el.parentElement; txt = el ? el.innerText || "" : ""; }
+            for (let i = 0; !btn && i < 2 && el !== row && el && !/\d/.test(txt); i++) { el = el.parentElement; txt = el ? el.innerText || "" : ""; }
             const m = /([\d][\d,.]*)\s*(천|만|억|[KkMm])?/.exec(txt);
             out[k] = m ? [m[1], m[2] || ""] : [null, ""];
-            seen.push(label);
           }
         }
-        return { out, seen };
+        return { out, seen: labels, bar: row ? row.outerHTML.slice(0, 1500) : null };
       });
       const counts = {};
       for (const [k, [n, u]] of Object.entries(acts.out)) counts[k] = n == null ? 0 : toCount(n, u);
-      return { text: await page.evaluate(() => document.body.innerText), title: await page.title(), counts, seen: acts.seen };
+      return { text: await page.evaluate(() => document.body.innerText), title: await page.title(), counts, seen: acts.seen, bar: acts.bar };
     } finally { await browser.close().catch(() => {}); }
   });
   browserQueue = job.catch(() => {});
@@ -385,7 +397,7 @@ function mount(app, { dataDir }) {
       if (!WEB_HOSTS.includes(u.hostname)) return res.status(400).json({ error: "invalid_url" });
       if (req.query.browser) {
         const b = await browserText(u.href);
-        return res.json({ mode: "browser", title: b.title, parsedViews: parseViews(b.text), counts: b.counts, iconLabels: b.seen, length: b.text.length, text: b.text.slice(0, 1500) });
+        return res.json({ mode: "browser", title: b.title, parsedViews: parseViews(b.text), counts: b.counts, iconLabels: b.seen, actionBar: b.bar, length: b.text.length, text: b.text.slice(0, 1500) });
       }
       const r = await fetch(u, { headers: { "User-Agent": WEB_UA, "Accept-Language": "ko-KR,ko;q=0.9", Accept: "text/html" }, redirect: "follow", signal: AbortSignal.timeout(20000) });
       const html = await r.text();
@@ -395,8 +407,9 @@ function mount(app, { dataDir }) {
   });
 
   app.post("/api/threads/run", requireAdmin, async (req, res) => {
-    const { projectId, postId } = req.body || {};
-    const r = await runAll((p) => (postId ? p.id === postId : !projectId || p.projectId === projectId));
+    const { projectId, postId, postIds } = req.body || {};
+    const ids = Array.isArray(postIds) ? new Set(postIds.map(String)) : null; // 체크한 글만 조회
+    const r = await runAll((p) => (ids ? ids.has(p.id) : postId ? p.id === postId : !projectId || p.projectId === projectId));
     if (r.busy) return res.status(409).json({ error: "busy" });
     res.json(r);
   });

@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { buildWorkbook } = require("./xlsx");
+const { squash } = require("./parse");
 const { normalize, fetchCafeViews, locatePost, resolveShortUrl, ensureMatchKey, CHANNELS, SOURCE, apiConfigured, fetchKeyword, findTarget, today, fetchHtml, extractPosts } = require("./core");
 
 const MAX_RANK = Number(process.env.RANK_MAX || 30);
@@ -10,6 +11,29 @@ const DELAY_MS = Number(process.env.RANK_DELAY_MS || 3000);
 const AUTO_HOUR = Number(process.env.RANK_AUTO_HOUR || 9); // KST
 const SNAP_MAX = Number(process.env.RANK_SNAPSHOT_MAX || 30); // 키워드 검색 시 저장할 상위 개수
 const KEEP_DAYS = 120;
+
+// 순위표에서 콘텐츠 제목을 누르면 열 글 주소. 등록한 주소 > 조회에서 알게 된 글(검색 유입 토큰 포함) > 최근 검색 결과에서 제목이 맞는 글 순.
+const NAVER_URL = /^https?:\/\/([a-z0-9-]+\.)*(naver\.com|naver\.me)(\/|$|\?)/i;
+function cafePostUrl(key, art) {
+  const m = /^cafe\.naver\.com\/([^/]+)\/(\d+)$/.exec(key || "");
+  if (!m) return null;
+  const base = /^\d+$/.test(m[1]) ? `https://cafe.naver.com/f-e/cafes/${m[1]}/articles/${m[2]}` : `https://cafe.naver.com/${m[1]}/${m[2]}`;
+  return art ? `${base}?art=${encodeURIComponent(art)}` : base;
+}
+function itemLink(it, db) {
+  const raw = String(it.match || "").trim();
+  if (raw) {
+    const url = /^https?:\/\//i.test(raw) ? raw : /^(m\.)?(cafe|blog)\.naver\.com\//i.test(raw) || /^naver\.me\//i.test(raw) ? "https://" + raw : null;
+    if (url && NAVER_URL.test(url)) return url;
+  }
+  const byKey = cafePostUrl(it.postKey, it.postArt) || cafePostUrl(it.matchKey, it.matchArt);
+  if (byKey) return byKey;
+  const t = squash(it.titleContains || "");
+  const snaps = (db.snapshots || {})[it.keyword] || {};
+  const dates = Object.keys(snaps).sort().reverse();
+  if (t) for (const d of dates) for (const ch of Object.values(snaps[d] || {})) for (const p of ch || []) if (squash(p.title || "").includes(t) && NAVER_URL.test(p.link || "")) return p.link;
+  return null;
+}
 
 function mount(app, dataDir) {
   const file = path.join(dataDir, "rank.json");
@@ -164,7 +188,7 @@ function mount(app, dataDir) {
       apiConfigured: SOURCE === "api" ? apiConfigured() : true,
       channels: Object.entries(CHANNELS).map(([key, c]) => ({ key, label: c.label })),
       running,
-      items: items.map((i) => ({ ...i, history: db.history[i.id] || {} })),
+      items: items.map((i) => ({ ...i, history: db.history[i.id] || {}, link: itemLink(i, db) })),
     });
   });
 

@@ -41,15 +41,43 @@ const metaOf = (html, prop) => {
   const m = new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]*content=["']([^"']*)["']`, "i").exec(html) || new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]*(?:property|name)=["']${prop}["']`, "i").exec(html);
   return m ? m[1].replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, "&") : "";
 };
+// Threads 페이지는 글·조회수를 자바스크립트로 나중에 채우므로, 단순 요청으로 못 읽으면 가상 브라우저(Chromium)로 열어 화면에 보이는 글자를 읽는다.
+// 한 번에 하나씩만 열어 메모리를 아낀다. THREADS_BROWSER=off 로 끌 수 있고, 실행 파일 위치는 CHROMIUM_PATH(기본 /usr/bin/chromium).
+let browserQueue = Promise.resolve();
+function browserText(url) {
+  const job = browserQueue.then(async () => {
+    if (process.env.THREADS_BROWSER === "off") throw new Error("가상 브라우저가 꺼져 있습니다");
+    let chromium;
+    try { ({ chromium } = require("playwright-core")); } catch { throw new Error("가상 브라우저(playwright-core)가 설치되어 있지 않습니다"); }
+    const exe = process.env.CHROMIUM_PATH || (fs.existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined);
+    const browser = await chromium.launch({ executablePath: exe, headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"] });
+    try {
+      const ctx = await browser.newContext({ locale: "ko-KR", timezoneId: "Asia/Seoul", userAgent: WEB_UA, viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForFunction(() => /조회\s*\d|\d\s*views?\b/i.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+      return { text: await page.evaluate(() => document.body.innerText), title: await page.title() };
+    } finally { await browser.close().catch(() => {}); }
+  });
+  browserQueue = job.catch(() => {});
+  return job;
+}
 async function fetchPublic(url) {
   const u = new URL(url);
   if (!WEB_HOSTS.includes(u.hostname)) throw new Error("Threads 게시글 주소가 아닙니다.");
   const res = await fetch(u, { headers: { "User-Agent": WEB_UA, "Accept-Language": "ko-KR,ko;q=0.9", Accept: "text/html" }, redirect: "follow", signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`공개 페이지를 열지 못했습니다(HTTP ${res.status}). 숫자를 직접 입력할 수 있습니다.`);
   const html = await res.text();
-  const views = parseViews(html);
-  if (views == null) throw new Error("공개 페이지에서 조회수를 찾지 못했습니다(로그인이 필요하거나 화면 구조가 다릅니다). 숫자를 직접 입력할 수 있습니다.");
-  return { views, text: (metaOf(html, "og:description") || metaOf(html, "og:title")).slice(0, 200) };
+  let views = parseViews(html), text = (metaOf(html, "og:description") || metaOf(html, "og:title")).slice(0, 200), why = "";
+  if (views == null) {
+    try {
+      const b = await browserText(u.href);
+      views = parseViews(b.text);
+      if (!text) text = b.text.split("\n").map((x) => x.trim()).filter((x) => x.length > 15)[0]?.slice(0, 200) || "";
+    } catch (e) { why = ` · 브라우저 읽기 실패: ${e.message.split("\n")[0].slice(0, 120)}`; }
+  }
+  if (views == null) throw new Error(`공개 페이지에서 조회수를 찾지 못했습니다(로그인이 필요하거나 화면 구조가 다릅니다${why}). 숫자를 직접 입력할 수 있습니다.`);
+  return { views, text };
 }
 
 // 공유 링크(/share/코드)는 게시글 주소(/@계정/post/코드)로 이동하는 짧은 주소 → 따라가서 실제 주소를 얻는다
@@ -329,6 +357,10 @@ function mount(app, { dataDir }) {
     try {
       const u = new URL(String(req.query.url || ""));
       if (!WEB_HOSTS.includes(u.hostname)) return res.status(400).json({ error: "invalid_url" });
+      if (req.query.browser) {
+        const b = await browserText(u.href);
+        return res.json({ mode: "browser", title: b.title, parsedViews: parseViews(b.text), length: b.text.length, text: b.text.slice(0, 1500) });
+      }
       const r = await fetch(u, { headers: { "User-Agent": WEB_UA, "Accept-Language": "ko-KR,ko;q=0.9", Accept: "text/html" }, redirect: "follow", signal: AbortSignal.timeout(20000) });
       const html = await r.text();
       const around = (re) => [...html.matchAll(re)].slice(0, 8).map((m) => html.slice(Math.max(0, m.index - 80), m.index + 120).replace(/\s+/g, " "));

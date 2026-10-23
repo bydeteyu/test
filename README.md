@@ -34,7 +34,7 @@ npm start
 
 ## Threads 조회수 추적 (`/threads.html`)
 
-Meta 공식 Threads API 로 **연결을 허용한 계정의 게시글**을 조회합니다. 연결하지 않은 계정(의뢰한 외부 계정 등)의 글은 **공개 링크**로 등록되어, 매일 공개 게시글 페이지에 보이는 `조회 N회`를 읽어 기록합니다(`threads.com`/`threads.net` 주소만 허용). 공개 페이지는 Meta 가 구조를 바꾸거나 로그인을 요구하면 읽지 못할 수 있으며, 이때 표에 사유가 표시되고 **직접입력** 버튼으로 숫자를 기록할 수 있습니다.
+Meta 공식 Threads API 로 **연결을 허용한 계정의 게시글**을 조회합니다. 연결하지 않은 계정(의뢰한 외부 계정 등)의 글은 **공개 링크**로 등록되어, 매일 공개 게시글 페이지에 보이는 `조회 N회`를 읽어 기록합니다(`threads.com`/`threads.net` 주소만 허용). 공개 페이지는 글·조회수를 자바스크립트로 나중에 채우므로, 단순 요청으로 못 읽으면 서버의 가상 브라우저(Chromium, Dockerfile 에서 설치)로 열어 화면의 글자를 읽습니다(`THREADS_BROWSER=off` 로 끔, 진단: `/api/threads/debug?url=…&browser=1`). Meta 가 구조를 바꾸거나 로그인을 요구하면 읽지 못할 수 있으며, 이때 표에 사유가 표시되고 **직접입력** 버튼으로 숫자를 기록할 수 있습니다.
 
 1. Meta 개발자 앱(Threads API 사용 사례)을 만들고 리디렉션 콜백 URL 에 `https://배포주소/api/threads/callback` 을 등록합니다. 권한: `threads_basic`, `threads_manage_insights`. 연결할 계정은 앱의 Threads 테스터로 추가·수락합니다.
 2. 서버 환경 변수 `THREADS_APP_ID`, `THREADS_APP_SECRET` 을 설정합니다(선택: `THREADS_REDIRECT_URI`).

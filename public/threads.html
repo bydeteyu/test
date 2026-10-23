@@ -73,8 +73,13 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
   <section class="card admin-only" id="accountCard">
     <h2>연결된 Threads 계정</h2>
     <div id="accounts" class="meta"></div>
-    <div><button class="primary" id="connectBtn" type="button">Threads 계정 연결</button></div>
-    <div class="meta">버튼을 누르면 Threads 로그인 창으로 이동합니다. 조회수를 보려는 <b>계정 본인이 로그인해서 허용</b>해야 합니다. 연결은 약 60일마다 서버가 자동으로 갱신합니다.</div>
+    <form id="tokenForm" class="row">
+      <label><b>액세스 토큰으로 연결</b><input name="token" type="password" autocomplete="off" required placeholder="Meta 앱의 '사용자 토큰 생성기'에서 받은 토큰을 붙여넣으세요"></label>
+      <button class="primary" type="submit">토큰으로 연결</button>
+    </form>
+    <div class="msg err" id="tokenErr" hidden></div>
+    <div class="meta">토큰은 Meta 개발자 앱 → 이용 사례 → Threads API → 설정 → <b>사용자 토큰 생성기</b>에서 연결할 계정(Threads 테스터)을 선택해 만듭니다. 장기 토큰(약 60일)이며 서버가 만료 전에 자동으로 갱신합니다. 토큰은 화면에 다시 표시되지 않습니다.</div>
+    <div class="row"><button type="button" id="connectBtn">Threads 로그인 창으로 연결(OAuth)</button><span class="sub" id="oauthNote"></span></div>
   </section>
 
   <section class="card admin-only" id="addCard">
@@ -195,10 +200,9 @@ async function refresh() {
   if (!pid) { $("#table").innerHTML = '<div class="meta">프로젝트가 없습니다.</div>'; return; }
   data = await api("/api/threads?projectId=" + encodeURIComponent(pid));
   if (!isViewer()) {
-    $("#setup").hidden = data.configured;
-    $("#addCard").hidden = !data.configured;
-    $("#accountCard").hidden = !data.configured;
+    $("#setup").hidden = true; // OAuth 설정 안내는 토큰 연결을 쓰지 않을 때만 의미가 있어 숨긴다
     $("#connectBtn").disabled = !data.configured;
+    $("#oauthNote").textContent = data.configured ? "" : "(OAuth는 서버 환경 변수 THREADS_APP_ID/SECRET 설정이 필요합니다. 토큰 연결을 쓰면 필요 없습니다)";
     $("#accounts").innerHTML = data.accounts.length ? data.accounts.map((a) => `<div class="row" style="align-items:center;gap:8px"><b>@${esc(a.username)}</b><span class="sub">만료 ${esc((a.expiresAt || "").slice(0, 10))}</span>${a.error ? '<span class="msg err" style="padding:2px 8px">다시 연결 필요</span>' : ""}<button class="danger" data-delacc="${esc(a.id)}">연결 해제</button></div>`).join("") : "아직 연결된 계정이 없습니다.";
     $("#runBtn").disabled = data.running || !data.posts.length;
   }
@@ -207,6 +211,12 @@ async function refresh() {
 }
 $("#project").addEventListener("change", () => { localStorage.setItem("threadsProject", $("#project").value); refresh(); });
 $("#connectBtn").addEventListener("click", () => { location.href = "/api/threads/connect?projectId=" + encodeURIComponent($("#project").value); });
+$("#tokenForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#tokenErr").hidden = true;
+  try { const r = await api("/api/threads/accounts/token", "POST", { projectId: $("#project").value, token: new FormData(e.target).get("token") }); e.target.reset(); flash(`Threads 계정(@${r.username})을 연결했습니다.`); await refresh(); }
+  catch (er) { $("#tokenErr").textContent = er.message; $("#tokenErr").hidden = false; }
+});
 $("#addForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("#addErr").hidden = true;

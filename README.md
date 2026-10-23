@@ -39,6 +39,7 @@ Meta 공식 Threads API 로 **연결을 허용한 계정의 게시글**만 조�
 1. Meta 개발자 앱(Threads API 사용 사례)을 만들고 리디렉션 콜백 URL 에 `https://배포주소/api/threads/callback` 을 등록합니다. 권한: `threads_basic`, `threads_manage_insights`. 연결할 계정은 앱의 Threads 테스터로 추가·수락합니다.
 2. 서버 환경 변수 `THREADS_APP_ID`, `THREADS_APP_SECRET` 을 설정합니다(선택: `THREADS_REDIRECT_URI`).
 3. 관리자가 `/threads.html` 에서 프로젝트별로 계정을 연결하고 게시글 주소를 등록하면, 매일 조회수·좋아요·댓글·리포스트를 기록하고 더보기에서 누적 조회수(선)·일별 증가(막대) 차트를 봅니다. 회원 계정은 자기 프로젝트의 현황만 볼 수 있습니다.
+   - **OAuth 콜백 주소를 저장할 수 없을 때(Meta 설정 양식 오류 등)**: 연결할 계정을 앱의 Threads 테스터로 추가·수락한 뒤, 앱 → 이용 사례 → Threads API → 설정 → **사용자 토큰 생성기**에서 장기 토큰을 만들어 `/threads.html` 의 "액세스 토큰으로 연결"에 붙여넣습니다(환경 변수 불필요).
 4. 계정 토큰은 약 60일 만료이며 서버가 만료 10일 전부터 자동 갱신합니다. 데이터는 `DATA_DIR/threads.json` 에 저장됩니다(토큰 포함, 볼륨 필수).
 
 ## 데이터 보존 (중요)

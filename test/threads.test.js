@@ -110,3 +110,35 @@ test("Threads: 환경 변수가 없으면 연결/등록이 막히고 안내만 �
     assert.strictEqual((await get("/api/threads/connect?projectId=x")).status, 400);
   } finally { child.kill(); }
 });
+
+test("Threads: OAuth 설정 없이 액세스 토큰만으로 연결 → 등록 → 조회수 기록", async () => {
+  const mock = await startMock();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "threads-test3-"));
+  const port = 4800 + Math.floor(Math.random() * 400);
+  const child = spawn("node", [path.join(__dirname, "..", "server.js")], { env: { ...process.env, PORT: String(port), DATA_DIR: dir, RANK_AUTO: "off", APP_PASSWORD: "adminpass123", THREADS_APP_ID: "", THREADS_APP_SECRET: "", THREADS_GRAPH_BASE: mock.base }, stdio: "ignore" });
+  const base = `http://127.0.0.1:${port}`;
+  let cookie = "";
+  const call = async (m, p, b) => { const r = await fetch(base + p, { method: m, redirect: "manual", headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) }, body: b ? JSON.stringify(b) : undefined }); const sc = r.headers.get("set-cookie"); if (sc) cookie = sc.split(";")[0]; let data = null; try { data = await r.json(); } catch { /* */ } return { status: r.status, data }; };
+  try {
+    for (let i = 0; i < 50; i++) { try { await fetch(base + "/healthz"); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
+    await call("POST", "/api/login", { username: "admin", password: "adminpass123" });
+    const pid = (await call("POST", "/api/projects", { name: "교보라이프플래닛" })).data.id;
+    assert.strictEqual((await call("POST", "/api/threads/accounts/token", { projectId: pid, token: "short" })).status, 400);
+    assert.strictEqual((await call("POST", "/api/threads/accounts/token", { projectId: pid, token: "BAD" })).status, 400);
+    const ok = await call("POST", "/api/threads/accounts/token", { projectId: pid, token: "LONGTOKEN-abcdefghijklmnop" });
+    assert.strictEqual(ok.status, 201);
+    assert.strictEqual(ok.data.username, "lifeplanet_official");
+    const list = (await call("GET", `/api/threads?projectId=${pid}`)).data;
+    assert.strictEqual(list.accounts.length, 1);
+    assert.ok(!JSON.stringify(list).includes("LONGTOKEN"), "토큰은 응답에 나가면 안 됨");
+    // OAuth 앱 설정이 없어도 게시글 등록/조회가 된다
+    const add = await call("POST", "/api/threads/posts", { projectId: pid, url: "https://www.threads.com/@lifeplanet_official/post/TargetPost1" });
+    assert.strictEqual(add.status, 201);
+    const p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
+    assert.strictEqual(Object.values(p.history)[0].views, 125);
+    assert.strictEqual((await call("POST", "/api/threads/run", { postId: p.id })).data.ok, 1);
+    // 같은 계정을 다시 붙여넣어도 중복 계정이 생기지 않는다
+    await call("POST", "/api/threads/accounts/token", { projectId: pid, token: "LONGTOKEN-abcdefghijklmnop" });
+    assert.strictEqual((await call("GET", `/api/threads?projectId=${pid}`)).data.accounts.length, 1);
+  } finally { child.kill(); mock.srv.close(); }
+});

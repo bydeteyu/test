@@ -184,6 +184,7 @@ test("Threads: 매일 자동 기록이 서버 스케줄로 실행되고 하루�
 test("Threads: 공개 링크 등록 → 페이지의 조회수 자동 기록 → 못 읽으면 직접 입력", async () => {
   let views = 57, mode = "ok";
   const web = http.createServer((req, res) => {
+    if (req.url.startsWith("/share/")) { res.writeHead(302, { location: "/@duck_kkyu/post/BAleszFlmW" }); return res.end(); }
     if (mode === "blocked") { res.writeHead(403); return res.end("no"); }
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(mode === "nonum" ? "<html>로그인</html>" : `<html><head><meta property="og:description" content="협찬 후기 &quot;좋아요&quot;"></head><body><h1>스레드</h1><span>조회 ${views.toLocaleString()}회</span></body></html>`);
@@ -201,9 +202,10 @@ test("Threads: 공개 링크 등록 → 페이지의 조회수 자동 기록 →
     await call("POST", "/api/login", { username: "admin", password: "adminpass123" });
     const pid = (await call("POST", "/api/projects", { name: "p" })).data.id;
     assert.strictEqual((await call("POST", "/api/threads/posts", { projectId: pid, url: "https://example.com/@a/post/XYZ" })).status, 400); // 허용 호스트 아님
-    const add = await call("POST", "/api/threads/posts", { projectId: pid, url });
+    const add = await call("POST", "/api/threads/posts", { projectId: pid, url: `http://127.0.0.1:${web.address().port}/share/AbC123/` }); // 공유 링크
     assert.strictEqual(add.status, 201);
     assert.strictEqual(add.data.source, "public");
+    assert.strictEqual((await call("POST", "/api/threads/posts", { projectId: pid, url })).status, 409); // 같은 글
     let p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
     assert.strictEqual(Object.values(p.history)[0].views, 57);
     assert.ok(p.text.includes("협찬 후기"));

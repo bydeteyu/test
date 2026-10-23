@@ -52,6 +52,19 @@ async function fetchPublic(url) {
   return { views, text: (metaOf(html, "og:description") || metaOf(html, "og:title")).slice(0, 200) };
 }
 
+// 공유 링크(/share/코드)는 게시글 주소(/@계정/post/코드)로 이동하는 짧은 주소 → 따라가서 실제 주소를 얻는다
+async function resolveShare(url) {
+  let u;
+  try { u = new URL(String(url || "").trim()); } catch { return url; }
+  if (!WEB_HOSTS.includes(u.hostname) || !/^\/share\//.test(u.pathname)) return url;
+  try {
+    const res = await fetch(u, { headers: { "User-Agent": WEB_UA, "Accept-Language": "ko-KR,ko;q=0.9" }, redirect: "follow", signal: AbortSignal.timeout(20000) });
+    const m = /\/post\/[A-Za-z0-9_-]+/.exec(res.url) || /\/@[\w.]+\/post\/[A-Za-z0-9_-]+/.exec(await res.text().catch(() => ""));
+    if (/\/post\//.test(res.url)) return res.url;
+    return m ? new URL(m[0], u.origin).href : url;
+  } catch { return url; }
+}
+
 function mount(app, { dataDir }) {
   const file = path.join(dataDir, "threads.json");
   const load = () => {
@@ -265,9 +278,10 @@ function mount(app, { dataDir }) {
   });
 
   app.post("/api/threads/posts", requireAdmin, async (req, res) => {
-    const { projectId, url } = req.body || {};
+    const { projectId } = req.body || {};
+    const url = await resolveShare((req.body || {}).url);
     const code = shortcodeOf(url);
-    if (!projectId || !code) return res.status(400).json({ error: "invalid_url", message: "Threads 게시글 주소(…/post/코드)를 입력하세요." });
+    if (!projectId || !code) return res.status(400).json({ error: "invalid_url", message: "Threads 게시글 주소(…/post/코드 또는 공유 링크)를 입력하세요. 공유 링크를 열지 못했다면 브라우저 주소창에 나타난 주소를 붙여넣어 보세요." });
     const db = load();
     if (db.posts.some((p) => p.projectId === projectId && p.shortcode === code)) return res.status(409).json({ error: "exists", message: "이미 등록된 게시글입니다." });
     let found = null, account = null;

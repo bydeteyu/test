@@ -129,7 +129,7 @@ function lastTwo(p) {
 function metricCell(p, k, strong) {
   const { last, prev } = lastTwo(p);
   const v = last ? p.history[last][k] : null;
-  if (v == null) return '<td class="sub">-</td>';
+  if (v == null) return p.source === "public" && k !== "views" ? '<td class="sub" title="로그인하지 않은 공개 페이지에는 이 숫자가 표시되지 않습니다">미제공</td>' : '<td class="sub">-</td>';
   const pv = prev ? p.history[prev][k] : null;
   const d = pv != null ? v - pv : null;
   const dl = d == null ? "" : ` <span class="delta${d === 0 ? " zero" : ""}">(${d > 0 ? "+" : d < 0 ? "−" : "+"}${fmtN(Math.abs(d))})</span>`;

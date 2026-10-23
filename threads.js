@@ -393,7 +393,9 @@ function mount(app, { dataDir }) {
   // 진단(관리자): 서버가 공개 페이지로 실제로 받는 내용을 요약해 보여준다(조회수를 못 읽을 때 원인 확인용)
   app.get("/api/threads/debug", requireAdmin, async (req, res) => {
     try {
-      const u = new URL(String(req.query.url || ""));
+      // n=2 처럼 번호를 주면 등록된 공개 글의 n번째 주소를 쓴다(주소를 복사하지 않아도 진단 가능)
+      const pub = load().posts.filter((p) => p.source === "public");
+      const u = new URL(req.query.n ? (pub[Number(req.query.n) - 1] || {}).url : String(req.query.url || ""));
       if (!WEB_HOSTS.includes(u.hostname)) return res.status(400).json({ error: "invalid_url" });
       if (req.query.browser) {
         const b = await browserText(u.href);

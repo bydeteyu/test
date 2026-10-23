@@ -203,10 +203,10 @@ async function refresh() {
     $("#setup").hidden = true; // OAuth 설정 안내는 토큰 연결을 쓰지 않을 때만 의미가 있어 숨긴다
     $("#connectBtn").disabled = !data.configured;
     $("#oauthNote").textContent = data.configured ? "" : "(OAuth는 서버 환경 변수 THREADS_APP_ID/SECRET 설정이 필요합니다. 토큰 연결을 쓰면 필요 없습니다)";
-    $("#accounts").innerHTML = data.accounts.length ? data.accounts.map((a) => `<div class="row" style="align-items:center;gap:8px"><b>@${esc(a.username)}</b><span class="sub">만료 ${esc((a.expiresAt || "").slice(0, 10))}</span>${a.error ? '<span class="msg err" style="padding:2px 8px">다시 연결 필요</span>' : ""}<button class="danger" data-delacc="${esc(a.id)}">연결 해제</button></div>`).join("") : "아직 연결된 계정이 없습니다.";
+    $("#accounts").innerHTML = data.accounts.length ? data.accounts.map((a) => `<div class="row" style="align-items:center;gap:8px"><b>@${esc(a.username)}</b><span class="sub">만료 ${esc((a.expiresAt || "").slice(0, 10))}${a.lastRefreshAt ? " · 마지막 갱신 " + esc(a.lastRefreshAt.slice(0, 10)) : ""}</span>${a.error ? '<span class="msg err" style="padding:2px 8px">다시 연결 필요</span>' : ""}${a.refreshError && !a.error ? `<span class="sub" style="color:var(--warn)" title="${esc(a.refreshError)}">갱신 대기(발급 24시간 후 가능)</span>` : ""}<button data-refacc="${esc(a.id)}">지금 갱신</button><button class="danger" data-delacc="${esc(a.id)}">연결 해제</button></div>`).join("") : "아직 연결된 계정이 없습니다.";
     $("#runBtn").disabled = data.running || !data.posts.length;
   }
-  $("#status").textContent = data.running ? "기록 중입니다…" : "";
+  $("#status").textContent = data.running ? "기록 중입니다…" : data.lastAutoDate ? `마지막 자동 기록: ${data.lastAutoDate}` : "아직 자동 기록 전입니다(매일 오전 9시 이후 첫 확인 시점에 기록됩니다).";
   render();
 }
 $("#project").addEventListener("change", () => { localStorage.setItem("threadsProject", $("#project").value); refresh(); });
@@ -237,6 +237,11 @@ $("#table").addEventListener("click", async (e) => {
   } catch (er) { flash(er.message, "err"); }
 });
 $("#accounts").addEventListener("click", async (e) => {
+  const ref = e.target.dataset.refacc;
+  if (ref) {
+    try { const r = await api("/api/threads/accounts/" + ref + "/refresh", "POST"); flash(`토큰을 갱신했습니다. 새 만료일: ${r.expiresAt.slice(0, 10)}`); } catch (er) { flash(er.message, "err"); }
+    return refresh();
+  }
   const id = e.target.dataset.delacc;
   if (id && confirm("계정 연결을 해제할까요? 이 계정의 등록 게시글과 기록도 함께 삭제됩니다.")) { await api("/api/threads/accounts/" + id, "DELETE"); await refresh(); }
 });

@@ -14,8 +14,10 @@ test("확장 프로그램: 등록된 글을 열어 조회수·좋아요·댓글�
   if (!exe) return t.skip("Chromium 없음");
 
   // 가짜 Threads: 로그인된 화면(글 + 아래 버튼 줄)을 자바스크립트로 그린다
-  const svg = (l) => `<svg style="width:20px;height:20px" aria-label="${l}"></svg>`;
-  const inner = `<nav>${svg("홈")}<a>${svg("좋아요")}</a></nav><h1>스레드</h1><div>조회 ${"3"}07회</div><p>본문 글입니다</p><div style="display:flex;gap:12px"><div role="button">${svg("좋아요 취소")}<span>2</span></div><div role="button">${svg("답글")}<span>3</span></div><div role="button">${svg("리포스트")}</div><div role="button">${svg("공유하기")}</div></div>`;
+  // 실제 화면처럼 글 아래 아이콘에는 이름표가 없고, 숫자는 아이콘 옆 글자이며, 왼쪽 메뉴 아이콘에만 이름표가 있다
+  const ic = (l) => `<svg ${l ? `aria-label="${l}"` : ""} viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M1 1h10v10H1z"/></svg>`;
+  const bar = (a) => `<div style="display:flex;gap:18px;align-items:center;margin:8px 0">${a.map((n) => `<div style="display:flex;gap:4px;align-items:center"><div role="button">${ic("")}</div>${n != null ? `<span>${n}</span>` : ""}</div>`).join("")}</div>`;
+  const inner = `<div style="position:fixed;left:0;top:0;width:200px">${["Threads", "홈", "검색", "메시지", "알림", "프로필", "인사이트", "저장됨", "좋아요"].map((l) => `<div style="margin:12px">${ic(l)} ${l}</div>`).join("")}</div><div style="margin-left:400px;width:520px"><h2>스레드</h2><div>조회 ${"3"}07회</div><div style="display:flex;justify-content:space-between"><b>user</b>${ic("더 보기")}</div><p>본문 글입니다</p>${bar([2, 3, null, null])}<hr><div>${ic("정렬")} 인기순</div><hr><div><b>bbs</b> 나오지</div>${bar([null, null, null, null])}</div>`;
   const web = http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(`<html><body><div id="r">로딩…</div><script>setTimeout(()=>{document.getElementById("r").innerHTML=new TextDecoder().decode(Uint8Array.from(atob("${Buffer.from(inner).toString("base64")}"),(c)=>c.charCodeAt(0)))},500)</script></body></html>`);

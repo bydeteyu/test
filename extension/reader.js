@@ -50,10 +50,15 @@ function readThreadsPage() {
     NAMES.forEach(([k, re], idx) => {
       const svg = byOrder ? icons[idx] : icons.find((x) => re.test(label(x)));
       if (!svg) return;
-      const btn = svg.closest('[role="button"]') || svg.parentElement;
-      const mm = /([\d][\d,.]*)\s*(천|만|억|[KkMm])?/.exec(btn ? btn.innerText || "" : "");
+      // 숫자는 버튼 안일 수도, 아이콘 하나만 감싼 바깥 요소 안일 수도 있다 → 아이콘 하나만 들어 있는 범위에서 위로 올라가며 숫자를 찾는다
+      let el = svg, txt = "";
+      while (el && el !== row && el.querySelectorAll("svg[aria-label]").length <= 1 && !/\d/.test(txt)) {
+        txt = (el.innerText || "") + " " + (el.getAttribute && el.getAttribute("aria-label") && el !== svg ? el.getAttribute("aria-label") : "");
+        el = el.parentElement;
+      }
+      const mm = /([\d][\d,.]*)\s*(천|만|억|[KkMm])?/.exec(txt);
       out[k] = mm ? toN(mm[1], mm[2]) : 0; // 0 이면 숫자가 그려지지 않는다
     });
   }
-  return { views, ...out, loggedIn, foundBar: !!row, byOrder, labels, url: location.href };
+  return { views, ...out, loggedIn, foundBar: !!row, byOrder, labels, barHtml: row ? row.outerHTML.slice(0, 1800) : null, url: location.href };
 }

@@ -417,6 +417,8 @@ function mount(app, { dataDir }) {
     if (!Object.keys(got).length) return res.status(400).json({ error: "invalid_input", message: "기록할 숫자가 없습니다." });
     const h = (p.history ??= {});
     h[today()] = { ...(h[today()] || {}), ...got };
+    const t = String((req.body || {}).text || "").trim().slice(0, 200);
+    if (t && (!p.text || /^[\w.]+$/.test(p.text))) p.text = t; // 본문이 아직 없는 글만 채운다(이미 있는 제목은 유지)
     p.lastError = null;
     p.extAt = new Date().toISOString();
     save(db);

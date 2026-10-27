@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Threads 조회수 수집기",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "순위 체크(Threads) 프로그램에 등록된 글을 로그인된 Chrome 으로 열어 조회수·좋아요·댓글을 읽어 보냅니다.",
   "permissions": ["alarms", "storage", "tabs", "scripting"],
   "host_permissions": ["https://www.threads.com/*", "https://www.threads.net/*"],

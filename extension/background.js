@@ -58,6 +58,7 @@ async function run() {
         if (!r || r.views == null) throw new Error("조회수를 읽지 못했습니다");
         if (!r.loggedIn) status.noLogin++;
         const body = { postId: p.id, views: r.views };
+        if (r.loggedIn && r.text) body.text = r.text;
         if (r.loggedIn && r.foundBar) for (const k of ["likes", "replies", "reposts", "shares"]) if (r[k] != null) body[k] = r[k];
         await api(cfg, "/api/threads/ext/report", body);
         status.ok++;

@@ -69,6 +69,14 @@ function readThreadsPage() {
     items.forEach((ic, idx) => { if (keys[idx]) out[keys[idx]] = 0; });
     for (const nn of nums) if (keys[nn.icon]) out[keys[nn.icon]] = nn.v;
   }
+  // 본문: 제목("조회 N회") 아래 ~ 버튼 줄 위에 있는 글자에서 아이디·시간·숫자·메뉴 줄을 빼고 이어 붙인다
+  let body = "";
+  if (bar) {
+    const barTop = Math.min(...bar.items.map((i) => i.r.top));
+    const skip = /^[\w.]+$|^[\d,.]+\s*(천|만|억|[KkMm])?$|^\d+\s*(초|분|시간|일|주)$|^(수정됨|번역 보기|더 보기|팔로우|스레드)$/;
+    body = textNodes.filter((n) => { const r = rectOfText(n); return r.top > top && r.bottom <= barTop + 2 && r.left >= leftEdge; })
+      .map((n) => n.nodeValue.trim()).filter((t) => t && !skip.test(t)).join(" ").replace(/\s+/g, " ").slice(0, 200);
+  }
   const labels = [...new Set([...document.querySelectorAll("svg[aria-label]")].map((s) => (s.getAttribute("aria-label") || "").trim()))].slice(0, 40);
-  return { views, ...out, loggedIn, foundBar: !!bar, iconCount: bar ? bar.items.length : 0, numbers: nums, bounds: { top: Math.round(top), bottom: Number.isFinite(bottom) ? Math.round(bottom) : null }, labels, url: location.href };
+  return { views, ...out, text: body, loggedIn, foundBar: !!bar, iconCount: bar ? bar.items.length : 0, numbers: nums, bounds: { top: Math.round(top), bottom: Number.isFinite(bottom) ? Math.round(bottom) : null }, labels, url: location.href };
 }

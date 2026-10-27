@@ -299,11 +299,12 @@ test("Threads: 확장 프로그램 키로 대상 조회·숫자 보고, 키 없�
     assert.deepStrictEqual(tasks.data.posts.map((p) => p.id), [id]);
     assert.strictEqual((await call("POST", "/api/threads/ext/report", { postId: id }, { "X-Ext-Key": key })).status, 400);
     assert.strictEqual((await call("POST", "/api/threads/ext/report", { postId: "nope", views: 1 }, { "X-Ext-Key": key })).status, 404);
-    assert.strictEqual((await call("POST", "/api/threads/ext/report", { postId: id, views: 55, likes: 2, replies: 3, reposts: 0 }, { "X-Ext-Key": key })).status, 200);
+    assert.strictEqual((await call("POST", "/api/threads/ext/report", { postId: id, views: 55, likes: 2, replies: 3, reposts: 0, text: "확장이 읽은 본문" }, { "X-Ext-Key": key })).status, 200);
     cookie = saved;
     let p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
     assert.deepStrictEqual(Object.values(p.history)[0], { views: 55, likes: 2, replies: 3, reposts: 0 });
     assert.ok(p.extAt);
+    assert.strictEqual(p.text, "확장이 읽은 본문"); // 본문이 없던 글은 확장이 보낸 본문으로 채워진다
     await call("POST", "/api/threads/run", { postIds: [id] }); // 서버 조회(조회수만)가 확장이 넣은 좋아요·댓글을 지우면 안 된다
     p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
     assert.deepStrictEqual(Object.values(p.history)[0], { views: 50, likes: 2, replies: 3, reposts: 0 });

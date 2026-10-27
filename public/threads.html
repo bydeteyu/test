@@ -158,7 +158,8 @@ function render() {
   let h = '<div class="table-scroll"><table><colgroup>' + cols.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr>' + (admin ? `<th><input type="checkbox" id="selAll" aria-label="전체 선택"${allOn ? " checked" : ""}></th>` : "") + '<th class="l">게시글</th><th>최종 조회일</th><th>조회수</th><th>좋아요</th><th>댓글</th><th>리포스트</th><th></th></tr></thead><tbody>';
   for (const p of posts) {
     const { last } = lastTwo(p);
-    const title = esc(p.text || p.url);
+    const um = /@([^/]+)\/post\/([^/?#]+)/.exec(p.url || "");
+    const title = esc(p.text || (um ? `@${decodeURIComponent(um[1])} · ${um[2]} (본문 없음)` : p.url));
     const pub = p.source === "public";
     h += `<tr>${admin ? `<td><input type="checkbox" data-sel="${esc(p.id)}" aria-label="조회할 게시글 선택"${selected.has(p.id) ? " checked" : ""}></td>` : ""}<td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${pub ? '<div class="sub">공개 링크</div>' : ""}${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
     h += metricCell(p, "views", true) + metricCell(p, "likes") + metricCell(p, "replies") + metricCell(p, "reposts");

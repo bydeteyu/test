@@ -54,21 +54,20 @@ function readThreadsPage() {
   if (bar) {
     const items = bar.items.sort((a, b) => a.r.left - b.r.left);
     const band = [Math.min(...items.map((i) => i.r.top)) - 8, Math.max(...items.map((i) => i.r.bottom)) + 8];
+    // 숫자는 아이콘 바로 오른쪽에 붙어 있을 때만 그 아이콘의 숫자로 인정한다(같은 높이의 다른 영역 숫자는 무시)
+    const lastRight = items[items.length - 1].r.right;
     for (const n of textNodes) {
       const t = n.nodeValue.trim();
       const mm = /^([\d][\d,.]*)\s*(천|만|억|[KkMm])?$/.exec(t);
       if (!mm) continue;
       const r = rectOfText(n);
-      if (r.top < band[0] || r.bottom > band[1] || r.left < items[0].r.left) continue;
-      nums.push({ t, x: Math.round(r.left), v: toN(mm[1], mm[2]) });
+      if (r.top < band[0] || r.bottom > band[1] || r.left < items[0].r.left || r.left > lastRight + 80) continue;
+      const idx = items.findIndex((ic, i) => r.left >= ic.r.right - 6 && (i === items.length - 1 ? r.left <= ic.r.right + 80 : r.left < items[i + 1].r.left - 2));
+      if (idx >= 0) nums.push({ t, x: Math.round(r.left), v: toN(mm[1], mm[2]), icon: idx });
     }
     const keys = ["likes", "replies", "reposts", "shares"];
     items.forEach((ic, idx) => { if (keys[idx]) out[keys[idx]] = 0; });
-    for (const nn of nums) {
-      let idx = -1;
-      items.forEach((ic, i) => { if (ic.r.left <= nn.x + 2) idx = i; });
-      if (idx >= 0 && keys[idx]) out[keys[idx]] = nn.v;
-    }
+    for (const nn of nums) if (keys[nn.icon]) out[keys[nn.icon]] = nn.v;
   }
   const labels = [...new Set([...document.querySelectorAll("svg[aria-label]")].map((s) => (s.getAttribute("aria-label") || "").trim()))].slice(0, 40);
   return { views, ...out, loggedIn, foundBar: !!bar, iconCount: bar ? bar.items.length : 0, numbers: nums, bounds: { top: Math.round(top), bottom: Number.isFinite(bottom) ? Math.round(bottom) : null }, labels, url: location.href };

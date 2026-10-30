@@ -656,6 +656,40 @@ def api_read_marks():
     return jsonify({"ok": True})
 
 
+@app.route("/api/collect/debug")
+def api_collect_debug():
+    """특정 키워드의 통합검색에서 글별로 잡히는 앵커 텍스트를 점검 (제목 누락 진단)."""
+    from bs4 import BeautifulSoup
+    from naver_cafe_collector import article_key, _anchor_visible_text, find_date, extract_posts
+    kw = request.args.get("kw", "").strip()
+    if not kw:
+        return jsonify({"error": "kw 파라미터를 입력하세요."}), 400
+    try:
+        html = fetch_html(kw, headless=True)
+    except Exception as e:
+        return jsonify({"error": f"fetch 실패: {e}"}), 500
+    soup = BeautifulSoup(html, "html.parser")
+    per_article = {}
+    for a in soup.find_all("a", href=True):
+        key, _ = article_key(a["href"])
+        if not key:
+            continue
+        per_article.setdefault(key, []).append({
+            "text": _anchor_visible_text(a)[:120],
+            "date": find_date(a),
+        })
+    # 앞쪽 몇 개만
+    sample = dict(list(per_article.items())[:6])
+    posts = extract_posts(html)[:6]
+    return jsonify({
+        "keyword": kw,
+        "html_len": len(html),
+        "article_count": len(per_article),
+        "anchors_per_article_sample": sample,
+        "extracted_posts_sample": posts,
+    })
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

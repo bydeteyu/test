@@ -163,9 +163,26 @@ def make_canonical_url(href: str, slug: str, article_id: str) -> str:
     return href if href.startswith("http") else "https://" + href
 
 
+def _is_dateish(text: str) -> bool:
+    """텍스트 전체가 날짜/상대시간뿐이면 True (제목이 아니라 날짜 링크)."""
+    t = (text or "").strip().rstrip(".")
+    if not t:
+        return True
+    return bool(_DATE_RE.fullmatch(t)) or t.replace(".", "").isdigit()
+
+
+def _better_title(new: str, cur: str) -> bool:
+    """new 제목이 cur보다 더 '제목다우면' True."""
+    new_bad, cur_bad = _is_dateish(new), _is_dateish(cur)
+    if new_bad != cur_bad:
+        return cur_bad          # cur이 날짜뿐이면 new로 교체
+    return len(new) > len(cur)  # 둘 다 비슷하면 더 긴 쪽
+
+
 def extract_posts(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
-    seen, posts = set(), []
+    best: dict[str, dict] = {}
+    order: list[str] = []
 
     for a in soup.find_all("a", href=True):
         key, slug_from_url = article_key(a["href"])
@@ -174,25 +191,32 @@ def extract_posts(html: str) -> list[dict]:
         title = clean_title(_anchor_visible_text(a))
         if not title or len(title) < 2:
             continue
-        if key in seen:
-            continue
-        seen.add(key)
 
         cafe_name, cafe_slug = find_cafe_info(a)
-
-        # 슬러그 결정: 구형 URL에서 직접 추출 or 카페 홈 링크에서 추출
         slug = slug_from_url or cafe_slug or ""
-        # 글 번호 추출
         m_new = ARTICLE_NEW.search(a["href"])
         m_old = ARTICLE_OLD.search(a["href"])
         article_id = m_new.group(2) if m_new else (m_old.group(2) if m_old else "")
-
         canonical = make_canonical_url(a["href"], slug, article_id)
         cafe = cafe_name or slug or "(확인필요)"
         date = find_date(a)
-        posts.append({"제목": title, "카페이름": cafe, "작성일": date, "링크": canonical})
+        candidate = {"제목": title, "카페이름": cafe, "작성일": date, "링크": canonical}
 
-    return posts
+        if key not in best:
+            best[key] = candidate
+            order.append(key)
+        else:
+            cur = best[key]
+            # 제목은 더 나은 쪽으로
+            if _better_title(candidate["제목"], cur["제목"]):
+                cur["제목"] = candidate["제목"]
+            # 카페명/작성일은 비어있으면 채워 넣기 (앵커마다 주변 구조가 조금씩 다름)
+            if cur["카페이름"] in ("", "(확인필요)") and cafe not in ("", "(확인필요)"):
+                cur["카페이름"] = cafe
+            if not cur["작성일"] and date:
+                cur["작성일"] = date
+
+    return [best[k] for k in order]
 
 
 def print_table(keyword: str, posts: list[dict]) -> None:

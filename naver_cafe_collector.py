@@ -172,11 +172,13 @@ def _is_dateish(text: str) -> bool:
 
 
 def _better_title(new: str, cur: str) -> bool:
-    """new 제목이 cur보다 더 '제목다우면' True."""
-    new_bad, cur_bad = _is_dateish(new), _is_dateish(cur)
-    if new_bad != cur_bad:
-        return cur_bad          # cur이 날짜뿐이면 new로 교체
-    return len(new) > len(cur)  # 둘 다 비슷하면 더 긴 쪽
+    """new 제목이 cur보다 더 '제목다우면' True.
+
+    네이버 카드 구조는 (카페명)·(날짜)·(제목)·(본문 미리보기) 순이라, 같은 글의
+    여러 링크 중 '날짜가 아닌 첫 번째'가 제목이다. 그래서 더 긴 쪽(본문)이 아니라
+    '처음 만난 날짜 아닌 텍스트'를 유지한다 — cur이 날짜뿐일 때만 교체.
+    """
+    return _is_dateish(cur) and not _is_dateish(new)
 
 
 def extract_posts(html: str) -> list[dict]:

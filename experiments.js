@@ -59,6 +59,50 @@ function mount(app, { dataDir }) {
     res.json({ ok: true, removed: before - db.items.length });
   });
 
+  // 백업: 전체 기록을 JSON 파일로 내려받는다(복원용 — CSV와 달리 그대로 되돌릴 수 있음).
+  app.get("/api/experiments/backup.json", requireAdmin, (req, res) => {
+    const db = load();
+    const name = `실험노트_백업_${KST()}.json`;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="experiments_backup_${KST()}.json"; filename*=UTF-8''${encodeURIComponent(name)}`);
+    res.send(JSON.stringify({ exportedAt: new Date().toISOString(), count: db.items.length, items: db.items }, null, 2));
+  });
+
+  // 복원: 백업 JSON({items:[...]} 또는 배열)을 가져온다.
+  //  mode=merge(기본): 기존에 없는 id만 추가(비파괴적) · mode=replace: 전체 교체
+  const normItem = (it) => {
+    const o = { id: (typeof it.id === "string" && it.id) || crypto.randomBytes(6).toString("hex"), createdAt: it.createdAt || new Date().toISOString() };
+    for (const f of FIELDS) o[f] = clean(it[f]);
+    if (!o.date) o.date = KST();
+    return o;
+  };
+  app.post("/api/experiments/import", requireAdmin, (req, res) => {
+    const b = req.body || {};
+    const incoming = Array.isArray(b) ? b : Array.isArray(b.items) ? b.items : null;
+    if (!incoming) return res.status(400).json({ error: "invalid", message: "items 배열이 필요합니다(백업 파일 형식 확인)." });
+    const mode = b.mode === "replace" ? "replace" : "merge";
+    const db = load();
+    let added = 0;
+    if (mode === "replace") {
+      db.items = incoming.map(normItem);
+      added = db.items.length;
+    } else {
+      const ids = new Set(db.items.map((x) => x.id));
+      for (const it of incoming) {
+        const o = normItem(it);
+        if (!ids.has(o.id)) { db.items.push(o); ids.add(o.id); added++; }
+      }
+    }
+    save(db);
+    res.json({ ok: true, mode, added, total: db.items.length });
+  });
+
+  // 저장 위치/영구성 상태 (화면 안내용)
+  app.get("/api/experiments/storage", requireAdmin, (req, res) => {
+    const volatileStorage = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_ID) && !process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    res.json({ persistent: !volatileStorage, file: file });
+  });
+
   // 엑셀에서 바로 열리는 CSV(UTF-8 BOM). 오래된 것부터(위에서 아래로) 기록 순.
   app.get("/api/experiments/export.csv", requireAdmin, (req, res) => {
     const items = load().items.slice().sort((a, b) => sortDesc(b, a));

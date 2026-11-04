@@ -46,6 +46,7 @@ td.act{white-space:nowrap;text-align:center}
   </div>
 
   <div id="msg" class="msg"></div>
+  <div id="storage" class="meta" style="display:none"></div>
 
   <div class="card">
     <h2>새 기록 추가</h2>
@@ -68,8 +69,14 @@ td.act{white-space:nowrap;text-align:center}
   <div class="card">
     <h2 style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <span>기록 <span id="count" class="hint"></span></span>
-      <a class="dl" href="/api/experiments/export.csv">↓ 엑셀(CSV) 다운로드</a>
+      <span style="display:flex;gap:8px;flex-wrap:wrap">
+        <a class="dl" href="/api/experiments/export.csv">↓ 엑셀(CSV)</a>
+        <a class="dl" style="background:#4a154b" href="/api/experiments/backup.json">↓ 백업(JSON)</a>
+        <button id="restoreBtn" type="button">↥ 복원(JSON)</button>
+        <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+      </span>
     </h2>
+    <p class="hint">백업(JSON)은 그대로 되돌릴 수 있는 파일입니다. 복원 시 <b>기존에 없는 기록만 추가</b>되어 안전합니다(중복 id는 건너뜀).</p>
     <div class="tablewrap">
       <table>
         <thead><tr>
@@ -139,6 +146,34 @@ $("#addBtn").addEventListener("click",async()=>{
   }catch(err){ flash(err.message,"err"); }
 });
 
+// 저장 위치/영구성 안내
+async function showStorage(){
+  try{
+    const s = await api("/api/experiments/storage");
+    const el = $("#storage"); el.style.display="block";
+    if(s.persistent){ el.innerHTML = "💾 데이터는 <b>영구 볼륨</b>에 저장됩니다 — 업데이트(재배포)해도 기록이 보존됩니다."; }
+    else { el.className="msg show err"; el.innerHTML = "⚠️ 영구 볼륨이 연결되어 있지 않습니다. <b>재배포 시 기록이 초기화</b>될 수 있으니, Railway 서비스에 Volume을 연결하세요. (지금은 수시로 '백업(JSON)' 권장)"; }
+  }catch(e){ /* 표시만 생략 */ }
+}
+
+// 복원(JSON 업로드)
+$("#restoreBtn").addEventListener("click",()=>$("#restoreFile").click());
+$("#restoreFile").addEventListener("change",async(e)=>{
+  const file=e.target.files[0]; if(!file) return;
+  e.target.value="";
+  try{
+    const text=await file.text();
+    const json=JSON.parse(text);
+    const items=Array.isArray(json)?json:json.items;
+    if(!Array.isArray(items)) throw new Error("백업 파일 형식이 아닙니다(items 배열 없음).");
+    if(!confirm(`백업 파일에서 ${items.length}건을 불러옵니다.\n기존에 없는 기록만 추가됩니다(중복은 건너뜀). 진행할까요?`)) return;
+    const r=await api("/api/experiments/import","POST",{ items, mode:"merge" });
+    flash(`복원 완료: ${r.added}건 추가 (전체 ${r.total}건)`);
+    load();
+  }catch(err){ flash("복원 실패: "+err.message,"err"); }
+});
+
+showStorage();
 load();
 </script>
 </body>

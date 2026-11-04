@@ -6,6 +6,7 @@
     { id: "rank", icon: "🏆", title: "순위 체크 (Naver 카페)", desc: "키워드 검색 → 통합·카페 순위와 콘텐츠 조회수를 매일 기록하고, 차트와 엑셀로 확인합니다.", href: "/rank.html" },
     { id: "threads", icon: "🧵", title: "순위 체크 (Threads)", desc: "연결한 Threads 계정의 게시글 조회수·좋아요·댓글을 매일 기록하고 증감 차트로 확인합니다.", href: "/threads.html" },
     { id: "research", icon: "🔍", title: "키워드 리서치 보드", desc: "클라이언트별 키워드 리서치·평가·채택, 카페 모니터링과 AI 키워드 확장을 관리합니다.", href: "/", adminOnly: true },
+    { id: "experiments", icon: "🧪", title: "실험 노트", desc: "가설·진행·결과를 표에 간단히 적고 엑셀(CSV)로 내려받습니다.", href: "/experiments.html", adminOnly: true },
     { id: "admin", icon: "👥", title: "계정 관리", desc: "회원 계정을 만들고 볼 수 있는 프로젝트를 지정합니다.", href: "/admin.html", adminOnly: true },
     // 새 프로그램은 여기에 추가: { id: "new", icon: "📈", title: "이름", desc: "설명", href: "/new.html" },
   ];

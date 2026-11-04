@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>실험 노트</title>
+<style>
+:root{color-scheme:light;--bg:#F7F5F0;--surface:#fff;--surface-2:#F0ECE3;--ink:#1E2420;--ink-soft:#63706A;--border:#DDD6C8;--accent:#0E6E58;--accent-ink:#fff;--bad:#AE4430;--bad-soft:#FBE9E3;--good:#1F7A4D;--good-soft:#E4F5EA;--warn:#A6741A;--warn-soft:#FBF0DA}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#14181A;--surface:#1C2220;--surface-2:#232B28;--ink:#ECEFEC;--ink-soft:#9AA6A0;--border:#313A36;--accent:#3FCB9F;--accent-ink:#0B1512;--bad:#FF7A5C;--bad-soft:#2E1B16;--good:#4ADE94;--good-soft:#17281F;--warn:#E3B24E;--warn-soft:#2E2716}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 48px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2{margin:0}h1{font-size:1.4rem}h2{font-size:1.02rem}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.meta{font-size:.82rem;color:var(--ink-soft);line-height:1.6}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+label{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--ink-soft)}
+label b{color:var(--ink);font-size:.82rem}
+input,textarea,select{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0;width:100%;resize:vertical}
+textarea{min-height:60px}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--ink);padding:7px 12px;font-size:.8rem}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;padding:10px 18px;font-size:.92rem}
+button.danger{color:var(--bad);border-color:var(--bad-soft)}
+.dl{display:inline-flex;align-items:center;gap:6px;background:#1a6e3c;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.82rem;font-weight:600;text-decoration:none}
+.msg{border-radius:8px;padding:9px 12px;font-size:.85rem;display:none}.msg.show{display:block}
+.msg.ok{background:var(--good-soft);color:var(--good)}.msg.err{background:var(--bad-soft);color:var(--bad)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.84rem;min-width:960px}
+th,td{border:1px solid var(--border);padding:7px 9px;vertical-align:top;text-align:left}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap;position:sticky;top:0}
+td.cell{min-width:120px;white-space:pre-wrap;word-break:break-word;outline:none}
+td.cell:focus{background:var(--good-soft)}
+td.c-date,td.c-author,td.c-category,td.c-confidence{min-width:84px}
+td.c-hypothesis,td.c-progress,td.c-result,td.c-judgment,td.c-next{min-width:160px}
+td.act{white-space:nowrap;text-align:center}
+.empty{color:var(--ink-soft);padding:16px 0}
+.hint{font-size:.74rem;color:var(--ink-soft)}
+.saved{color:var(--good);font-size:.72rem;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>🧪 실험 노트</h1>
+    <p class="meta">가설을 세우고 진행·결과를 표에 간단히 기록합니다. 셀을 클릭하면 바로 수정되고(칸 밖을 누르면 저장), 엑셀(CSV)로 내려받을 수 있습니다.</p>
+  </div>
+
+  <div id="msg" class="msg"></div>
+
+  <div class="card">
+    <h2>새 기록 추가</h2>
+    <div class="grid">
+      <label><b>날짜</b><input type="date" id="f-date"></label>
+      <label><b>작성자</b><input type="text" id="f-author" placeholder="예: 병득"></label>
+      <label><b>분류</b><input type="text" id="f-category" placeholder="예: 스레드"></label>
+      <label><b>확신도</b><input type="text" id="f-confidence" placeholder="예: 지속적인 테스트 필요"></label>
+    </div>
+    <label><b>가설</b><textarea id="f-hypothesis" placeholder="예: 퇴근시간·잠자기 전이 조회수가 높을 것 같다"></textarea></label>
+    <label><b>진행 내용</b><textarea id="f-progress" placeholder="예: 9시, 18시, 23시 업로드 후 1시간 지난 조회수 확인"></textarea></label>
+    <div class="grid">
+      <label style="grid-column:1/-1"><b>결과</b><textarea id="f-result" placeholder="예: 9시 400 / 18시 300 / 23시 320"></textarea></label>
+    </div>
+    <label><b>판단</b><textarea id="f-judgment" placeholder="예: 오전 시간 트래픽이 가장 높지만 모수가 적어 판단이 이름 → 지속 테스트 필요"></textarea></label>
+    <label><b>다음 할 일</b><textarea id="f-next" placeholder="예: 트래픽 몰리는 시간대 외 다른 시간대 대조군 샘플 필요"></textarea></label>
+    <div><button class="primary" id="addBtn">추가</button> <span class="hint">날짜를 비우면 오늘 날짜로 저장됩니다.</span></div>
+  </div>
+
+  <div class="card">
+    <h2 style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <span>기록 <span id="count" class="hint"></span></span>
+      <a class="dl" href="/api/experiments/export.csv">↓ 엑셀(CSV) 다운로드</a>
+    </h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>날짜</th><th>작성자</th><th>분류</th><th>가설</th><th>진행 내용</th><th>결과</th><th>판단</th><th>확신도</th><th>다음 할 일</th><th></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="empty" hidden>아직 기록이 없습니다. 위에서 첫 기록을 추가해 보세요.</div>
+  </div>
+</div>
+
+<script src="/programs.js"></script>
+<script>
+Programs.mountBar("experiments");
+const FIELDS = ["date","author","category","hypothesis","progress","result","judgment","confidence","nextStep"];
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const $ = (s) => document.querySelector(s);
+function flash(t, kind="ok"){ const m=$("#msg"); m.textContent=t; m.className="msg show "+kind; setTimeout(()=>m.classList.remove("show"), 2500); }
+function kstToday(){ return new Date(Date.now()+9*3600e3).toISOString().slice(0,10); }
+async function api(url, method="GET", body){ const r=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined}); if(r.status===401){location.href="/login.html";return;} const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.message||d.error||("오류 "+r.status)); return d; }
+
+$("#f-date").value = kstToday();
+
+async function load(){
+  const { items } = await api("/api/experiments");
+  const tb = $("#rows"); tb.innerHTML="";
+  $("#count").textContent = items.length ? `(${items.length}건)` : "";
+  $("#empty").hidden = items.length>0;
+  for(const it of items){
+    const tr=document.createElement("tr");
+    tr.dataset.id=it.id;
+    const cls={date:"c-date",author:"c-author",category:"c-category",hypothesis:"c-hypothesis",progress:"c-progress",result:"c-result",judgment:"c-judgment",confidence:"c-confidence",nextStep:"c-next"};
+    tr.innerHTML = FIELDS.map(f=>`<td class="cell ${cls[f]}" contenteditable="true" data-f="${f}">${esc(it[f])}</td>`).join("")
+      + `<td class="act"><button class="danger" data-del>삭제</button></td>`;
+    tb.appendChild(tr);
+  }
+}
+
+// 셀 편집: 포커스 잃을 때 변경되었으면 저장
+let editingOld="";
+$("#rows").addEventListener("focusin",(e)=>{ if(e.target.classList.contains("cell")) editingOld=e.target.textContent; });
+$("#rows").addEventListener("focusout",async(e)=>{
+  const td=e.target; if(!td.classList.contains("cell")) return;
+  const val=td.textContent; if(val===editingOld) return;
+  const id=td.closest("tr").dataset.id, f=td.dataset.f;
+  try{ await api("/api/experiments/"+id,"PATCH",{[f]:val}); const s=document.createElement("span"); s.className="saved"; s.textContent="✓ 저장"; td.appendChild(s); setTimeout(()=>s.remove(),1200);}
+  catch(err){ flash(err.message,"err"); td.textContent=editingOld; }
+});
+// 삭제
+$("#rows").addEventListener("click",async(e)=>{
+  if(!e.target.matches("[data-del]")) return;
+  const tr=e.target.closest("tr"); if(!confirm("이 기록을 삭제할까요?")) return;
+  try{ await api("/api/experiments/"+tr.dataset.id,"DELETE"); tr.remove(); flash("삭제했습니다."); load(); }
+  catch(err){ flash(err.message,"err"); }
+});
+// 추가
+$("#addBtn").addEventListener("click",async()=>{
+  const body={}; for(const f of FIELDS) body[f]=($("#f-"+(f==="nextStep"?"next":f))?.value||"").trim();
+  if(!FIELDS.some(f=>body[f])){ flash("내용을 하나 이상 입력하세요.","err"); return; }
+  try{
+    await api("/api/experiments","POST",body);
+    for(const f of FIELDS){ const el=$("#f-"+(f==="nextStep"?"next":f)); if(el&&f!=="author"&&f!=="category") el.value=""; }
+    $("#f-date").value=kstToday();
+    flash("추가했습니다.");
+    load();
+  }catch(err){ flash(err.message,"err"); }
+});
+
+load();
+</script>
+</body>
+</html>

@@ -35,10 +35,36 @@ function mount(app, { dataDir }) {
     for (const f of FIELDS) item[f] = clean(b[f]);
     if (!item.date) item.date = KST();
     if (!item.author && req.user && req.user.name) item.author = clean(req.user.name);
+    item.comments = [];
     const db = load();
     db.items.push(item);
     save(db);
     res.json({ item });
+  });
+
+  // ---- 동료 코멘트 ----
+  app.post("/api/experiments/:id/comments", requireAdmin, (req, res) => {
+    const db = load();
+    const it = db.items.find((x) => x.id === req.params.id);
+    if (!it) return res.status(404).json({ error: "not_found" });
+    const b = req.body || {};
+    const text = clean(b.text);
+    if (!text) return res.status(400).json({ error: "empty", message: "코멘트 내용을 입력하세요." });
+    const author = clean(b.author) || (req.user && req.user.name) || "";
+    const c = { id: crypto.randomBytes(6).toString("hex"), author, text, createdAt: new Date().toISOString() };
+    (it.comments ??= []).push(c);
+    save(db);
+    res.json({ comment: c, comments: it.comments });
+  });
+
+  app.delete("/api/experiments/:id/comments/:cid", requireAdmin, (req, res) => {
+    const db = load();
+    const it = db.items.find((x) => x.id === req.params.id);
+    if (!it) return res.status(404).json({ error: "not_found" });
+    const before = (it.comments || []).length;
+    it.comments = (it.comments || []).filter((c) => c.id !== req.params.cid);
+    save(db);
+    res.json({ ok: true, removed: before - it.comments.length, comments: it.comments });
   });
 
   app.patch("/api/experiments/:id", requireAdmin, (req, res) => {
@@ -74,6 +100,9 @@ function mount(app, { dataDir }) {
     const o = { id: (typeof it.id === "string" && it.id) || crypto.randomBytes(6).toString("hex"), createdAt: it.createdAt || new Date().toISOString() };
     for (const f of FIELDS) o[f] = clean(it[f]);
     if (!o.date) o.date = KST();
+    o.comments = Array.isArray(it.comments)
+      ? it.comments.filter((c) => c && c.text).map((c) => ({ id: (typeof c.id === "string" && c.id) || crypto.randomBytes(6).toString("hex"), author: clean(c.author), text: clean(c.text), createdAt: c.createdAt || new Date().toISOString() }))
+      : [];
     return o;
   };
   app.post("/api/experiments/import", requireAdmin, (req, res) => {

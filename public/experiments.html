@@ -36,13 +36,29 @@ td.act{white-space:nowrap;text-align:center}
 .empty{color:var(--ink-soft);padding:16px 0}
 .hint{font-size:.74rem;color:var(--ink-soft)}
 .saved{color:var(--good);font-size:.72rem;margin-left:6px}
+td.act button{margin:2px}
+.cmt-btn{border-color:var(--border)}
+.cmt-btn.has{background:var(--good-soft);color:var(--good);border-color:var(--good-soft);font-weight:700}
+tr.detail-row>td{background:var(--surface-2);padding:12px 14px}
+.cmt-panel{display:flex;flex-direction:column;gap:10px;max-width:760px}
+.cmt-list{display:flex;flex-direction:column;gap:8px}
+.cmt-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px}
+.cmt-meta{font-size:.74rem;color:var(--ink-soft);display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.cmt-meta b{color:var(--ink)}
+.cmt-del{margin-left:auto;border:none;background:transparent;color:var(--ink-soft);cursor:pointer;font-size:.8rem;padding:0 4px}
+.cmt-del:hover{color:var(--bad)}
+.cmt-text{font-size:.86rem;white-space:pre-wrap;word-break:break-word}
+.cmt-form{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px dashed var(--border);border-radius:10px;padding:10px}
+.cmt-form .r{display:flex;gap:6px;align-items:center}
+.cmt-author{flex:0 0 140px}
+.cmt-input{flex:1}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div>
     <h1>🧪 실험 노트</h1>
-    <p class="meta">가설을 세우고 진행·결과를 표에 간단히 기록합니다. 셀을 클릭하면 바로 수정되고(칸 밖을 누르면 저장), 엑셀(CSV)로 내려받을 수 있습니다.</p>
+    <p class="meta">가설을 세우고 진행·결과를 표에 간단히 기록합니다. 셀을 클릭하면 바로 수정되고(칸 밖을 누르면 저장), 각 기록의 <b>💬</b> 버튼으로 동료가 코멘트를 남길 수 있습니다. 엑셀(CSV)로 내려받을 수 있습니다.</p>
   </div>
 
   <div id="msg" class="msg"></div>
@@ -101,19 +117,37 @@ async function api(url, method="GET", body){ const r=await fetch(url,{method,hea
 
 $("#f-date").value = kstToday();
 
-async function load(){
-  const { items } = await api("/api/experiments");
-  const tb = $("#rows"); tb.innerHTML="";
-  $("#count").textContent = items.length ? `(${items.length}건)` : "";
-  $("#empty").hidden = items.length>0;
-  for(const it of items){
+const CLS={date:"c-date",author:"c-author",category:"c-category",hypothesis:"c-hypothesis",progress:"c-progress",result:"c-result",judgment:"c-judgment",confidence:"c-confidence",nextStep:"c-next"};
+const COLSPAN=FIELDS.length+1; // 필드 + 액션
+let allItems=[]; const openCmt=new Set();
+function fmtTime(iso){ try{ const d=new Date(iso); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }catch(e){ return ""; } }
+function commentPanel(it){
+  const cs=it.comments||[];
+  const list = cs.length ? cs.map(c=>`<div class="cmt-item"><div class="cmt-meta"><b>${esc(c.author||"익명")}</b> · ${fmtTime(c.createdAt)}<button class="cmt-del" data-cdel="${esc(c.id)}" title="코멘트 삭제">✕</button></div><div class="cmt-text">${esc(c.text)}</div></div>`).join("") : `<div class="hint">아직 코멘트가 없습니다. 동료의 의견을 남겨보세요.</div>`;
+  return `<tr class="detail-row" data-detail="${esc(it.id)}"><td colspan="${COLSPAN}"><div class="cmt-panel">`
+    + `<div class="cmt-list">${list}</div>`
+    + `<div class="cmt-form"><div class="r"><input class="cmt-author" placeholder="이름(선택)"><button class="cmt-add" data-cadd="${esc(it.id)}">코멘트 등록</button></div>`
+    + `<textarea class="cmt-input" rows="2" placeholder="동료에게 남길 의견·조언·다른 생각…"></textarea></div>`
+    + `</div></td></tr>`;
+}
+function render(){
+  const tb=$("#rows"); tb.innerHTML="";
+  $("#count").textContent = allItems.length ? `(${allItems.length}건)` : "";
+  $("#empty").hidden = allItems.length>0;
+  for(const it of allItems){
     const tr=document.createElement("tr");
     tr.dataset.id=it.id;
-    const cls={date:"c-date",author:"c-author",category:"c-category",hypothesis:"c-hypothesis",progress:"c-progress",result:"c-result",judgment:"c-judgment",confidence:"c-confidence",nextStep:"c-next"};
-    tr.innerHTML = FIELDS.map(f=>`<td class="cell ${cls[f]}" contenteditable="true" data-f="${f}">${esc(it[f])}</td>`).join("")
-      + `<td class="act"><button class="danger" data-del>삭제</button></td>`;
+    const n=(it.comments||[]).length;
+    tr.innerHTML = FIELDS.map(f=>`<td class="cell ${CLS[f]}" contenteditable="true" data-f="${f}">${esc(it[f])}</td>`).join("")
+      + `<td class="act"><button class="cmt-btn${n?" has":""}" data-cmt="${esc(it.id)}">💬 ${n}</button><button class="danger" data-del>삭제</button></td>`;
     tb.appendChild(tr);
+    if(openCmt.has(it.id)){ const t=document.createElement("template"); t.innerHTML=commentPanel(it); tb.appendChild(t.content.firstChild); }
   }
+}
+async function load(){
+  const { items } = await api("/api/experiments");
+  allItems = items || [];
+  render();
 }
 
 // 셀 편집: 포커스 잃을 때 변경되었으면 저장
@@ -123,15 +157,44 @@ $("#rows").addEventListener("focusout",async(e)=>{
   const td=e.target; if(!td.classList.contains("cell")) return;
   const val=td.textContent; if(val===editingOld) return;
   const id=td.closest("tr").dataset.id, f=td.dataset.f;
-  try{ await api("/api/experiments/"+id,"PATCH",{[f]:val}); const s=document.createElement("span"); s.className="saved"; s.textContent="✓ 저장"; td.appendChild(s); setTimeout(()=>s.remove(),1200);}
+  try{
+    await api("/api/experiments/"+id,"PATCH",{[f]:val});
+    const it=allItems.find(x=>x.id===id); if(it) it[f]=val;
+    const s=document.createElement("span"); s.className="saved"; s.textContent="✓ 저장"; td.appendChild(s); setTimeout(()=>s.remove(),1200);
+  }
   catch(err){ flash(err.message,"err"); td.textContent=editingOld; }
 });
-// 삭제
+// 행 액션: 삭제 / 코멘트 열기·등록·삭제
 $("#rows").addEventListener("click",async(e)=>{
-  if(!e.target.matches("[data-del]")) return;
-  const tr=e.target.closest("tr"); if(!confirm("이 기록을 삭제할까요?")) return;
-  try{ await api("/api/experiments/"+tr.dataset.id,"DELETE"); tr.remove(); flash("삭제했습니다."); load(); }
-  catch(err){ flash(err.message,"err"); }
+  const t=e.target;
+  // 코멘트 패널 열기/닫기
+  if(t.matches("[data-cmt]")){ const id=t.getAttribute("data-cmt"); openCmt.has(id)?openCmt.delete(id):openCmt.add(id); render(); return; }
+  // 코멘트 등록
+  if(t.matches("[data-cadd]")){
+    const id=t.getAttribute("data-cadd");
+    const panel=t.closest(".cmt-panel");
+    const author=panel.querySelector(".cmt-author").value.trim();
+    const text=panel.querySelector(".cmt-input").value.trim();
+    if(!text){ flash("코멘트 내용을 입력하세요.","err"); return; }
+    try{ const r=await api("/api/experiments/"+id+"/comments","POST",{author,text}); const it=allItems.find(x=>x.id===id); if(it) it.comments=r.comments; render(); flash("코멘트를 등록했습니다."); }
+    catch(err){ flash(err.message,"err"); }
+    return;
+  }
+  // 코멘트 삭제
+  if(t.matches("[data-cdel]")){
+    const id=t.closest("[data-detail]").getAttribute("data-detail");
+    const cid=t.getAttribute("data-cdel");
+    try{ const r=await api("/api/experiments/"+id+"/comments/"+cid,"DELETE"); const it=allItems.find(x=>x.id===id); if(it) it.comments=r.comments; render(); }
+    catch(err){ flash(err.message,"err"); }
+    return;
+  }
+  // 기록 삭제
+  if(t.matches("[data-del]")){
+    const id=t.closest("tr").dataset.id;
+    if(!confirm("이 기록을 삭제할까요?")) return;
+    try{ await api("/api/experiments/"+id,"DELETE"); allItems=allItems.filter(x=>x.id!==id); openCmt.delete(id); render(); flash("삭제했습니다."); }
+    catch(err){ flash(err.message,"err"); }
+  }
 });
 // 추가
 $("#addBtn").addEventListener("click",async()=>{

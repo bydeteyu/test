@@ -238,8 +238,9 @@ function mount(app, dataDir) {
   // 지금 확인: 응답은 바로 돌려주고 백그라운드에서 조회 (수 분 걸릴 수 있음)
   app.post("/api/rank/run", (req, res) => {
     if (running) return res.status(409).json({ error: "busy" });
-    const { projectId, itemId } = req.body || {};
-    const ids = load().items.filter((i) => (itemId ? i.id === itemId : !projectId || i.projectId === projectId)).map((i) => i.id);
+    const { projectId, itemId, itemIds } = req.body || {};
+    const sel = Array.isArray(itemIds) ? new Set(itemIds.map(String)) : null; // 체크한 항목만 조회
+    const ids = load().items.filter((i) => (sel ? sel.has(i.id) : itemId ? i.id === itemId : !projectId || i.projectId === projectId)).map((i) => i.id);
     if (ids.length === 0) return res.status(400).json({ error: "no_items" });
     runChecks({ itemIds: ids }).catch((e) => console.error("[rank] run failed:", e));
     res.json({ started: ids.length });

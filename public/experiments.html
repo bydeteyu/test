@@ -25,14 +25,19 @@ button.danger{color:var(--bad);border-color:var(--bad-soft)}
 .msg{border-radius:8px;padding:9px 12px;font-size:.85rem;display:none}.msg.show{display:block}
 .msg.ok{background:var(--good-soft);color:var(--good)}.msg.err{background:var(--bad-soft);color:var(--bad)}
 .tablewrap{overflow-x:auto}
-table{border-collapse:collapse;width:100%;font-size:.84rem;min-width:960px}
-th,td{border:1px solid var(--border);padding:7px 9px;vertical-align:top;text-align:left}
-th{background:var(--surface-2);font-weight:700;white-space:nowrap;position:sticky;top:0}
-td.cell{min-width:120px;white-space:pre-wrap;word-break:break-word;outline:none}
+table{border-collapse:collapse;width:100%;font-size:.82rem;table-layout:fixed}
+th,td{border:1px solid var(--border);padding:6px 8px;vertical-align:top;text-align:left}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+td.cell{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;outline:none}
 td.cell:focus{background:var(--good-soft)}
-td.c-date,td.c-author,td.c-category,td.c-confidence{min-width:84px}
-td.c-hypothesis,td.c-progress,td.c-result,td.c-judgment,td.c-next{min-width:160px}
-td.act{white-space:nowrap;text-align:center}
+/* 고정 너비(table-layout:fixed) — 좁은 칸은 좁게, 긴 칸은 넓게. 판단 칸 삭제로 전체가 한 화면에 들어오게 */
+td.c-date{width:58px}td.c-author{width:56px}td.c-category{width:56px}td.c-confidence{width:56px}
+td.c-hypothesis,td.c-progress,td.c-result,td.c-next{width:auto}
+td.act{white-space:nowrap;text-align:center;width:118px}
+/* 작업(💬·삭제) 칸을 오른쪽에 고정해 가로 스크롤이 생겨도 항상 보이게 */
+table th:last-child,table td.act{position:sticky;right:0;z-index:2;background:var(--surface);box-shadow:-7px 0 9px -7px rgba(0,0,0,.22)}
+table th:last-child{background:var(--surface-2);z-index:3}
+tr:hover td.act{background:var(--surface)}
 .empty{color:var(--ink-soft);padding:16px 0}
 .hint{font-size:.74rem;color:var(--ink-soft)}
 .saved{color:var(--good);font-size:.72rem;margin-left:6px}
@@ -77,7 +82,6 @@ tr.detail-row>td{background:var(--surface-2);padding:12px 14px}
     <div class="grid">
       <label style="grid-column:1/-1"><b>결과</b><textarea id="f-result" placeholder="예: 9시 400 / 18시 300 / 23시 320"></textarea></label>
     </div>
-    <label><b>판단</b><textarea id="f-judgment" placeholder="예: 오전 시간 트래픽이 가장 높지만 모수가 적어 판단이 이름 → 지속 테스트 필요"></textarea></label>
     <label><b>다음 할 일</b><textarea id="f-next" placeholder="예: 트래픽 몰리는 시간대 외 다른 시간대 대조군 샘플 필요"></textarea></label>
     <div><button class="primary" id="addBtn">추가</button> <span class="hint">날짜를 비우면 오늘 날짜로 저장됩니다.</span></div>
   </div>
@@ -96,7 +100,7 @@ tr.detail-row>td{background:var(--surface-2);padding:12px 14px}
     <div class="tablewrap">
       <table>
         <thead><tr>
-          <th>날짜</th><th>작성자</th><th>분류</th><th>가설</th><th>진행 내용</th><th>결과</th><th>판단</th><th>확신도</th><th>다음 할 일</th><th></th>
+          <th>날짜</th><th>작성자</th><th>분류</th><th>가설</th><th>진행 내용</th><th>결과</th><th>확신도</th><th>다음 할 일</th><th>작업</th>
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>
@@ -108,7 +112,7 @@ tr.detail-row>td{background:var(--surface-2);padding:12px 14px}
 <script src="/programs.js"></script>
 <script>
 Programs.mountBar("experiments");
-const FIELDS = ["date","author","category","hypothesis","progress","result","judgment","confidence","nextStep"];
+const FIELDS = ["date","author","category","hypothesis","progress","result","confidence","nextStep"];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 const $ = (s) => document.querySelector(s);
 function flash(t, kind="ok"){ const m=$("#msg"); m.textContent=t; m.className="msg show "+kind; setTimeout(()=>m.classList.remove("show"), 2500); }
@@ -117,7 +121,7 @@ async function api(url, method="GET", body){ const r=await fetch(url,{method,hea
 
 $("#f-date").value = kstToday();
 
-const CLS={date:"c-date",author:"c-author",category:"c-category",hypothesis:"c-hypothesis",progress:"c-progress",result:"c-result",judgment:"c-judgment",confidence:"c-confidence",nextStep:"c-next"};
+const CLS={date:"c-date",author:"c-author",category:"c-category",hypothesis:"c-hypothesis",progress:"c-progress",result:"c-result",confidence:"c-confidence",nextStep:"c-next"};
 const COLSPAN=FIELDS.length+1; // 필드 + 액션
 let allItems=[]; const openCmt=new Set();
 function fmtTime(iso){ try{ const d=new Date(iso); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }catch(e){ return ""; } }

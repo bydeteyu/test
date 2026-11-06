@@ -163,7 +163,7 @@ function render() {
     const pub = p.source === "public";
     h += `<tr>${admin ? `<td><input type="checkbox" data-sel="${esc(p.id)}" aria-label="조회할 게시글 선택"${selected.has(p.id) ? " checked" : ""}></td>` : ""}<td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${pub ? '<div class="sub">공개 링크</div>' : ""}${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
     h += metricCell(p, "views", true) + metricCell(p, "likes") + metricCell(p, "replies") + metricCell(p, "reposts");
-    h += `<td class="act"><button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button>${admin ? `<button class="danger" data-del="${esc(p.id)}">삭제</button>` : ""}</td></tr>`;
+    h += `<td class="act">${admin ? `<button data-run="${esc(p.id)}">조회</button>` : ""}<button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button>${admin ? `<button class="danger" data-del="${esc(p.id)}">삭제</button>` : ""}</td></tr>`;
     if (expanded.has(p.id)) h += `<tr class="detail"><td colspan="${admin ? 8 : 7}"><div class="chart"><h3>누적 조회수 · 일별 조회수 증가</h3>${chart(p)}</div></td></tr>`;
   }
   $("#table").innerHTML = h + "</tbody></table></div>";
@@ -258,9 +258,14 @@ $("#table").addEventListener("change", (e) => {
   else if (e.target.dataset.sel) { e.target.checked ? selected.add(e.target.dataset.sel) : selected.delete(e.target.dataset.sel); render(); }
 });
 $("#table").addEventListener("click", async (e) => {
-  const more = e.target.dataset.more, del = e.target.dataset.del;
+  const more = e.target.dataset.more, del = e.target.dataset.del, run = e.target.dataset.run;
   try {
-    if (more) { expanded.has(more) ? expanded.delete(more) : expanded.add(more); render(); }
+    if (run) {
+      const btn = e.target; btn.disabled = true; const label = btn.textContent; btn.textContent = "조회 중…";
+      try { const r = await api("/api/threads/run", "POST", { postId: run }); flash(r.fail ? "조회 실패(표의 빨간 글씨 확인)" : "조회 완료"); await refresh(); }
+      finally { btn.disabled = false; btn.textContent = label; }
+    }
+    else if (more) { expanded.has(more) ? expanded.delete(more) : expanded.add(more); render(); }
     else if (del && confirm("이 게시글과 기록을 삭제할까요?")) { await api("/api/threads/posts/" + del, "DELETE"); await refresh(); }
   } catch (er) { flash(er.message, "err"); }
 });

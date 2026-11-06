@@ -177,7 +177,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
-    <div class="meta">검색 범위는 각 채널 <span id="maxRank">30</span>위까지입니다. 매일 오전 9시(KST) 이후 서버가 자동으로 확인합니다. 조회가 막히면 <b>-</b>로 표시됩니다.</div>
+    <div class="meta">검색 범위는 각 채널 <span id="maxRank">30</span>위까지입니다. 항목 앞 체크박스로 고른 뒤 <b>전체조회</b>를 누르면 그 항목만 조회합니다(아무것도 체크하지 않으면 전체). 매일 오전 9시(KST) 이후 서버가 자동으로 확인합니다. 조회가 막히면 <b>-</b>로 표시됩니다.</div>
   </section>
 </div>
 <section class="wrap admin-only" style="margin-top:20px">
@@ -248,6 +248,7 @@ function dupInfo(items) {
 
 // ---- 더보기 차트: 왼쪽 일별 조회수 증가(막대) / 오른쪽 순위(선) ----
 const expanded = new Set();
+const selected = new Set(); // 체크한 항목 id — "전체조회"는 체크한 항목만 조회(없으면 전체)
 const tip = document.createElement("div");
 tip.id = "tip";
 document.body.appendChild(tip);
@@ -373,8 +374,10 @@ async function refresh() {
   if (d.running && !pollTimer) pollTimer = setInterval(refresh, 5000);
   if (!d.running && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   if (d.items.length === 0) { $("#table").innerHTML = '<div class="meta">아직 추적 중인 콘텐츠가 없습니다.</div>'; return; }
-  const colw = isViewer() ? ["16%", "auto", "64px", ...channels.map(() => "126px"), "64px"] : ["16%", "auto", "64px", ...channels.map(() => "126px"), "170px"];
-  let h = '<div class="table-scroll"><table><colgroup>' + colw.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr><th class="l">키워드</th><th class="l">콘텐츠</th><th>최종 조회일</th>';
+  const colw = isViewer() ? ["16%", "auto", "64px", ...channels.map(() => "126px"), "64px"] : ["34px", "16%", "auto", "64px", ...channels.map(() => "126px"), "118px"];
+  let h = '<div class="table-scroll"><table><colgroup>' + colw.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr>'
+    + (isViewer() ? "" : '<th><input type="checkbox" id="selAll" aria-label="전체 선택"></th>')
+    + '<th class="l">키워드</th><th class="l">콘텐츠</th><th>최종 조회일</th>';
   h += channels.map((c) => `<th>${esc(c.label)}</th>`).join("") + "<th></th></tr></thead><tbody>";
   const dups = dupInfo(d.items);
   for (const i of d.items) {
@@ -385,12 +388,24 @@ async function refresh() {
     const cid = contentId(i);
     const why = cid.startsWith("a:") ? `같은 글 번호(${cid.slice(2)})` : cid.startsWith("t:") ? "같은 제목" : "같은 주소";
     const dupTip = isDup ? `${why} · 이 콘텐츠와 겹치는 항목:\n` + sameAs.filter((x) => x.id !== i.id).map((x) => `- [${x.keyword}] ${x.label}`).join("\n") : "";
-    h += `<tr><td class="l">${esc(i.keyword)}</td><td class="l${isDup ? " dup" : ""}"${isDup ? ` title="${esc(dupTip)}" data-cid="${esc(cid)}"` : ""}>${i.link ? `<a class="plink" href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="글 열기(새 창)">${esc(i.label)}</a>` : esc(i.label)}${isDup ? `<span class="dupbadge">중복 ${sameAs.length}</span>` : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
+    h += "<tr>"
+      + (isViewer() ? "" : `<td style="text-align:center"><input type="checkbox" data-sel="${esc(i.id)}" aria-label="조회할 항목 선택"${selected.has(i.id) ? " checked" : ""}></td>`)
+      + `<td class="l">${esc(i.keyword)}</td><td class="l${isDup ? " dup" : ""}"${isDup ? ` title="${esc(dupTip)}" data-cid="${esc(cid)}"` : ""}>${i.link ? `<a class="plink" href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="글 열기(새 창)">${esc(i.label)}</a>` : esc(i.label)}${isDup ? `<span class="dupbadge">중복 ${sameAs.length}</span>` : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
     h += channels.map((c) => (last ? cell(i.history[last]?.[c.key], vb[c.key][last]?.prev) : '<td class="na">-</td>')).join("");
-    h += `<td class="act">${isViewer() ? "" : `<button class="ghost" data-run="${esc(i.id)}"${d.running ? " disabled" : ""}>조회</button>`}<button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button>${isViewer() ? "" : `<button class="danger" data-del="${esc(i.id)}">삭제</button>`}</td></tr>`;
-    if (expanded.has(i.id)) h += detailRow(i, 3 + channels.length + 1);
+    h += `<td class="act"><button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button>${isViewer() ? "" : `<button class="danger" data-del="${esc(i.id)}">삭제</button>`}</td></tr>`;
+    if (expanded.has(i.id)) h += detailRow(i, (isViewer() ? 0 : 1) + 3 + channels.length + 1);
   }
-  $("#table").innerHTML = h + "</tbody></table></div>" + (d.items.some((i) => Object.keys(i.history).length) ? "" : '<div class="meta">"전체조회"를 누르면 첫 기록이 만들어집니다.</div>');
+  $("#table").innerHTML = h + "</tbody></table></div>" + (d.items.some((i) => Object.keys(i.history).length) ? "" : '<div class="meta">항목을 체크하고 "전체조회"를 누르면 그 항목만 조회합니다(아무것도 체크하지 않으면 전체 조회).</div>');
+  // 존재하지 않는 항목은 선택 해제, 선택 UI 동기화
+  const ids = new Set(d.items.map((i) => i.id));
+  for (const id of [...selected]) if (!ids.has(id)) selected.delete(id);
+  syncSelUI();
+}
+function syncSelUI() {
+  const all = document.getElementById("selAll");
+  if (all) { const boxes = [...document.querySelectorAll("#table input[data-sel]")]; all.checked = boxes.length > 0 && boxes.every((b) => b.checked); }
+  const btn = document.getElementById("runBtn");
+  if (btn) btn.textContent = selected.size ? `전체조회 (${selected.size})` : "전체조회";
 }
 
 let snapData = null;
@@ -465,9 +480,22 @@ $("#addForm").addEventListener("submit", async (e) => {
   refresh();
 });
 $("#runBtn").addEventListener("click", async () => {
-  try { await api("/api/rank/run", { method: "POST", body: { projectId: $("#project").value } }); }
+  // 체크한 항목만 조회(없으면 전체)
+  const body = selected.size ? { itemIds: [...selected] } : { projectId: $("#project").value };
+  try { await api("/api/rank/run", { method: "POST", body }); }
   catch (e) { if (e.status !== 409) return alert("실행하지 못했습니다."); }
   refresh();
+});
+// 체크박스 선택/전체선택
+$("#table").addEventListener("change", (e) => {
+  if (e.target.id === "selAll") {
+    const check = e.target.checked;
+    for (const b of document.querySelectorAll("#table input[data-sel]")) { b.checked = check; check ? selected.add(b.dataset.sel) : selected.delete(b.dataset.sel); }
+    syncSelUI();
+  } else if (e.target.dataset.sel) {
+    e.target.checked ? selected.add(e.target.dataset.sel) : selected.delete(e.target.dataset.sel);
+    syncSelUI();
+  }
 });
 // 중복 칸에 마우스를 올리면 같은 콘텐츠로 묶인 다른 항목의 칸을 파란 테두리로 표시
 $("#table").addEventListener("mouseover", (e) => {
@@ -477,12 +505,7 @@ $("#table").addEventListener("mouseover", (e) => {
 });
 $("#table").addEventListener("mouseleave", () => document.querySelectorAll("#table .dup-hi").forEach((x) => x.classList.remove("dup-hi")));
 $("#table").addEventListener("click", async (e) => {
-  const runId = e.target.dataset.run, moreId = e.target.dataset.more;
-  if (runId) {
-    try { await api("/api/rank/run", { method: "POST", body: { itemId: runId } }); }
-    catch (er) { if (er.status !== 409) return alert("실행하지 못했습니다."); }
-    return refresh();
-  }
+  const moreId = e.target.dataset.more;
   if (moreId) { expanded.has(moreId) ? expanded.delete(moreId) : expanded.add(moreId); return refresh(); }
   const id = e.target.dataset.del;
   if (id && confirm("이 항목과 기록을 삭제할까요?")) { await api("/api/rank/items/" + id, { method: "DELETE" }); refresh(); }

@@ -267,7 +267,7 @@ function mount(app, { dataDir }) {
     res.json({
       configured: configured(),
       accounts: db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
-      posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null })),
+      posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null })),
       running,
       lastAutoDate: db.meta.lastAutoDate || null,
     });

@@ -107,11 +107,11 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
   <section class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <h2>조회수 현황</h2>
-      <div class="row" style="gap:8px"><button class="primary admin-only" id="runBtn" type="button" disabled>전체조회</button></div>
+      <div class="row" style="gap:8px"><button class="primary admin-only" id="runBtn" type="button" disabled>전체조회</button><button class="danger admin-only" id="delSelBtn" type="button" disabled>선택 삭제</button></div>
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
-    <div class="meta">매일 오전 9시(KST) 이후 서버가 등록된 모든 게시글을 자동으로 기록합니다. "전체조회"는 체크한 게시글만 지금 바로 조회합니다. 조회수 증감은 직전 기록 대비입니다.</div>
+    <div class="meta">매일 오전 9시(KST) 이후 서버가 등록된 모든 게시글을 자동으로 기록합니다. 체크한 게시글만 "전체조회"로 지금 바로 조회하거나 "선택 삭제"로 지울 수 있습니다. 날짜는 등록일(조회일), 조회수 증감은 직전 기록 대비입니다.</div>
   </section>
 </div>
 <script src="/programs.js"></script>
@@ -153,17 +153,17 @@ function render() {
   updateRunBtn();
   if (!posts.length) { $("#table").innerHTML = '<div class="meta">등록된 게시글이 없습니다.</div>'; return; }
   const admin = !isViewer();
-  const cols = admin ? ["34px", "auto", "70px", "108px", "86px", "86px", "86px", "130px"] : ["auto", "70px", "108px", "86px", "86px", "86px", "70px"];
+  const cols = admin ? ["34px", "auto", "92px", "86px", "86px", "86px", "86px", "72px"] : ["auto", "92px", "86px", "86px", "86px", "86px", "70px"];
   const allOn = posts.length > 0 && posts.every((p) => selected.has(p.id));
-  let h = '<div class="table-scroll"><table><colgroup>' + cols.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr>' + (admin ? `<th><input type="checkbox" id="selAll" aria-label="전체 선택"${allOn ? " checked" : ""}></th>` : "") + '<th class="l">게시글</th><th>최종 조회일</th><th>조회수</th><th>좋아요</th><th>댓글</th><th>리포스트</th><th></th></tr></thead><tbody>';
+  let h = '<div class="table-scroll"><table><colgroup>' + cols.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr>' + (admin ? `<th><input type="checkbox" id="selAll" aria-label="전체 선택"${allOn ? " checked" : ""}></th>` : "") + '<th class="l">게시글</th><th>등록일<br>(조회일)</th><th>조회수</th><th>좋아요</th><th>댓글</th><th>리포스트</th><th></th></tr></thead><tbody>';
   for (const p of posts) {
     const { last } = lastTwo(p);
     const um = /@([^/]+)\/post\/([^/?#]+)/.exec(p.url || "");
     const title = esc(p.text || (um ? `@${decodeURIComponent(um[1])} · ${um[2]} (본문 없음)` : p.url));
     const pub = p.source === "public";
-    h += `<tr>${admin ? `<td><input type="checkbox" data-sel="${esc(p.id)}" aria-label="조회할 게시글 선택"${selected.has(p.id) ? " checked" : ""}></td>` : ""}<td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${pub ? '<div class="sub">공개 링크</div>' : ""}${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${last ? esc(last.slice(5)) : "-"}</td>`;
+    h += `<tr>${admin ? `<td><input type="checkbox" data-sel="${esc(p.id)}" aria-label="조회할 게시글 선택"${selected.has(p.id) ? " checked" : ""}></td>` : ""}<td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${pub ? '<div class="sub">공개 링크</div>' : ""}${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${p.createdAt ? esc(p.createdAt.slice(5, 10)) : "-"}<div class="sub">(${last ? esc(last.slice(5)) : "-"})</div></td>`;
     h += metricCell(p, "views", true) + metricCell(p, "likes") + metricCell(p, "replies") + metricCell(p, "reposts");
-    h += `<td class="act">${admin ? `<button data-run="${esc(p.id)}">조회</button>` : ""}<button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button>${admin ? `<button class="danger" data-del="${esc(p.id)}">삭제</button>` : ""}</td></tr>`;
+    h += `<td class="act"><button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button></td></tr>`;
     if (expanded.has(p.id)) h += `<tr class="detail"><td colspan="${admin ? 8 : 7}"><div class="chart"><h3>누적 조회수 · 일별 조회수 증가</h3>${chart(p)}</div></td></tr>`;
   }
   $("#table").innerHTML = h + "</tbody></table></div>";
@@ -173,6 +173,8 @@ function updateRunBtn() {
   b.textContent = selected.size ? `전체조회 (${selected.size})` : "전체조회";
   b.disabled = data.running || !selected.size;
   b.title = selected.size ? "" : "조회할 게시글을 먼저 체크하세요";
+  const d = $("#delSelBtn");
+  if (d) { d.textContent = selected.size ? `선택 삭제 (${selected.size})` : "선택 삭제"; d.disabled = !selected.size; d.title = selected.size ? "" : "삭제할 게시글을 먼저 체크하세요"; }
 }
 
 // ---- 차트: 선 = 누적 조회수(왼쪽 축), 막대 = 일별 조회수 증가(오른쪽 축) ----
@@ -257,17 +259,18 @@ $("#table").addEventListener("change", (e) => {
   if (e.target.id === "selAll") { for (const p of data.posts) e.target.checked ? selected.add(p.id) : selected.delete(p.id); render(); }
   else if (e.target.dataset.sel) { e.target.checked ? selected.add(e.target.dataset.sel) : selected.delete(e.target.dataset.sel); render(); }
 });
-$("#table").addEventListener("click", async (e) => {
-  const more = e.target.dataset.more, del = e.target.dataset.del, run = e.target.dataset.run;
-  try {
-    if (run) {
-      const btn = e.target; btn.disabled = true; const label = btn.textContent; btn.textContent = "조회 중…";
-      try { const r = await api("/api/threads/run", "POST", { postId: run }); flash(r.fail ? "조회 실패(표의 빨간 글씨 확인)" : "조회 완료"); await refresh(); }
-      finally { btn.disabled = false; btn.textContent = label; }
-    }
-    else if (more) { expanded.has(more) ? expanded.delete(more) : expanded.add(more); render(); }
-    else if (del && confirm("이 게시글과 기록을 삭제할까요?")) { await api("/api/threads/posts/" + del, "DELETE"); await refresh(); }
-  } catch (er) { flash(er.message, "err"); }
+$("#table").addEventListener("click", (e) => {
+  const more = e.target.dataset.more;
+  if (more) { expanded.has(more) ? expanded.delete(more) : expanded.add(more); render(); }
+});
+$("#delSelBtn").addEventListener("click", async () => {
+  if (!selected.size) return;
+  if (!confirm(`선택한 ${selected.size}개 게시글과 기록을 삭제할까요?`)) return;
+  const ids = [...selected];
+  $("#delSelBtn").disabled = true;
+  try { for (const id of ids) await api("/api/threads/posts/" + id, "DELETE"); selected.clear(); flash("삭제했습니다."); }
+  catch (er) { flash(er.message, "err"); }
+  await refresh();
 });
 $("#accounts").addEventListener("click", async (e) => {
   const ref = e.target.dataset.refacc;

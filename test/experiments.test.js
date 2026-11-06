@@ -32,9 +32,9 @@ test("실험 노트: 추가/수정/CSV/삭제 + 회원 차단", async () => {
     assert.strictEqual(list.data.items[0].hypothesis, "퇴근시간 조회수가 높을 것");
 
     // 수정
-    const patch = await admin.call("PATCH", "/api/experiments/" + id, { judgment: "모수 적어 판단 이름" });
+    const patch = await admin.call("PATCH", "/api/experiments/" + id, { nextStep: "대조군 샘플 확보" });
     assert.strictEqual(patch.status, 200);
-    assert.strictEqual(patch.data.item.judgment, "모수 적어 판단 이름");
+    assert.strictEqual(patch.data.item.nextStep, "대조군 샘플 확보");
 
     // CSV 내보내기: BOM(엑셀 한글 깨짐 방지) + 헤더 + 값
     const csvBuf = await admin.call("GET", "/api/experiments/export.csv", null, "buf");
@@ -43,7 +43,8 @@ test("실험 노트: 추가/수정/CSV/삭제 + 회원 차단", async () => {
     const csvText = csvBuf.data.toString("utf-8");
     assert.match(csvText, /날짜","작성자","분류/);
     assert.match(csvText, /스레드/);
-    assert.match(csvText, /모수 적어 판단 이름/);
+    assert.match(csvText, /대조군 샘플 확보/);
+    assert.doesNotMatch(csvText, /판단/);
 
     // 코멘트: 등록 → 조회에 포함 → 삭제
     const addc = await admin.call("POST", "/api/experiments/" + id + "/comments", { author: "동료A", text: "이 가설 좋네요" });

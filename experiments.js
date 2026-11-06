@@ -5,8 +5,8 @@ const path = require("path");
 const crypto = require("crypto");
 
 const KST = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
-const FIELDS = ["date", "author", "category", "hypothesis", "progress", "result", "judgment", "confidence", "nextStep"];
-const HEADERS = ["날짜", "작성자", "분류", "가설", "진행 내용", "결과", "판단", "확신도", "다음 할 일"];
+const FIELDS = ["date", "author", "category", "hypothesis", "progress", "result", "confidence", "nextStep"];
+const HEADERS = ["날짜", "작성자", "분류", "가설", "진행 내용", "결과", "확신도", "다음 할 일"];
 
 function mount(app, { dataDir }) {
   const file = path.join(dataDir, "experiments.json");

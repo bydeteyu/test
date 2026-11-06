@@ -33,6 +33,10 @@ td.cell:focus{background:var(--good-soft)}
 td.c-date,td.c-author,td.c-category,td.c-confidence{min-width:84px}
 td.c-hypothesis,td.c-progress,td.c-result,td.c-judgment,td.c-next{min-width:160px}
 td.act{white-space:nowrap;text-align:center}
+/* 작업(💬·삭제) 칸을 오른쪽에 고정해 가로 스크롤 없이 항상 보이게 */
+table th:last-child,table td.act{position:sticky;right:0;z-index:2;background:var(--surface);box-shadow:-7px 0 9px -7px rgba(0,0,0,.22)}
+table th:last-child{background:var(--surface-2);z-index:3}
+tr:hover td.act{background:var(--surface)}
 .empty{color:var(--ink-soft);padding:16px 0}
 .hint{font-size:.74rem;color:var(--ink-soft)}
 .saved{color:var(--good);font-size:.72rem;margin-left:6px}
@@ -80,7 +84,7 @@ td.act{white-space:nowrap;text-align:center}
     <div class="tablewrap">
       <table>
         <thead><tr>
-          <th>날짜</th><th>작성자</th><th>분류</th><th>가설</th><th>진행 내용</th><th>결과</th><th>판단</th><th>확신도</th><th>다음 할 일</th><th></th>
+          <th>날짜</th><th>작성자</th><th>분류</th><th>가설</th><th>진행 내용</th><th>결과</th><th>판단</th><th>확신도</th><th>다음 할 일</th><th>작업</th>
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>

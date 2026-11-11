@@ -96,8 +96,8 @@ function mount(app, { dataDir }) {
       if (req.method === "GET" && VIEWER_PAGES.has(req.path)) return next();
       return res.redirect("/home.html");
     }
-    // 대행사(등록 권한) 계정은 스레드 글 등록만 추가 허용 (조회·삭제·운영은 불가)
-    if (req.user.canSubmit && req.method === "POST" && req.path === "/api/threads/posts") return next();
+    // 대행사(등록 권한) 계정은 스레드 글 등록 + 자기 업체(프로젝트) 생성만 추가 허용
+    if (req.user.canSubmit && req.method === "POST" && (req.path === "/api/threads/posts" || req.path === "/api/projects")) return next();
     if (!VIEWER_API.some(([m, p]) => m === req.method && p === req.path)) return res.status(403).json({ error: "forbidden" });
     if (req.method === "GET" && (req.path === "/api/rank" || req.path === "/api/rank/xlsx" || req.path === "/api/threads")) { // 허용된 프로젝트만
       const allowed = req.user.projectIds || [];
@@ -190,6 +190,8 @@ function mount(app, { dataDir }) {
     // 프로젝트가 삭제되면 회원 계정의 연결도 제거
     removeProject(id) { const users = loadUsers(); let ch = false; for (const u of users) if ((u.projectIds || []).includes(id)) { u.projectIds = u.projectIds.filter((p) => p !== id); ch = true; } if (ch) saveUsers(users); },
     filterProjects(req, list) { return req.user && req.user.role === "viewer" ? list.filter((p) => (req.user.projectIds || []).includes(p.id)) : list; },
+    // 대행사가 만든 프로젝트를 그 계정에 연결 (세션 무효화 없이 projectIds만 추가)
+    addProjectToUser(username, projectId) { const users = loadUsers(); const u = users.find((x) => x.username === username); if (!u) return false; u.projectIds = [...new Set([...(u.projectIds || []), String(projectId)])]; saveUsers(users); return true; },
   };
 }
 

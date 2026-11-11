@@ -83,13 +83,18 @@ test("Threads: 연결 → 게시글 등록 → 조회수 기록 → 회원 권�
     assert.strictEqual((await admin.call("POST", "/api/threads/run", { postId: p.id })).data.ok, 1);
     assert.strictEqual((await admin.call("GET", `/api/threads?projectId=${pid}`)).data.posts[0].history[day].views, 150);
 
+    // 즐겨찾기 토글 → 응답에 favorite 반영
+    assert.strictEqual((await admin.call("POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true })).data.favorite, true);
+    assert.strictEqual((await admin.call("GET", `/api/threads?projectId=${pid}`)).data.posts[0].favorite, true);
+    assert.strictEqual((await admin.call("POST", `/api/threads/posts/${p.id}/favorite`, { favorite: false })).data.favorite, false);
+
     // 회원: 자기 프로젝트의 Threads 데이터만 읽기, 쓰기/연결은 불가
     await admin.call("POST", "/api/users", { username: "kyobo", password: "kyobopass1", projectIds: [pid] });
     const v = client();
     await v.call("POST", "/api/login", { username: "kyobo", password: "kyobopass1" });
     assert.strictEqual((await v.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 1);
     assert.strictEqual((await v.call("GET", `/api/threads?projectId=${pid2}`)).status, 403);
-    for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["POST", "/api/threads/posts", { projectId: pid, url: "x" }], ["DELETE", `/api/threads/posts/${p.id}`], ["GET", `/api/threads/connect?projectId=${pid}`], ["GET", "/api/threads/config"], ["DELETE", "/api/threads/accounts/x"]]) assert.strictEqual((await v.call(m, u, b)).status, 403, `${m} ${u}`);
+    for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["POST", "/api/threads/posts", { projectId: pid, url: "x" }], ["DELETE", `/api/threads/posts/${p.id}`], ["POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true }], ["GET", `/api/threads/connect?projectId=${pid}`], ["GET", "/api/threads/config"], ["DELETE", "/api/threads/accounts/x"]]) assert.strictEqual((await v.call(m, u, b)).status, 403, `${m} ${u}`);
     assert.strictEqual((await v.call("GET", "/threads.html")).status, 200);
     assert.strictEqual((await v.call("GET", "/home.html")).status, 200);
   } finally { child.kill(); mock.srv.close(); }

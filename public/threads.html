@@ -33,6 +33,10 @@ td.l,th.l{text-align:left;word-break:keep-all;overflow-wrap:anywhere;line-height
 td.act{text-align:right}td.act button{margin:2px 0 2px 4px}
 a.plink{color:inherit;text-decoration:none}a.plink:hover{color:var(--accent);text-decoration:underline}a.plink::after{content:"↗";font-size:.7em;margin-left:3px;opacity:.55}
 .num{font-weight:700}.delta{color:var(--good);font-weight:600;font-size:.76rem}.delta.zero{color:var(--ink-soft);font-weight:400}
+.star{border:none;background:transparent;cursor:pointer;font-size:1.15rem;line-height:1;color:#c9a227;padding:0 4px}
+.star.off{color:var(--border)}
+th.sortable{cursor:pointer;white-space:nowrap}th.sortable:hover{text-decoration:underline}th .arr{font-size:.72em;color:var(--ink-soft)}
+tr.fav>td{background:var(--warn-soft)}
 tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
 .chart{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}
 .chart h3{margin:0 0 6px;font-size:.86rem}.chart svg{width:100%;height:auto;display:block}
@@ -131,6 +135,24 @@ let me = { role: "admin" };
 const isViewer = () => me.role === "viewer";
 const expanded = new Set();
 const selected = new Set(); // 체크한 게시글 id — "전체조회"는 체크한 글만 조회한다
+let sort = { key: null, dir: -1 }; // 정렬: 조회수/좋아요/댓글/리포스트, dir -1=내림차순
+function latestMetric(p, k) { const { last } = lastTwo(p); const v = last ? p.history[last][k] : null; return typeof v === "number" ? v : null; }
+function sortPosts(posts) {
+  const arr = posts.map((p, i) => ({ p, i }));
+  arr.sort((a, b) => {
+    const fa = a.p.favorite ? 1 : 0, fb = b.p.favorite ? 1 : 0;
+    if (fa !== fb) return fb - fa; // 즐겨찾기 먼저
+    if (sort.key) {
+      const va = latestMetric(a.p, sort.key), vb = latestMetric(b.p, sort.key);
+      const na = va == null ? -Infinity : va, nb = vb == null ? -Infinity : vb;
+      if (na !== nb) return sort.dir * (nb - na);
+    }
+    return a.i - b.i; // 원래 순서 유지
+  });
+  return arr.map((x) => x.p);
+}
+function setSort(k) { if (sort.key === k) sort.dir = -sort.dir; else { sort.key = k; sort.dir = -1; } render(); }
+function arr(k) { return sort.key === k ? `<span class="arr">${sort.dir < 0 ? "▼" : "▲"}</span>` : ""; }
 let data = { posts: [], accounts: [] };
 
 // ---- 표 ----
@@ -155,15 +177,16 @@ function render() {
   const admin = !isViewer();
   const cols = admin ? ["34px", "auto", "92px", "86px", "86px", "86px", "86px", "72px"] : ["auto", "92px", "86px", "86px", "86px", "86px", "70px"];
   const allOn = posts.length > 0 && posts.every((p) => selected.has(p.id));
-  let h = '<div class="table-scroll"><table><colgroup>' + cols.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr>' + (admin ? `<th><input type="checkbox" id="selAll" aria-label="전체 선택"${allOn ? " checked" : ""}></th>` : "") + '<th class="l">게시글</th><th>등록일<br>(조회일)</th><th>조회수</th><th>좋아요</th><th>댓글</th><th>리포스트</th><th></th></tr></thead><tbody>';
-  for (const p of posts) {
+  let h = '<div class="table-scroll"><table><colgroup>' + cols.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr>' + (admin ? `<th><input type="checkbox" id="selAll" aria-label="전체 선택"${allOn ? " checked" : ""}></th>` : "") + '<th class="l">게시글</th><th>등록일<br>(조회일)</th>'
+    + `<th class="sortable" data-sort="views">조회수${arr("views")}</th><th class="sortable" data-sort="likes">좋아요${arr("likes")}</th><th class="sortable" data-sort="replies">댓글${arr("replies")}</th><th class="sortable" data-sort="reposts">리포스트${arr("reposts")}</th><th></th></tr></thead><tbody>`;
+  for (const p of sortPosts(posts)) {
     const { last } = lastTwo(p);
     const um = /@([^/]+)\/post\/([^/?#]+)/.exec(p.url || "");
     const title = esc(p.text || (um ? `@${decodeURIComponent(um[1])} · ${um[2]} (본문 없음)` : p.url));
     const pub = p.source === "public";
-    h += `<tr>${admin ? `<td><input type="checkbox" data-sel="${esc(p.id)}" aria-label="조회할 게시글 선택"${selected.has(p.id) ? " checked" : ""}></td>` : ""}<td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${pub ? '<div class="sub">공개 링크</div>' : ""}${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${p.createdAt ? esc(p.createdAt.slice(5, 10)) : "-"}<div class="sub">(${last ? esc(last.slice(5)) : "-"})</div></td>`;
+    h += `<tr class="${p.favorite ? "fav" : ""}">${admin ? `<td><input type="checkbox" data-sel="${esc(p.id)}" aria-label="조회할 게시글 선택"${selected.has(p.id) ? " checked" : ""}></td>` : ""}<td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${pub ? '<div class="sub">공개 링크</div>' : ""}${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${p.createdAt ? esc(p.createdAt.slice(5, 10)) : "-"}<div class="sub">(${last ? esc(last.slice(5)) : "-"})</div></td>`;
     h += metricCell(p, "views", true) + metricCell(p, "likes") + metricCell(p, "replies") + metricCell(p, "reposts");
-    h += `<td class="act"><button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button></td></tr>`;
+    h += `<td class="act">${admin ? `<button class="star${p.favorite ? "" : " off"}" data-fav="${esc(p.id)}" title="즐겨찾기">${p.favorite ? "★" : "☆"}</button>` : ""}<button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button></td></tr>`;
     if (expanded.has(p.id)) h += `<tr class="detail"><td colspan="${admin ? 8 : 7}"><div class="chart"><h3>누적 조회수 · 일별 조회수 증가</h3>${chart(p)}</div></td></tr>`;
   }
   $("#table").innerHTML = h + "</tbody></table></div>";
@@ -259,7 +282,16 @@ $("#table").addEventListener("change", (e) => {
   if (e.target.id === "selAll") { for (const p of data.posts) e.target.checked ? selected.add(p.id) : selected.delete(p.id); render(); }
   else if (e.target.dataset.sel) { e.target.checked ? selected.add(e.target.dataset.sel) : selected.delete(e.target.dataset.sel); render(); }
 });
-$("#table").addEventListener("click", (e) => {
+$("#table").addEventListener("click", async (e) => {
+  const sortTh = e.target.closest("th[data-sort]");
+  if (sortTh) { setSort(sortTh.dataset.sort); return; }
+  const fav = e.target.dataset.fav;
+  if (fav) {
+    const post = data.posts.find((p) => p.id === fav); const next = !(post && post.favorite);
+    try { await api("/api/threads/posts/" + fav + "/favorite", "POST", { favorite: next }); if (post) post.favorite = next; render(); }
+    catch (er) { flash(er.message, "err"); }
+    return;
+  }
   const more = e.target.dataset.more;
   if (more) { expanded.has(more) ? expanded.delete(more) : expanded.add(more); render(); }
 });

@@ -104,15 +104,11 @@ test("Threads: 연결 → 게시글 등록 → 조회수 기록 → 회원 권�
     await admin.call("POST", "/api/users", { username: "agency", password: "agencypass1", projectIds: [pid], canSubmit: true });
     const ag = client();
     await ag.call("POST", "/api/login", { username: "agency", password: "agencypass1" });
-    // 대행사: 자기 업체(프로젝트) 직접 생성 → 본인에게 연결되어 본인만 보임
-    const myPid = (await ag.call("POST", "/api/projects", { name: "내업체A" })).data.id;
-    assert.ok(myPid);
+    // 대행사: 프로젝트 생성은 불가(관리자가 지정) + 배정받은 프로젝트만 보임
+    assert.strictEqual((await ag.call("POST", "/api/projects", { name: "x" })).status, 403);
     const agProjects = (await ag.call("GET", "/api/projects")).data;
-    assert.ok(agProjects.some((p) => p.id === myPid), "직접 만든 업체가 보여야 함");
-    assert.ok(agProjects.some((p) => p.id === pid), "배정받은 프로젝트도 보여야 함");
+    assert.ok(agProjects.some((p) => p.id === pid), "배정받은 프로젝트는 보여야 함");
     assert.ok(!agProjects.some((p) => p.id === pid2), "내 것이 아닌 프로젝트는 안 보여야 함");
-    // 일반 회원(뷰어)은 프로젝트 생성 불가
-    assert.strictEqual((await v.call("POST", "/api/projects", { name: "x" })).status, 403);
     // 자기 프로젝트에 등록 허용 (연결된 계정의 다른 글 'Other' 등록)
     assert.strictEqual((await ag.call("POST", "/api/threads/posts", { projectId: pid, url: "https://www.threads.com/@lifeplanet_official/post/Other" })).status, 201);
     // 다른 프로젝트에는 등록 불가

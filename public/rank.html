@@ -104,6 +104,11 @@ tr.detail>td{background:var(--surface-2);padding:14px;white-space:normal;text-al
 :root{--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--s1:#3987e5;--s2:#d95926;--s3:#199e70}}
 :root[data-theme="dark"]{--s1:#3987e5;--s2:#d95926;--s3:#199e70}
+.star{border:none;background:transparent;cursor:pointer;font-size:1.15rem;line-height:1;color:#c9a227;padding:0 3px}
+.star.off{color:var(--border)}
+th.sortable{cursor:pointer;white-space:nowrap}th.sortable:hover{text-decoration:underline}th .arr{font-size:.72em;color:var(--ink-soft)}
+tr.fav>td{background:var(--warn-soft)}
+.kwedit{border:none;background:transparent;cursor:pointer;font-size:.85rem;padding:0 2px;opacity:.6}.kwedit:hover{opacity:1}
 </style>
 </head>
 <body>
@@ -250,6 +255,28 @@ function dupInfo(items) {
 // ---- 더보기 차트: 왼쪽 일별 조회수 증가(막대) / 오른쪽 순위(선) ----
 const expanded = new Set();
 const selected = new Set(); // 체크한 항목 id — "전체조회"는 체크한 항목만 조회(없으면 전체)
+let rankSort = { key: null, dir: -1 }; // 정렬: 채널 key(integrated/cafe)별 조회수
+function latestViews(item, ckey) {
+  const dates = Object.keys(item.history || {}).sort();
+  for (let j = dates.length - 1; j >= 0; j--) { const v = item.history[dates[j]]?.[ckey]?.views; if (typeof v === "number") return v; }
+  return null;
+}
+function sortItems(items) {
+  const a = items.map((it, i) => ({ it, i }));
+  a.sort((x, y) => {
+    const fx = x.it.favorite ? 1 : 0, fy = y.it.favorite ? 1 : 0;
+    if (fx !== fy) return fy - fx;
+    if (rankSort.key) {
+      const vx = latestViews(x.it, rankSort.key), vy = latestViews(y.it, rankSort.key);
+      const nx = vx == null ? -Infinity : vx, ny = vy == null ? -Infinity : vy;
+      if (nx !== ny) return rankSort.dir * (ny - nx);
+    }
+    return x.i - y.i;
+  });
+  return a.map((o) => o.it);
+}
+function setRankSort(k) { if (rankSort.key === k) rankSort.dir = -rankSort.dir; else { rankSort.key = k; rankSort.dir = -1; } refresh(); }
+function sortArr(k) { return rankSort.key === k ? `<span class="arr">${rankSort.dir < 0 ? "▼" : "▲"}</span>` : ""; }
 const tip = document.createElement("div");
 tip.id = "tip";
 document.body.appendChild(tip);
@@ -379,9 +406,9 @@ async function refresh() {
   let h = '<div class="table-scroll"><table><colgroup>' + colw.map((w) => `<col style="width:${w}">`).join("") + '</colgroup><thead><tr>'
     + (isViewer() ? "" : '<th><input type="checkbox" id="selAll" aria-label="전체 선택"></th>')
     + '<th class="l">키워드</th><th class="l">콘텐츠</th><th>등록일<br>(조회일)</th>';
-  h += channels.map((c) => `<th>${esc(c.label)}</th>`).join("") + "<th></th></tr></thead><tbody>";
+  h += channels.map((c) => `<th class="sortable" data-sort="${esc(c.key)}">${esc(c.label)}${sortArr(c.key)}</th>`).join("") + "<th></th></tr></thead><tbody>";
   const dups = dupInfo(d.items);
-  for (const i of d.items) {
+  for (const i of sortItems(d.items)) {
     const last = Object.keys(i.history).sort().pop(); // 가장 최근 기록만 표에 표시 (누적 기록은 더보기 차트에서)
     const vb = viewsByChannel(i);
     const sameAs = dups[contentId(i)] || [];
@@ -389,11 +416,11 @@ async function refresh() {
     const cid = contentId(i);
     const why = cid.startsWith("a:") ? `같은 글 번호(${cid.slice(2)})` : cid.startsWith("t:") ? "같은 제목" : "같은 주소";
     const dupTip = isDup ? `${why} · 이 콘텐츠와 겹치는 항목:\n` + sameAs.filter((x) => x.id !== i.id).map((x) => `- [${x.keyword}] ${x.label}`).join("\n") : "";
-    h += "<tr>"
+    h += `<tr class="${i.favorite ? "fav" : ""}">`
       + (isViewer() ? "" : `<td style="text-align:center"><input type="checkbox" data-sel="${esc(i.id)}" aria-label="조회할 항목 선택"${selected.has(i.id) ? " checked" : ""}></td>`)
-      + `<td class="l">${esc(i.keyword)}</td><td class="l${isDup ? " dup" : ""}"${isDup ? ` title="${esc(dupTip)}" data-cid="${esc(cid)}"` : ""}>${i.link ? `<a class="plink" href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="글 열기(새 창)">${esc(i.label)}</a>` : esc(i.label)}${isDup ? `<span class="dupbadge">중복 ${sameAs.length}</span>` : ""}</td><td>${i.createdAt ? esc(i.createdAt.slice(5, 10)) : "-"}<div style="font-size:.82em;color:var(--ink-soft)">(${last ? esc(last.slice(5)) : "-"})</div></td>`;
+      + `<td class="l">${esc(i.keyword)}${isViewer() ? "" : ` <button class="kwedit" data-kwedit="${esc(i.id)}" title="키워드 수정">✏️</button>`}</td><td class="l${isDup ? " dup" : ""}"${isDup ? ` title="${esc(dupTip)}" data-cid="${esc(cid)}"` : ""}>${i.link ? `<a class="plink" href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="글 열기(새 창)">${esc(i.label)}</a>` : esc(i.label)}${isDup ? `<span class="dupbadge">중복 ${sameAs.length}</span>` : ""}</td><td>${i.createdAt ? esc(i.createdAt.slice(5, 10)) : "-"}<div style="font-size:.82em;color:var(--ink-soft)">(${last ? esc(last.slice(5)) : "-"})</div></td>`;
     h += channels.map((c) => (last ? cell(i.history[last]?.[c.key], vb[c.key][last]?.prev) : '<td class="na">-</td>')).join("");
-    h += `<td class="act"><button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button></td></tr>`;
+    h += `<td class="act">${isViewer() ? "" : `<button class="star${i.favorite ? "" : " off"}" data-fav="${esc(i.id)}" title="즐겨찾기(최상단 고정)">${i.favorite ? "★" : "☆"}</button>`}<button class="ghost" data-more="${esc(i.id)}">${expanded.has(i.id) ? "접기" : "더보기"}</button></td></tr>`;
     if (expanded.has(i.id)) h += detailRow(i, (isViewer() ? 0 : 1) + 3 + channels.length + 1);
   }
   $("#table").innerHTML = h + "</tbody></table></div>" + (d.items.some((i) => Object.keys(i.history).length) ? "" : '<div class="meta">항목을 체크하고 "전체조회"를 누르면 그 항목만 조회합니다(아무것도 체크하지 않으면 전체 조회).</div>');
@@ -508,6 +535,27 @@ $("#table").addEventListener("mouseover", (e) => {
 });
 $("#table").addEventListener("mouseleave", () => document.querySelectorAll("#table .dup-hi").forEach((x) => x.classList.remove("dup-hi")));
 $("#table").addEventListener("click", async (e) => {
+  const sortTh = e.target.closest("th[data-sort]");
+  if (sortTh) return setRankSort(sortTh.dataset.sort);
+  const favId = e.target.dataset.fav;
+  if (favId) {
+    const it = lastItems.find((x) => x.id === favId); const next = !(it && it.favorite);
+    try { await api("/api/rank/items/" + favId, { method: "PATCH", body: { favorite: next } }); if (it) it.favorite = next; refresh(); }
+    catch (er) { alert("즐겨찾기 변경 실패"); }
+    return;
+  }
+  const kwId = e.target.dataset.kwedit;
+  if (kwId) {
+    const it = lastItems.find((x) => x.id === kwId);
+    const cur = it ? it.keyword : "";
+    const val = prompt("키워드 수정", cur);
+    if (val == null) return;
+    const kw = val.trim();
+    if (!kw || kw === cur) return;
+    try { await api("/api/rank/items/" + kwId, { method: "PATCH", body: { keyword: kw } }); refresh(); }
+    catch (er) { alert("키워드 수정 실패"); }
+    return;
+  }
   const moreId = e.target.dataset.more;
   if (moreId) { expanded.has(moreId) ? expanded.delete(moreId) : expanded.add(moreId); return refresh(); }
 });

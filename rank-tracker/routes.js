@@ -235,6 +235,18 @@ function mount(app, dataDir) {
     res.json({ ok: true });
   });
 
+  // 즐겨찾기(favorite) / 키워드 수정
+  app.patch("/api/rank/items/:id", (req, res) => {
+    const db = load();
+    const it = db.items.find((i) => i.id === req.params.id);
+    if (!it) return res.status(404).json({ error: "not_found" });
+    const b = req.body || {};
+    if (typeof b.favorite === "boolean") it.favorite = b.favorite;
+    if (typeof b.keyword === "string" && b.keyword.trim()) it.keyword = b.keyword.trim().slice(0, 100);
+    save(db);
+    res.json({ item: it });
+  });
+
   // 지금 확인: 응답은 바로 돌려주고 백그라운드에서 조회 (수 분 걸릴 수 있음)
   app.post("/api/rank/run", (req, res) => {
     if (running) return res.status(409).json({ error: "busy" });

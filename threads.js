@@ -267,7 +267,7 @@ function mount(app, { dataDir }) {
     res.json({
       configured: configured(),
       accounts: db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
-      posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null })),
+      posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite })),
       running,
       lastAutoDate: db.meta.lastAutoDate || null,
     });
@@ -382,6 +382,15 @@ function mount(app, { dataDir }) {
     p.lastError = null;
     save(db);
     res.json({ ok: true });
+  });
+
+  app.post("/api/threads/posts/:id/favorite", requireAdmin, (req, res) => {
+    const db = load();
+    const p = db.posts.find((x) => x.id === req.params.id);
+    if (!p) return res.status(404).json({ error: "not_found" });
+    p.favorite = !!(req.body || {}).favorite;
+    save(db);
+    res.json({ ok: true, favorite: p.favorite });
   });
 
   app.delete("/api/threads/posts/:id", requireAdmin, (req, res) => {

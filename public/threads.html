@@ -187,7 +187,7 @@ function render() {
     const pub = p.source === "public";
     h += `<tr class="${p.favorite ? "fav" : ""}">${admin ? `<td><input type="checkbox" data-sel="${esc(p.id)}" aria-label="조회할 게시글 선택"${selected.has(p.id) ? " checked" : ""}></td>` : ""}<td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a>${pub ? '<div class="sub">공개 링크</div>' : ""}${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${p.createdAt ? esc(p.createdAt.slice(5, 10)) : "-"}<div class="sub">(${last ? esc(last.slice(5)) : "-"})</div></td>`;
     h += metricCell(p, "views", true) + metricCell(p, "likes") + metricCell(p, "replies") + metricCell(p, "reposts");
-    h += `<td class="act">${admin ? `<button class="star${p.favorite ? "" : " off"}" data-fav="${esc(p.id)}" title="즐겨찾기">${p.favorite ? "★" : "☆"}</button>` : ""}<button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button></td></tr>`;
+    h += `<td class="act">${admin ? `<button class="star${p.favorite ? "" : " off"}" data-fav="${esc(p.id)}" title="즐겨찾기">${p.favorite ? "★" : "☆"}</button><button data-move="${esc(p.id)}" title="다른 프로젝트로 이동">이동</button>` : ""}<button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "더보기"}</button></td></tr>`;
     if (expanded.has(p.id)) h += `<tr class="detail"><td colspan="${admin ? 8 : 7}"><div class="chart"><h3>누적 조회수 · 일별 조회수 증가</h3>${chart(p)}</div></td></tr>`;
   }
   $("#table").innerHTML = h + "</tbody></table></div>";
@@ -239,8 +239,10 @@ function chart(p) {
 }
 
 // ---- 불러오기/동작 ----
+let projectsList = [];
 async function loadProjects() {
   const ps = await api("/api/projects");
+  projectsList = ps;
   $("#project").innerHTML = ps.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
   const saved = localStorage.getItem("threadsProject");
   if (saved && ps.some((p) => p.id === saved)) $("#project").value = saved;
@@ -279,13 +281,27 @@ $("#runBtn").addEventListener("click", async () => {
   try { const r = await api("/api/threads/run", "POST", { projectId: $("#project").value, postIds: [...selected] }); flash(`조회 완료: 성공 ${r.ok}건` + (r.fail ? `, 실패 ${r.fail}건(표의 빨간 글씨 확인)` : "")); } catch (er) { flash(er.message, "err"); }
   await refresh();
 });
-$("#table").addEventListener("change", (e) => {
+$("#table").addEventListener("change", async (e) => {
   if (e.target.id === "selAll") { for (const p of data.posts) e.target.checked ? selected.add(p.id) : selected.delete(p.id); render(); }
   else if (e.target.dataset.sel) { e.target.checked ? selected.add(e.target.dataset.sel) : selected.delete(e.target.dataset.sel); render(); }
+  else if (e.target.dataset.moveto) {
+    const id = e.target.dataset.moveto, pid = e.target.value;
+    if (!pid) return render();
+    try { await api("/api/threads/posts/" + id + "", "PATCH", { projectId: pid }); flash("다른 프로젝트로 이동했습니다."); await refresh(); }
+    catch (er) { flash(er.message, "err"); render(); }
+  }
 });
 $("#table").addEventListener("click", async (e) => {
   const sortTh = e.target.closest("th[data-sort]");
   if (sortTh) { setSort(sortTh.dataset.sort); return; }
+  const move = e.target.dataset.move;
+  if (move) {
+    const cur = (data.posts.find((p) => p.id === move) || {}).projectId;
+    const opts = projectsList.filter((p) => p.id !== cur).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+    if (!opts) { flash("이동할 다른 프로젝트가 없습니다.", "warn"); return; }
+    e.target.outerHTML = `<select data-moveto="${esc(move)}"><option value="">이동할 프로젝트…</option>${opts}</select>`;
+    return;
+  }
   const fav = e.target.dataset.fav;
   if (fav) {
     const post = data.posts.find((p) => p.id === fav); const next = !(post && post.favorite);

@@ -116,7 +116,14 @@ test("Threads: 연결 → 게시글 등록 → 조회수 기록 → 회원 권�
     // 관리자는 전체(2건) 조회
     assert.strictEqual((await admin.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 2);
     // 운영/삭제/즐겨찾기/계정은 불가
-    for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["DELETE", `/api/threads/posts/${p.id}`], ["POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true }], ["GET", "/api/threads/config"]]) assert.strictEqual((await ag.call(m, u, b)).status, 403, `agency ${m} ${u}`);
+    for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["DELETE", `/api/threads/posts/${p.id}`], ["POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true }], ["GET", "/api/threads/config"], ["PATCH", `/api/threads/posts/${p.id}`, { projectId: pid2 }]]) assert.strictEqual((await ag.call(m, u, b)).status, 403, `agency ${m} ${u}`);
+
+    // 관리자: 대행사 글을 다른 프로젝트로 이동 → 원래 프로젝트에서 빠지고 대상에 들어감
+    const agPostId = agList.posts[0].id;
+    assert.strictEqual((await admin.call("PATCH", `/api/threads/posts/${agPostId}`, { projectId: pid2 })).data.projectId, pid2);
+    assert.strictEqual((await admin.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 1);
+    assert.ok((await admin.call("GET", `/api/threads?projectId=${pid2}`)).data.posts.some((x) => x.id === agPostId));
+    assert.strictEqual((await ag.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 0); // 대행사는 이동된 글 안 보임
   } finally { child.kill(); mock.srv.close(); }
 });
 

@@ -399,6 +399,18 @@ function mount(app, { dataDir }) {
     res.json({ ok: true, favorite: p.favorite });
   });
 
+  // 게시글을 다른 프로젝트로 이동 (관리자 전용) — 대행사가 등록한 글을 실제 프로젝트로 옮길 때
+  app.patch("/api/threads/posts/:id", requireAdmin, (req, res) => {
+    const db = load();
+    const p = db.posts.find((x) => x.id === req.params.id);
+    if (!p) return res.status(404).json({ error: "not_found" });
+    const pid = String((req.body || {}).projectId || "").trim();
+    if (!pid) return res.status(400).json({ error: "invalid_input", message: "이동할 프로젝트를 지정하세요." });
+    p.projectId = pid;
+    save(db);
+    res.json({ ok: true, projectId: pid });
+  });
+
   app.delete("/api/threads/posts/:id", requireAdmin, (req, res) => {
     const db = load();
     db.posts = db.posts.filter((p) => p.id !== req.params.id);

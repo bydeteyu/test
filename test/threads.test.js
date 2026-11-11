@@ -121,14 +121,23 @@ test("Threads: 연결 → 게시글 등록 → 조회수 기록 → 회원 권�
     // 관리자는 전체(2건) 조회
     assert.strictEqual((await admin.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 2);
     // 운영/삭제/즐겨찾기/계정은 불가
-    for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["DELETE", `/api/threads/posts/${p.id}`], ["POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true }], ["GET", "/api/threads/config"], ["PATCH", `/api/threads/posts/${p.id}`, { projectId: pid2 }]]) assert.strictEqual((await ag.call(m, u, b)).status, 403, `agency ${m} ${u}`);
+    for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["DELETE", `/api/threads/posts/${p.id}`], ["POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true }], ["GET", "/api/threads/config"], ["PATCH", `/api/threads/posts/${p.id}`, { projectId: pid2 }], ["POST", `/api/threads/posts/${p.id}/copy`, { projectId: pid2 }]]) assert.strictEqual((await ag.call(m, u, b)).status, 403, `agency ${m} ${u}`);
 
-    // 관리자: 대행사 글을 다른 프로젝트로 이동 → 원래 프로젝트에서 빠지고 대상에 들어감
+    // 관리자: 대행사 글을 다른 프로젝트로 복사 → 원본은 그대로 두고 대상에 사본 추가
     const agPostId = agList.posts[0].id;
-    assert.strictEqual((await admin.call("PATCH", `/api/threads/posts/${agPostId}`, { projectId: pid2 })).data.projectId, pid2);
-    assert.strictEqual((await admin.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 1);
-    assert.ok((await admin.call("GET", `/api/threads?projectId=${pid2}`)).data.posts.some((x) => x.id === agPostId));
-    assert.strictEqual((await ag.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 0); // 대행사는 이동된 글 안 보임
+    const cp = await admin.call("POST", `/api/threads/posts/${agPostId}/copy`, { projectId: pid2 });
+    assert.strictEqual(cp.status, 201);
+    assert.notStrictEqual(cp.data.id, agPostId); // 새 id
+    assert.strictEqual((await admin.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 2); // 원본 유지
+    assert.ok((await admin.call("GET", `/api/threads?projectId=${pid2}`)).data.posts.some((x) => x.id === cp.data.id));
+    assert.strictEqual((await ag.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 1); // 대행사는 원본 그대로 봄
+    assert.strictEqual((await admin.call("POST", `/api/threads/posts/${agPostId}/copy`, { projectId: pid2 })).status, 409); // 중복 복사 불가
+
+    // 관리자: 링크 수정(url) → url·shortcode 갱신
+    assert.strictEqual((await admin.call("PATCH", `/api/threads/posts/${agPostId}`, { url: "https://example.com/x" })).status, 400); // 잘못된 주소
+    const ed = await admin.call("PATCH", `/api/threads/posts/${agPostId}`, { url: "https://www.threads.com/@lifeplanet_official/post/EditedCode?z=1" });
+    assert.strictEqual(ed.status, 200);
+    assert.match(ed.data.url, /\/post\/EditedCode$/);
   } finally { child.kill(); mock.srv.close(); }
 });
 

@@ -399,16 +399,45 @@ function mount(app, { dataDir }) {
     res.json({ ok: true, favorite: p.favorite });
   });
 
-  // 게시글을 다른 프로젝트로 이동 (관리자 전용) — 대행사가 등록한 글을 실제 프로젝트로 옮길 때
-  app.patch("/api/threads/posts/:id", requireAdmin, (req, res) => {
+  // 게시글 수정 (관리자 전용): 링크(url) 또는 프로젝트(projectId) 변경
+  app.patch("/api/threads/posts/:id", requireAdmin, async (req, res) => {
+    const db = load();
+    const p = db.posts.find((x) => x.id === req.params.id);
+    if (!p) return res.status(404).json({ error: "not_found" });
+    const body = req.body || {};
+    if (body.url != null) {
+      const url = await resolveShare(String(body.url));
+      const code = shortcodeOf(url);
+      if (!code) return res.status(400).json({ error: "invalid_url", message: "Threads 게시글 주소(…/post/코드 또는 공유 링크)를 입력하세요." });
+      if (db.posts.some((x) => x.id !== p.id && x.projectId === p.projectId && x.shortcode === code)) return res.status(409).json({ error: "exists", message: "같은 프로젝트에 이미 등록된 게시글입니다." });
+      let u; try { u = new URL(String(url)); } catch { /* 아래에서 처리 */ }
+      if (!u || !WEB_HOSTS.includes(u.hostname)) return res.status(400).json({ error: "invalid_url", message: "threads.com 게시글 주소를 입력하세요." });
+      p.url = u.origin + u.pathname;
+      p.shortcode = code;
+      p.lastError = null;
+      save(db);
+      return res.json({ ok: true, url: p.url });
+    }
+    const pid = String(body.projectId || "").trim();
+    if (!pid) return res.status(400).json({ error: "invalid_input", message: "변경할 내용을 지정하세요." });
+    p.projectId = pid;
+    save(db);
+    res.json({ ok: true, projectId: pid });
+  });
+
+  // 게시글을 다른 프로젝트로 복사 (관리자 전용) — 대행사가 등록한 글(원본 유지)을 실제 프로젝트에도 추가할 때
+  app.post("/api/threads/posts/:id/copy", requireAdmin, (req, res) => {
     const db = load();
     const p = db.posts.find((x) => x.id === req.params.id);
     if (!p) return res.status(404).json({ error: "not_found" });
     const pid = String((req.body || {}).projectId || "").trim();
-    if (!pid) return res.status(400).json({ error: "invalid_input", message: "이동할 프로젝트를 지정하세요." });
-    p.projectId = pid;
+    if (!pid) return res.status(400).json({ error: "invalid_input", message: "복사할 프로젝트를 지정하세요." });
+    if (pid === p.projectId) return res.status(400).json({ error: "invalid_input", message: "같은 프로젝트입니다." });
+    if (db.posts.some((x) => x.projectId === pid && x.shortcode === p.shortcode)) return res.status(409).json({ error: "exists", message: "해당 프로젝트에 이미 등록된 게시글입니다." });
+    const copy = { ...p, id: crypto.randomUUID(), projectId: pid, favorite: false, history: { ...(p.history || {}) }, createdAt: new Date().toISOString(), createdBy: req.user.username };
+    db.posts.push(copy);
     save(db);
-    res.json({ ok: true, projectId: pid });
+    res.status(201).json({ id: copy.id, projectId: pid });
   });
 
   app.delete("/api/threads/posts/:id", requireAdmin, (req, res) => {

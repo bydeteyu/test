@@ -97,6 +97,26 @@ test("Threads: 연결 → 게시글 등록 → 조회수 기록 → 회원 권�
     for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["POST", "/api/threads/posts", { projectId: pid, url: "x" }], ["DELETE", `/api/threads/posts/${p.id}`], ["POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true }], ["GET", `/api/threads/connect?projectId=${pid}`], ["GET", "/api/threads/config"], ["DELETE", "/api/threads/accounts/x"]]) assert.strictEqual((await v.call(m, u, b)).status, 403, `${m} ${u}`);
     assert.strictEqual((await v.call("GET", "/threads.html")).status, 200);
     assert.strictEqual((await v.call("GET", "/home.html")).status, 200);
+    // 일반 회원은 글 등록 불가
+    assert.strictEqual((await v.call("POST", "/api/threads/posts", { projectId: pid, url: "https://www.threads.com/@x/post/Zz" })).status, 403);
+
+    // 대행사(등록 권한) 계정: 등록 가능 + 본인 글만 조회 + 운영 불가
+    await admin.call("POST", "/api/users", { username: "agency", password: "agencypass1", projectIds: [pid], canSubmit: true });
+    const ag = client();
+    await ag.call("POST", "/api/login", { username: "agency", password: "agencypass1" });
+    // 자기 프로젝트에 등록 허용 (연결된 계정의 다른 글 'Other' 등록)
+    assert.strictEqual((await ag.call("POST", "/api/threads/posts", { projectId: pid, url: "https://www.threads.com/@lifeplanet_official/post/Other" })).status, 201);
+    // 다른 프로젝트에는 등록 불가
+    assert.strictEqual((await ag.call("POST", "/api/threads/posts", { projectId: pid2, url: "https://www.threads.com/@x/post/Q" })).status, 403);
+    // 대행사는 본인이 등록한 글만 보이고(관리자 등록 글 제외), 계정 정보는 숨김
+    const agList = (await ag.call("GET", `/api/threads?projectId=${pid}`)).data;
+    assert.strictEqual(agList.posts.length, 1);
+    assert.match(agList.posts[0].url, /Other/);
+    assert.strictEqual(agList.accounts.length, 0);
+    // 관리자는 전체(2건) 조회
+    assert.strictEqual((await admin.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 2);
+    // 운영/삭제/즐겨찾기/계정은 불가
+    for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["DELETE", `/api/threads/posts/${p.id}`], ["POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true }], ["GET", "/api/threads/config"]]) assert.strictEqual((await ag.call(m, u, b)).status, 403, `agency ${m} ${u}`);
   } finally { child.kill(); mock.srv.close(); }
 });
 

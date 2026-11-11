@@ -143,6 +143,8 @@ function mount(app, { dataDir }) {
   const stateKey = () => crypto.createHash("sha256").update("threads-state:" + APP_SECRET).digest();
   const sign = (s) => crypto.createHmac("sha256", stateKey()).update(s).digest("base64url");
   const requireAdmin = (req, res, next) => (req.user && req.user.role === "admin" ? next() : res.status(403).json({ error: "forbidden" }));
+  // 대행사(등록 권한) 또는 관리자만 게시글 등록 가능
+  const requireSubmit = (req, res, next) => (req.user && (req.user.role === "admin" || req.user.canSubmit) ? next() : res.status(403).json({ error: "forbidden" }));
   const needConfig = (req, res, next) => (configured() ? next() : res.status(400).json({ error: "not_configured", message: "서버 환경 변수 THREADS_APP_ID / THREADS_APP_SECRET 이 설정되어 있지 않습니다." }));
 
   async function graph(method, url, params = {}) {
@@ -264,10 +266,12 @@ function mount(app, { dataDir }) {
   app.get("/api/threads", (req, res) => {
     const pid = String(req.query.projectId || "");
     const db = load();
+    // 대행사(등록 권한) 계정은 자기가 등록한 글만 본다
+    const onlyMine = req.user && req.user.role !== "admin" && req.user.canSubmit;
     res.json({
       configured: configured(),
-      accounts: db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
-      posts: db.posts.filter((p) => !pid || p.projectId === pid).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite })),
+      accounts: onlyMine ? [] : db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
+      posts: db.posts.filter((p) => (!pid || p.projectId === pid) && (!onlyMine || p.createdBy === req.user.username)).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite })),
       running,
       lastAutoDate: db.meta.lastAutoDate || null,
     });
@@ -344,8 +348,10 @@ function mount(app, { dataDir }) {
     res.json({ ok: true });
   });
 
-  app.post("/api/threads/posts", requireAdmin, async (req, res) => {
+  app.post("/api/threads/posts", requireSubmit, async (req, res) => {
     const { projectId } = req.body || {};
+    // 대행사 계정은 자신에게 허용된 프로젝트에만 등록 가능
+    if (req.user.role !== "admin" && !(req.user.projectIds || []).includes(String(projectId))) return res.status(403).json({ error: "forbidden" });
     const url = await resolveShare((req.body || {}).url);
     const code = shortcodeOf(url);
     if (!projectId || !code) return res.status(400).json({ error: "invalid_url", message: "Threads 게시글 주소(…/post/코드 또는 공유 링크)를 입력하세요. 공유 링크를 열지 못했다면 브라우저 주소창에 나타난 주소를 붙여넣어 보세요." });
@@ -356,7 +362,7 @@ function mount(app, { dataDir }) {
       try { found = await findMedia(a, code); } catch { /* 이 계정에서 못 찾으면 공개 링크로 등록 */ }
       if (found) { account = a; break; }
     }
-    const base = { id: crypto.randomUUID(), projectId, shortcode: code, history: {}, createdAt: new Date().toISOString() };
+    const base = { id: crypto.randomUUID(), projectId, shortcode: code, history: {}, createdAt: new Date().toISOString(), createdBy: req.user.username };
     let post;
     if (found) post = { ...base, accountId: account.id, url: found.permalink || String(url), mediaId: found.id, text: String(found.text || "").slice(0, 200), postedAt: found.timestamp || null };
     else {

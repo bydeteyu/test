@@ -80,17 +80,13 @@ app.get("/api/projects", (req, res) => {
 });
 
 app.post("/api/projects", (req, res) => {
-  const isAgency = req.user && req.user.role !== "admin" && req.user.canSubmit;
-  const name = String((req.body || {}).name || "").trim();
-  if (isAgency && !name) return res.status(400).json({ error: "invalid_input", message: "업체(프로젝트) 이름을 입력하세요." });
   const db = loadDb();
-  // 대행사는 이름만 설정 가능(임의 필드 주입 방지), 관리자는 기존처럼 body 전체 허용
-  const project = isAgency
-    ? { id: crypto.randomUUID(), createdAt: new Date().toISOString(), name, ownerUser: req.user.username }
-    : Object.assign({ id: crypto.randomUUID(), createdAt: new Date().toISOString() }, req.body);
+  const project = Object.assign(
+    { id: crypto.randomUUID(), createdAt: new Date().toISOString() },
+    req.body
+  );
   db.projects.push(project);
   saveDb(db);
-  if (isAgency) auth.addProjectToUser(req.user.username, project.id); // 만든 사람에게 연결 → 본인만 보임
   res.status(201).json(project);
 });
 

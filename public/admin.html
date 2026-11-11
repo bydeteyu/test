@@ -41,13 +41,14 @@ tbody tr:last-child td{border-bottom:0}
 
   <section class="card">
     <h2>회원 계정 만들기</h2>
-    <div class="meta">회원은 지정한 프로젝트의 <b>순위표를 보기만</b> 할 수 있습니다. 조회·추가·삭제 등은 할 수 없습니다.</div>
+    <div class="meta">회원은 지정한 프로젝트의 <b>순위표를 보기만</b> 할 수 있습니다. <b>대행사(등록 권한)</b>로 만들면 스레드 글을 <b>등록</b>하고 <b>본인이 등록한 글만</b> 볼 수 있습니다(조회·삭제·운영은 불가).</div>
     <form id="createForm" class="row">
       <label>표시 이름(선택)<input name="name" maxlength="60" placeholder="예: 교보라이프플래닛"></label>
       <label>아이디<input name="username" required pattern="[A-Za-z0-9_.\-]{3,32}" placeholder="영문·숫자 3~32자" autocomplete="off"></label>
       <label>비밀번호(8자 이상)<input name="password" type="text" required minlength="8" autocomplete="off"></label>
     </form>
     <div><div class="meta" style="margin-bottom:6px">볼 수 있는 프로젝트</div><div class="checks" id="createProjects"></div></div>
+    <div><label><input type="checkbox" id="createCanSubmit"> <b>대행사(스레드 글 등록 권한)</b> — 체크하면 지정한 프로젝트에 스레드 글을 등록할 수 있습니다</label></div>
     <div><button class="primary" type="submit" form="createForm">계정 만들기</button></div>
   </section>
 
@@ -55,7 +56,7 @@ tbody tr:last-child td{border-bottom:0}
     <h2>계정 목록</h2>
     <div class="meta" id="adminInfo"></div>
     <div style="overflow-x:auto"><table>
-      <thead><tr><th>아이디</th><th>표시 이름</th><th>프로젝트</th><th></th></tr></thead>
+      <thead><tr><th>아이디</th><th>표시 이름</th><th>프로젝트</th><th>권한</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
   </section>
@@ -91,14 +92,16 @@ function renderRows() {
   $("#rows").innerHTML = users.length ? users.map((u) => `<tr data-id="${esc(u.id)}">
     <td><b>${esc(u.username)}</b></td><td>${esc(u.name)}</td>
     <td>${u.projectIds.length ? u.projectIds.map((id) => `<span class="tag">${esc(pname(id))}</span>`).join("") : '<span class="meta">없음</span>'}</td>
-    <td style="white-space:nowrap"><button data-act="proj">프로젝트 수정</button> <button data-act="pw">비밀번호 변경</button> <button class="danger" data-act="del">삭제</button></td></tr>`).join("") : '<tr><td colspan="4" class="meta">만든 회원 계정이 없습니다.</td></tr>';
+    <td style="white-space:nowrap">${u.canSubmit ? '<span class="tag">대행사(등록)</span>' : '<span class="meta">뷰어</span>'}</td>
+    <td style="white-space:nowrap"><button data-act="submit">${u.canSubmit ? "뷰어로" : "대행사로"}</button> <button data-act="proj">프로젝트 수정</button> <button data-act="pw">비밀번호 변경</button> <button class="danger" data-act="del">삭제</button></td></tr>`).join("") : '<tr><td colspan="5" class="meta">만든 회원 계정이 없습니다.</td></tr>';
 }
 $("#createForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
   const projectIds = [...document.querySelectorAll('#createProjects input:checked')].map((x) => x.value);
+  const canSubmit = $("#createCanSubmit").checked;
   if (!projectIds.length && !confirm("연결된 프로젝트가 없으면 로그인해도 볼 수 있는 것이 없습니다. 그래도 만들까요?")) return;
-  try { await api("/api/users", "POST", { ...f, projectIds }); e.target.reset(); document.querySelectorAll('#createProjects input').forEach((x) => (x.checked = false)); say(`계정을 만들었습니다. 아이디 "${f.username}", 비밀번호 "${f.password}" 를 회원에게 전달하세요.`); await load(); }
+  try { await api("/api/users", "POST", { ...f, projectIds, canSubmit }); e.target.reset(); $("#createCanSubmit").checked = false; document.querySelectorAll('#createProjects input').forEach((x) => (x.checked = false)); say(`계정을 만들었습니다. 아이디 "${f.username}", 비밀번호 "${f.password}" 를 회원에게 전달하세요.`); await load(); }
   catch (er) { say(er.message, false); }
 });
 $("#rows").addEventListener("click", async (e) => {
@@ -106,6 +109,7 @@ $("#rows").addEventListener("click", async (e) => {
   const tr = e.target.closest("tr"), u = users.find((x) => x.id === tr.dataset.id);
   try {
     if (act === "del") { if (confirm(`"${u.username}" 계정을 삭제할까요?`)) { await api("/api/users/" + u.id, "DELETE"); say("삭제했습니다."); await load(); } }
+    else if (act === "submit") { const next = !u.canSubmit; await api("/api/users/" + u.id, "PATCH", { canSubmit: next }); say(next ? "대행사(등록 권한)로 바꿨습니다." : "뷰어로 바꿨습니다."); await load(); }
     else if (act === "pw") { const pw = prompt(`"${u.username}" 의 새 비밀번호 (8자 이상)`); if (pw) { await api("/api/users/" + u.id, "PATCH", { password: pw }); say(`비밀번호를 바꿨습니다. 새 비밀번호: ${pw} (기존 로그인은 해제됩니다)`); } }
     else if (act === "proj") {
       const cell = tr.children[2];

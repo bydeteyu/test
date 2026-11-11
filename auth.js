@@ -60,7 +60,7 @@ function mount(app, { dataDir }) {
     if (ENV_PASS && username === ENV_USER) return pv === envPv() ? { username, role: "admin", name: "관리자", projectIds: null } : null;
     const u = loadUsers().find((x) => x.username === username);
     if (!u || String(u.pv) !== pv) return null;
-    return { username, role: "viewer", name: u.name || username, projectIds: u.projectIds || [], id: u.id };
+    return { username, role: "viewer", name: u.name || username, projectIds: u.projectIds || [], id: u.id, canSubmit: !!u.canSubmit };
   }
   const readCookie = (req, name) => {
     const m = new RegExp(`(?:^|; )${name}=([^;]*)`).exec(req.headers.cookie || "");
@@ -96,6 +96,8 @@ function mount(app, { dataDir }) {
       if (req.method === "GET" && VIEWER_PAGES.has(req.path)) return next();
       return res.redirect("/home.html");
     }
+    // 대행사(등록 권한) 계정은 스레드 글 등록만 추가 허용 (조회·삭제·운영은 불가)
+    if (req.user.canSubmit && req.method === "POST" && req.path === "/api/threads/posts") return next();
     if (!VIEWER_API.some(([m, p]) => m === req.method && p === req.path)) return res.status(403).json({ error: "forbidden" });
     if (req.method === "GET" && (req.path === "/api/rank" || req.path === "/api/rank/xlsx" || req.path === "/api/threads")) { // 허용된 프로젝트만
       const allowed = req.user.projectIds || [];
@@ -142,19 +144,19 @@ function mount(app, { dataDir }) {
     res.json({ ok: true, role: name === ENV_USER && ENV_PASS ? "admin" : "viewer" });
   });
   app.post("/api/logout", (req, res) => { res.clearCookie(COOKIE, { path: "/" }); res.json({ ok: true }); });
-  app.get("/api/me", (req, res) => res.json({ username: req.user.username, name: req.user.name, role: req.user.role, projectIds: req.user.projectIds, openMode: !!req.user.open }));
+  app.get("/api/me", (req, res) => res.json({ username: req.user.username, name: req.user.name, role: req.user.role, projectIds: req.user.projectIds, canSubmit: !!req.user.canSubmit, openMode: !!req.user.open }));
 
   // ---- 계정 관리 (관리자 전용) ----
-  const publicUser = (u) => ({ id: u.id, username: u.username, name: u.name || "", projectIds: u.projectIds || [], createdAt: u.createdAt });
+  const publicUser = (u) => ({ id: u.id, username: u.username, name: u.name || "", projectIds: u.projectIds || [], canSubmit: !!u.canSubmit, createdAt: u.createdAt });
   app.get("/api/users", requireAdmin, (req, res) => res.json({ openMode: !!req.user.open, admin: ENV_PASS ? ENV_USER : null, users: loadUsers().map(publicUser) }));
   app.post("/api/users", requireAdmin, requireManaged, (req, res) => {
-    const { username, password, name = "", projectIds = [] } = req.body || {};
+    const { username, password, name = "", projectIds = [], canSubmit = false } = req.body || {};
     if (!USERNAME_RE.test(String(username || ""))) return res.status(400).json({ error: "invalid_username", message: "아이디는 영문·숫자·._- 3~32자로 입력하세요." });
     if (String(password || "").length < 8) return res.status(400).json({ error: "weak_password", message: "비밀번호는 8자 이상이어야 합니다." });
     const users = loadUsers();
     if (username === ENV_USER || users.some((u) => u.username === username)) return res.status(409).json({ error: "exists", message: "이미 있는 아이디입니다." });
     const salt = crypto.randomBytes(16).toString("hex");
-    const u = { id: crypto.randomUUID(), username, name: String(name).slice(0, 60), projectIds: [...new Set((projectIds || []).map(String))], salt, hash: hashPw(password, salt), pv: 1, createdAt: new Date().toISOString() };
+    const u = { id: crypto.randomUUID(), username, name: String(name).slice(0, 60), projectIds: [...new Set((projectIds || []).map(String))], canSubmit: !!canSubmit, salt, hash: hashPw(password, salt), pv: 1, createdAt: new Date().toISOString() };
     users.push(u);
     saveUsers(users);
     res.status(201).json(publicUser(u));
@@ -163,9 +165,10 @@ function mount(app, { dataDir }) {
     const users = loadUsers();
     const u = users.find((x) => x.id === req.params.id);
     if (!u) return res.status(404).json({ error: "not_found" });
-    const { password, name, projectIds } = req.body || {};
+    const { password, name, projectIds, canSubmit } = req.body || {};
     if (Array.isArray(projectIds)) u.projectIds = [...new Set(projectIds.map(String))];
     if (typeof name === "string") u.name = name.slice(0, 60);
+    if (typeof canSubmit === "boolean") u.canSubmit = canSubmit;
     if (password !== undefined) {
       if (String(password).length < 8) return res.status(400).json({ error: "weak_password", message: "비밀번호는 8자 이상이어야 합니다." });
       u.salt = crypto.randomBytes(16).toString("hex");

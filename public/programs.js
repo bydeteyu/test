@@ -14,7 +14,12 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   let mePromise = null;
   const getMe = () => (mePromise ??= fetch("/api/me").then((r) => (r.status === 401 ? (location.href = "/login.html", null) : r.json())).catch(() => ({ role: "admin" })));
-  const visible = (me) => PROGRAMS.filter((p) => !(p.adminOnly && me && me.role === "viewer"));
+  const visible = (me) => PROGRAMS.filter((p) => {
+    if (p.adminOnly && me && me.role === "viewer") return false;
+    // 회원은 계정에 허용된 순위체크 도구만 (tools 없으면 모두 허용)
+    if (me && me.role === "viewer" && (p.id === "rank" || p.id === "threads") && Array.isArray(me.tools) && !me.tools.includes(p.id)) return false;
+    return true;
+  });
 
   const CSS = `
   #appbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;background:#1A1C2E;color:#fff;padding:0 18px;height:52px;margin:-20px -16px 18px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}

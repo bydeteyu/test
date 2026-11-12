@@ -56,11 +56,20 @@ function mount(app, { dataDir }) {
     if (Number(parts[1]) < Date.now()) return null;
     return resolveUser(username, parts[2]);
   }
+  // ---- 계정이 쓸 수 있는 도구(순위체크) ----
+  const TOOL_IDS = ["rank", "threads"]; // rank=네이버 카페, threads=스레드
+  const effTools = (u) => { // 저장값이 없으면(기존 계정) 둘 다 허용
+    let t = Array.isArray(u.tools) ? [...new Set(u.tools.map(String))].filter((x) => TOOL_IDS.includes(x)) : [];
+    if (!t.length) t = [...TOOL_IDS];
+    if (u.canSubmit && !t.includes("threads")) t.push("threads"); // 대행사는 스레드 필수
+    return t;
+  };
+  const cleanTools = (tools, canSubmit) => effTools({ tools, canSubmit });
   function resolveUser(username, pv) {
-    if (ENV_PASS && username === ENV_USER) return pv === envPv() ? { username, role: "admin", name: "관리자", projectIds: null } : null;
+    if (ENV_PASS && username === ENV_USER) return pv === envPv() ? { username, role: "admin", name: "관리자", projectIds: null, tools: TOOL_IDS } : null;
     const u = loadUsers().find((x) => x.username === username);
     if (!u || String(u.pv) !== pv) return null;
-    return { username, role: "viewer", name: u.name || username, projectIds: u.projectIds || [], id: u.id, canSubmit: !!u.canSubmit };
+    return { username, role: "viewer", name: u.name || username, projectIds: u.projectIds || [], id: u.id, canSubmit: !!u.canSubmit, tools: effTools(u) };
   }
   const readCookie = (req, name) => {
     const m = new RegExp(`(?:^|; )${name}=([^;]*)`).exec(req.headers.cookie || "");
@@ -92,13 +101,21 @@ function mount(app, { dataDir }) {
   const VIEWER_API = [["GET", "/api/me"], ["GET", "/api/projects"], ["GET", "/api/rank"], ["GET", "/api/rank/xlsx"], ["GET", "/api/threads"], ["POST", "/api/logout"]];
   const VIEWER_PAGES = new Set(["/rank.html", "/rank", "/threads.html", "/home.html", "/programs.js", "/login.html"]);
   function viewerGuard(req, res, next) {
+    const tools = req.user.tools || TOOL_IDS; // 이 계정이 쓸 수 있는 순위체크 도구
     if (!req.path.startsWith("/api/")) {
-      if (req.method === "GET" && VIEWER_PAGES.has(req.path)) return next();
+      if (req.method === "GET" && VIEWER_PAGES.has(req.path)) {
+        if (req.path === "/rank.html" && !tools.includes("rank")) return res.redirect("/home.html");
+        if (req.path === "/threads.html" && !tools.includes("threads")) return res.redirect("/home.html");
+        return next();
+      }
       return res.redirect("/home.html");
     }
     // 대행사(등록 권한) 계정은 스레드 글 등록만 추가 허용 (조회·삭제·운영은 불가)
     if (req.user.canSubmit && req.method === "POST" && req.path === "/api/threads/posts") return next();
     if (!VIEWER_API.some(([m, p]) => m === req.method && p === req.path)) return res.status(403).json({ error: "forbidden" });
+    // 계정에 허용된 도구가 아니면 차단
+    if ((req.path === "/api/rank" || req.path === "/api/rank/xlsx") && !tools.includes("rank")) return res.status(403).json({ error: "forbidden" });
+    if (req.path === "/api/threads" && !tools.includes("threads")) return res.status(403).json({ error: "forbidden" });
     if (req.method === "GET" && (req.path === "/api/rank" || req.path === "/api/rank/xlsx" || req.path === "/api/threads")) { // 허용된 프로젝트만
       const allowed = req.user.projectIds || [];
       const pid = req.query.projectId;
@@ -112,7 +129,7 @@ function mount(app, { dataDir }) {
 
   app.use((req, res, next) => {
     if (req.path === "/healthz" || req.path.startsWith("/api/threads/ext/") || req.path === "/login.html" || (req.method === "POST" && req.path === "/api/login")) return next();
-    if (!authEnabled()) { req.user = { username: "(로컬)", role: "admin", name: "로컬 관리자", projectIds: null, open: true }; return next(); }
+    if (!authEnabled()) { req.user = { username: "(로컬)", role: "admin", name: "로컬 관리자", projectIds: null, open: true, tools: TOOL_IDS }; return next(); }
     const u = authenticate(req);
     if (!u) {
       if (req.path.startsWith("/api/")) return res.status(401).json({ error: "login_required" });
@@ -144,19 +161,19 @@ function mount(app, { dataDir }) {
     res.json({ ok: true, role: name === ENV_USER && ENV_PASS ? "admin" : "viewer" });
   });
   app.post("/api/logout", (req, res) => { res.clearCookie(COOKIE, { path: "/" }); res.json({ ok: true }); });
-  app.get("/api/me", (req, res) => res.json({ username: req.user.username, name: req.user.name, role: req.user.role, projectIds: req.user.projectIds, canSubmit: !!req.user.canSubmit, openMode: !!req.user.open }));
+  app.get("/api/me", (req, res) => res.json({ username: req.user.username, name: req.user.name, role: req.user.role, projectIds: req.user.projectIds, canSubmit: !!req.user.canSubmit, tools: req.user.tools || TOOL_IDS, openMode: !!req.user.open }));
 
   // ---- 계정 관리 (관리자 전용) ----
-  const publicUser = (u) => ({ id: u.id, username: u.username, name: u.name || "", projectIds: u.projectIds || [], canSubmit: !!u.canSubmit, createdAt: u.createdAt });
+  const publicUser = (u) => ({ id: u.id, username: u.username, name: u.name || "", projectIds: u.projectIds || [], canSubmit: !!u.canSubmit, tools: effTools(u), createdAt: u.createdAt });
   app.get("/api/users", requireAdmin, (req, res) => res.json({ openMode: !!req.user.open, admin: ENV_PASS ? ENV_USER : null, users: loadUsers().map(publicUser) }));
   app.post("/api/users", requireAdmin, requireManaged, (req, res) => {
-    const { username, password, name = "", projectIds = [], canSubmit = false } = req.body || {};
+    const { username, password, name = "", projectIds = [], canSubmit = false, tools } = req.body || {};
     if (!USERNAME_RE.test(String(username || ""))) return res.status(400).json({ error: "invalid_username", message: "아이디는 영문·숫자·._- 3~32자로 입력하세요." });
     if (String(password || "").length < 8) return res.status(400).json({ error: "weak_password", message: "비밀번호는 8자 이상이어야 합니다." });
     const users = loadUsers();
     if (username === ENV_USER || users.some((u) => u.username === username)) return res.status(409).json({ error: "exists", message: "이미 있는 아이디입니다." });
     const salt = crypto.randomBytes(16).toString("hex");
-    const u = { id: crypto.randomUUID(), username, name: String(name).slice(0, 60), projectIds: [...new Set((projectIds || []).map(String))], canSubmit: !!canSubmit, salt, hash: hashPw(password, salt), pv: 1, createdAt: new Date().toISOString() };
+    const u = { id: crypto.randomUUID(), username, name: String(name).slice(0, 60), projectIds: [...new Set((projectIds || []).map(String))], canSubmit: !!canSubmit, tools: cleanTools(tools, !!canSubmit), salt, hash: hashPw(password, salt), pv: 1, createdAt: new Date().toISOString() };
     users.push(u);
     saveUsers(users);
     res.status(201).json(publicUser(u));
@@ -165,10 +182,12 @@ function mount(app, { dataDir }) {
     const users = loadUsers();
     const u = users.find((x) => x.id === req.params.id);
     if (!u) return res.status(404).json({ error: "not_found" });
-    const { password, name, projectIds, canSubmit } = req.body || {};
+    const { password, name, projectIds, canSubmit, tools } = req.body || {};
     if (Array.isArray(projectIds)) u.projectIds = [...new Set(projectIds.map(String))];
     if (typeof name === "string") u.name = name.slice(0, 60);
     if (typeof canSubmit === "boolean") u.canSubmit = canSubmit;
+    if (Array.isArray(tools)) u.tools = cleanTools(tools, u.canSubmit);
+    else if (u.canSubmit) u.tools = cleanTools(u.tools, true); // 대행사로 바뀌면 스레드 보장
     if (password !== undefined) {
       if (String(password).length < 8) return res.status(400).json({ error: "weak_password", message: "비밀번호는 8자 이상이어야 합니다." });
       u.salt = crypto.randomBytes(16).toString("hex");

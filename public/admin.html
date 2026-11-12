@@ -16,12 +16,12 @@ a{color:var(--accent)}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
 label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-soft);flex:1 1 180px}
 input{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0}
-select{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0;cursor:pointer}
-select.editsel{padding:5px 8px}
 button{font:inherit;font-weight:600;cursor:pointer;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--ink);padding:7px 12px;font-size:.82rem}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;padding:9px 16px;font-size:.9rem}
 button.danger{color:var(--bad);border-color:var(--bad-soft)}
 .meta{font-size:.8rem;color:var(--ink-soft)}
+.field{border:1px solid var(--border);border-radius:10px;padding:11px 13px;background:var(--bg)}
+.field .lab{font-weight:600;font-size:.82rem;color:var(--ink);margin-bottom:8px}
 .checks{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:.85rem}
 .checks label{flex:0 0 auto;flex-direction:row;align-items:center;gap:6px;color:var(--ink)}
 table{border-collapse:collapse;width:100%;font-size:.86rem}
@@ -43,15 +43,18 @@ tbody tr:last-child td{border-bottom:0}
 
   <section class="card">
     <h2>회원 계정 만들기</h2>
-    <div class="meta"><b>뷰어</b>는 지정한 프로젝트의 순위표를 보기만 합니다. <b>대행사</b>는 지정한 프로젝트에 스레드 글을 등록하고 본인이 등록한 글만 봅니다(조회·삭제·운영 불가, 스레드 도구 자동 포함).</div>
+    <div class="meta">회원은 지정한 프로젝트의 <b>순위표를 보기만</b> 할 수 있습니다. <b>대행사(등록 권한)</b>는 지정한 프로젝트에 스레드 글을 <b>등록</b>하고 <b>본인이 등록한 글만</b> 볼 수 있습니다(조회·삭제·운영은 불가). 대행사에는 아래 '볼 수 있는 프로젝트'에서 <b>전용 프로젝트를 지정</b>해 주세요(없으면 만든 뒤 지정).</div>
     <form id="createForm" class="row">
       <label>표시 이름(선택)<input name="name" maxlength="60" placeholder="예: 교보라이프플래닛"></label>
       <label>아이디<input name="username" required pattern="[A-Za-z0-9_.\-]{3,32}" placeholder="영문·숫자 3~32자" autocomplete="off"></label>
       <label>비밀번호(8자 이상)<input name="password" type="text" required minlength="8" autocomplete="off"></label>
-      <label>프로젝트<select id="createProject"></select></label>
-      <label>권한<select id="createRole"><option value="viewer">뷰어 (보기 전용)</option><option value="submit">대행사 (스레드 글 등록)</option></select></label>
-      <label>순위체크 도구<select id="createTools"><option value="both">카페 + 스레드</option><option value="rank">카페만</option><option value="threads">스레드만</option></select></label>
     </form>
+    <div class="field"><div class="lab">볼 수 있는 프로젝트</div><div class="checks" id="createProjects"></div></div>
+    <div class="field"><div class="lab">권한</div><div class="checks"><label><input type="checkbox" id="createCanSubmit"> 대행사 (스레드 글 등록 권한) — 체크 안 하면 뷰어(보기 전용)</label></div></div>
+    <div class="field"><div class="lab">사용할 순위체크 도구 <span class="meta" style="font-weight:400">— 로그인하면 체크한 도구만 보입니다</span></div><div class="checks" id="createTools">
+      <label><input type="checkbox" name="tool" value="rank" checked> 🏆 순위 체크 (Naver 카페)</label>
+      <label><input type="checkbox" name="tool" value="threads" checked> 🧵 순위 체크 (Threads)</label>
+    </div></div>
     <div><button class="primary" type="submit" form="createForm">계정 만들기</button></div>
   </section>
 
@@ -87,15 +90,12 @@ async function load() {
   users = d.users;
   $("#openWarn").hidden = !d.openMode;
   $("#adminInfo").textContent = d.admin ? `관리자 계정: ${d.admin} (비밀번호는 서버 환경 변수 APP_PASSWORD 로 관리합니다)` : "";
-  $("#createProject").innerHTML = projects.length ? projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("") : '<option value="">(프로젝트 없음 — 순위 체크 화면에서 먼저 만드세요)</option>';
+  $("#createProjects").innerHTML = projects.length ? projects.map((p) => `<label><input type="checkbox" name="pj" value="${esc(p.id)}"> ${esc(p.name)}</label>`).join("") : '<span class="meta">프로젝트가 없습니다. 순위 체크 화면에서 먼저 프로젝트를 만드세요.</span>';
   renderRows();
 }
 const pname = (id) => (projects.find((p) => p.id === id) || { name: "(삭제된 프로젝트)" }).name;
 const TOOLN = { rank: "카페", threads: "스레드" };
-const projOptions = (sel) => projects.map((p) => `<option value="${esc(p.id)}" ${p.id === sel ? "selected" : ""}>${esc(p.name)}</option>`).join("");
-const toolsToVal = (arr) => { const t = arr && arr.length ? arr : ["rank", "threads"]; return t.includes("rank") && t.includes("threads") ? "both" : t[0]; };
-const valToTools = (v) => (v === "both" ? ["rank", "threads"] : [v]);
-const toolsSelect = (val) => `<select class="editsel">${[["both", "카페 + 스레드"], ["rank", "카페만"], ["threads", "스레드만"]].map(([v, l]) => `<option value="${v}" ${v === val ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+const TOOL_LIST = [["rank", "🏆 카페"], ["threads", "🧵 스레드"]];
 function renderRows() {
   $("#rows").innerHTML = users.length ? users.map((u) => `<tr data-id="${esc(u.id)}">
     <td><b>${esc(u.username)}</b></td><td>${esc(u.name)}</td>
@@ -106,15 +106,16 @@ function renderRows() {
 $("#createForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
-  const proj = $("#createProject").value;
-  const projectIds = proj ? [proj] : [];
-  const canSubmit = $("#createRole").value === "submit";
-  const tools = valToTools($("#createTools").value);
+  const projectIds = [...document.querySelectorAll('#createProjects input:checked')].map((x) => x.value);
+  const canSubmit = $("#createCanSubmit").checked;
+  const tools = [...document.querySelectorAll('#createTools input:checked')].map((x) => x.value);
+  if (!tools.length) { say("사용할 순위체크 도구를 하나 이상 선택하세요.", false); return; }
+  const extra = canSubmit && !projectIds.length ? " ⚠️ 대행사에 지정된 프로젝트가 없습니다. '프로젝트 수정'에서 전용 프로젝트를 지정해 주세요." : "";
   try {
-    if (!projectIds.length && !confirm("프로젝트가 지정되지 않았습니다. 로그인해도 볼 수 있는 것이 없습니다. 그래도 만들까요?")) return;
+    if (!canSubmit && !projectIds.length && !confirm("연결된 프로젝트가 없으면 로그인해도 볼 수 있는 것이 없습니다. 그래도 만들까요?")) return;
     await api("/api/users", "POST", { ...f, projectIds, canSubmit, tools });
-    e.target.reset(); $("#createRole").value = "viewer"; $("#createTools").value = "both";
-    say(`계정을 만들었습니다. 아이디 "${f.username}", 비밀번호 "${f.password}" 를 회원에게 전달하세요.`); await load(); }
+    e.target.reset(); $("#createCanSubmit").checked = false; document.querySelectorAll('#createProjects input').forEach((x) => (x.checked = false)); document.querySelectorAll('#createTools input').forEach((x) => (x.checked = true));
+    say(`계정을 만들었습니다. 아이디 "${f.username}", 비밀번호 "${f.password}" 를 회원에게 전달하세요.` + extra); await load(); }
   catch (er) { say(er.message, false); }
 });
 $("#rows").addEventListener("click", async (e) => {
@@ -126,15 +127,17 @@ $("#rows").addEventListener("click", async (e) => {
     else if (act === "pw") { const pw = prompt(`"${u.username}" 의 새 비밀번호 (8자 이상)`); if (pw) { await api("/api/users/" + u.id, "PATCH", { password: pw }); say(`비밀번호를 바꿨습니다. 새 비밀번호: ${pw} (기존 로그인은 해제됩니다)`); } }
     else if (act === "proj") {
       const cell = tr.children[2];
-      cell.innerHTML = `<select class="editsel">${projOptions(u.projectIds[0])}</select> <button data-act="save">저장</button>`;
+      cell.innerHTML = '<div class="checks">' + projects.map((p) => `<label><input type="checkbox" value="${esc(p.id)}" ${u.projectIds.includes(p.id) ? "checked" : ""}> ${esc(p.name)}</label>`).join("") + '</div><button data-act="save" style="margin-top:6px">저장</button>';
     } else if (act === "save") {
-      const id = tr.children[2].querySelector("select").value;
-      await api("/api/users/" + u.id, "PATCH", { projectIds: id ? [id] : [] }); say("프로젝트를 저장했습니다."); await load();
+      const ids = [...tr.querySelectorAll('input:checked')].map((x) => x.value);
+      await api("/api/users/" + u.id, "PATCH", { projectIds: ids }); say("프로젝트를 저장했습니다."); await load();
     } else if (act === "tools") {
+      const cur = u.tools && u.tools.length ? u.tools : ["rank", "threads"];
       const cell = tr.children[3];
-      cell.innerHTML = toolsSelect(toolsToVal(u.tools)) + ' <button data-act="savetools">저장</button>';
+      cell.innerHTML = '<div class="checks">' + TOOL_LIST.map(([v, label]) => `<label><input type="checkbox" value="${v}" ${cur.includes(v) ? "checked" : ""}> ${label}</label>`).join("") + '</div><button data-act="savetools" style="margin-top:6px">저장</button>';
     } else if (act === "savetools") {
-      const tools = valToTools(tr.children[3].querySelector("select").value);
+      const tools = [...tr.children[3].querySelectorAll('input:checked')].map((x) => x.value);
+      if (!tools.length) { say("도구를 하나 이상 선택하세요.", false); return; }
       await api("/api/users/" + u.id, "PATCH", { tools }); say("사용할 도구를 저장했습니다."); await load();
     }
   } catch (er) { say(er.message, false); }

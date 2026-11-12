@@ -338,10 +338,28 @@ test("Threads: 확장 프로그램 키로 대상 조회·숫자 보고, 키 없�
     const add = await call("POST", "/api/threads/posts", { projectId: pid, url: `http://127.0.0.1:${web.address().port}/@a/post/ExtPost1` });
     const id = add.data.id;
     // 쿠키 없이 키만으로 접근
-    const saved = cookie; cookie = "";
+    let saved = cookie; cookie = "";
     assert.strictEqual((await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": "wrong" })).status, 401);
-    const tasks = await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": key });
+    cookie = saved;
+    const add2 = await call("POST", "/api/threads/posts", { projectId: pid, url: `http://127.0.0.1:${web.address().port}/@a/post/ExtPost2` });
+    const id2 = add2.data.id;
+    saved = cookie; cookie = "";
+    let tasks = await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": key });
     assert.strictEqual(tasks.status, 200);
+    assert.deepStrictEqual(tasks.data.posts.map((p) => p.id).sort(), [id, id2].sort()); // 기본: 공개 글 모두
+    // 확장 조회 대상을 id 하나로 지정 → ext/tasks 는 id 만, 다른 글은 extOff
+    cookie = saved;
+    assert.strictEqual((await call("POST", "/api/threads/ext-scope", { projectId: pid, postIds: [id] })).data.on, 1);
+    assert.strictEqual((await call("GET", `/api/threads?projectId=${pid}`)).data.posts.find((p) => p.id === id2).extOff, true);
+    saved = cookie; cookie = "";
+    tasks = await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": key });
+    assert.deepStrictEqual(tasks.data.posts.map((p) => p.id), [id]);
+    // 전체로 되돌리면 다시 모두 대상
+    cookie = saved;
+    await call("POST", "/api/threads/ext-scope", { projectId: pid, reset: true });
+    await call("DELETE", "/api/threads/posts/" + id2);
+    saved = cookie; cookie = "";
+    tasks = await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": key });
     assert.deepStrictEqual(tasks.data.posts.map((p) => p.id), [id]);
     assert.strictEqual((await call("POST", "/api/threads/ext/report", { postId: id }, { "X-Ext-Key": key })).status, 400);
     assert.strictEqual((await call("POST", "/api/threads/ext/report", { postId: "nope", views: 1 }, { "X-Ext-Key": key })).status, 404);

@@ -271,7 +271,7 @@ function mount(app, { dataDir }) {
     res.json({
       configured: configured(),
       accounts: onlyMine ? [] : db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
-      posts: db.posts.filter((p) => (!pid || p.projectId === pid) && (!onlyMine || p.createdBy === req.user.username)).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite })),
+      posts: db.posts.filter((p) => (!pid || p.projectId === pid) && (!onlyMine || p.createdBy === req.user.username)).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite, extOff }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite, extOff: !!extOff })),
       running,
       lastAutoDate: db.meta.lastAutoDate || null,
     });
@@ -461,7 +461,24 @@ function mount(app, { dataDir }) {
   app.post("/api/threads/ext-key", requireAdmin, (req, res) => { const db = load(); db.meta.extKey = crypto.randomBytes(24).toString("hex"); save(db); res.json({ key: db.meta.extKey }); });
   app.get("/api/threads/ext/tasks", extAuth, (req, res) => {
     const db = load();
-    res.json({ date: today(), posts: db.posts.filter((p) => p.source === "public").map((p) => ({ id: p.id, url: p.url })) });
+    // extOff=true 로 지정된 글(화면에서 "확장 제외")은 확장 조회 대상에서 뺀다
+    res.json({ date: today(), posts: db.posts.filter((p) => p.source === "public" && !p.extOff).map((p) => ({ id: p.id, url: p.url })) });
+  });
+
+  // 확장 조회 대상 지정 (관리자 전용): 해당 프로젝트의 공개 글 중 체크한 것만 대상으로 남기고 나머지는 제외
+  app.post("/api/threads/ext-scope", requireAdmin, (req, res) => {
+    const db = load();
+    const body = req.body || {};
+    const pid = String(body.projectId || "").trim();
+    if (!pid) return res.status(400).json({ error: "invalid_input", message: "프로젝트를 지정하세요." });
+    const pub = db.posts.filter((p) => p.projectId === pid && p.source === "public");
+    if (body.reset) { for (const p of pub) delete p.extOff; save(db); return res.json({ ok: true, count: pub.length }); }
+    const ids = Array.isArray(body.postIds) ? body.postIds.map(String) : [];
+    if (!ids.length) return res.status(400).json({ error: "invalid_input", message: "대상으로 지정할 공개 링크 글을 먼저 체크하세요." });
+    let on = 0;
+    for (const p of pub) { p.extOff = !ids.includes(p.id); if (!p.extOff) on++; }
+    save(db);
+    res.json({ ok: true, on });
   });
   app.post("/api/threads/ext/report", extAuth, (req, res) => {
     const db = load();

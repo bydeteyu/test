@@ -32,6 +32,9 @@ tbody tr:last-child td{border-bottom:none}
 td.l,th.l{text-align:left;word-break:keep-all;overflow-wrap:anywhere;line-height:1.35}
 td.act{text-align:right}.acts{display:inline-flex;flex-direction:column;align-items:stretch;gap:5px}.acts button{margin:0;padding:4px 8px;font-size:.74rem;white-space:nowrap}.acts .star{padding:0}
 button.icon{border:none;background:transparent;padding:0 2px;font-size:.82rem;line-height:1;opacity:.7;vertical-align:baseline}button.icon:hover{opacity:1}
+button.on{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+#extStatus{align-self:center;font-size:.8rem;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--surface-2);color:var(--ink-soft)}
+#extStatus.on{background:var(--good-soft);color:var(--good)}
 a.plink{color:inherit;text-decoration:none}a.plink:hover{color:var(--accent);text-decoration:underline}a.plink::after{content:"↗";font-size:.7em;margin-left:3px;opacity:.55}
 .num{font-weight:700}.delta{color:var(--good);font-weight:600;font-size:.76rem}.delta.zero{color:var(--ink-soft);font-weight:400}
 .star{border:none;background:transparent;cursor:pointer;font-size:1.15rem;line-height:1;color:#c9a227;padding:0 4px}
@@ -113,7 +116,7 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
   <section class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <h2>조회수 현황</h2>
-      <div class="row" style="gap:8px"><button class="primary admin-only" id="runBtn" type="button" disabled>전체조회</button><button class="admin-only" id="extScopeBtn" type="button" disabled title="체크한 공개 링크 글만 확장 프로그램(T) 조회 대상으로 지정">선택만 확장대상</button><button class="admin-only" id="extAllBtn" type="button" title="이 프로젝트의 공개 링크 글을 모두 확장 조회 대상으로 되돌림">확장대상 전체</button><button class="danger admin-only" id="delSelBtn" type="button" disabled>선택 삭제</button></div>
+      <div class="row" style="gap:8px"><button class="primary admin-only" id="runBtn" type="button" disabled>전체조회</button><button class="admin-only" id="extScopeBtn" type="button" disabled title="체크한 공개 링크 글만 확장 프로그램(T) 조회 대상으로 지정">선택만 확장대상</button><button class="admin-only" id="extAllBtn" type="button" title="이 프로젝트의 공개 링크 글을 모두 확장 조회 대상으로 되돌림">확장대상 전체</button><button class="danger admin-only" id="delSelBtn" type="button" disabled>선택 삭제</button><span class="admin-only" id="extStatus"></span></div>
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
@@ -200,8 +203,18 @@ function updateRunBtn() {
   b.title = selected.size ? "" : "조회할 게시글을 먼저 체크하세요";
   const d = $("#delSelBtn");
   if (d) { d.textContent = selected.size ? `선택 삭제 (${selected.size})` : "선택 삭제"; d.disabled = !selected.size; d.title = selected.size ? "" : "삭제할 게시글을 먼저 체크하세요"; }
-  const es = $("#extScopeBtn");
+  const es = $("#extScopeBtn"), est = $("#extStatus");
   if (es) { es.textContent = selected.size ? `선택만 확장대상 (${selected.size})` : "선택만 확장대상"; es.disabled = !selected.size; }
+  if (est) {
+    const pub = (data.posts || []).filter((p) => p.source === "public");
+    const off = pub.filter((p) => p.extOff).length;
+    const active = off > 0; // 일부라도 "확장 제외"면 선택 모드
+    est.classList.toggle("on", active);
+    est.hidden = pub.length === 0;
+    est.textContent = active ? `확장대상: 선택 ${pub.length - off}건 ✓` : `확장대상: 전체 (${pub.length}건)`;
+    const es2 = $("#extScopeBtn"); if (es2) es2.classList.toggle("on", active);
+    const ea = $("#extAllBtn"); if (ea) ea.disabled = !active; // 선택 모드일 때만 '전체로' 활성화
+  }
 }
 
 // ---- 차트: 선 = 누적 조회수(왼쪽 축), 막대 = 일별 조회수 증가(오른쪽 축) ----

@@ -20,6 +20,8 @@ button{font:inherit;font-weight:600;cursor:pointer;border-radius:9px;border:1px 
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;padding:9px 16px;font-size:.9rem}
 button.danger{color:var(--bad);border-color:var(--bad-soft)}
 .meta{font-size:.8rem;color:var(--ink-soft)}
+.field{border:1px solid var(--border);border-radius:10px;padding:11px 13px;background:var(--bg)}
+.field .lab{font-weight:600;font-size:.82rem;color:var(--ink);margin-bottom:8px}
 .checks{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:.85rem}
 .checks label{flex:0 0 auto;flex-direction:row;align-items:center;gap:6px;color:var(--ink)}
 table{border-collapse:collapse;width:100%;font-size:.86rem}
@@ -47,9 +49,9 @@ tbody tr:last-child td{border-bottom:0}
       <label>아이디<input name="username" required pattern="[A-Za-z0-9_.\-]{3,32}" placeholder="영문·숫자 3~32자" autocomplete="off"></label>
       <label>비밀번호(8자 이상)<input name="password" type="text" required minlength="8" autocomplete="off"></label>
     </form>
-    <div><div class="meta" style="margin-bottom:6px">볼 수 있는 프로젝트</div><div class="checks" id="createProjects"></div></div>
-    <div><label><input type="checkbox" id="createCanSubmit"> <b>대행사(스레드 글 등록 권한)</b> — 체크하면 지정한 프로젝트에 스레드 글을 등록할 수 있습니다(위에서 전용 프로젝트를 지정하세요)</label></div>
-    <div><div class="meta" style="margin-bottom:6px">사용할 순위체크 도구 — 로그인하면 체크한 도구만 보입니다</div><div class="checks" id="createTools">
+    <div class="field"><div class="lab">볼 수 있는 프로젝트</div><div class="checks" id="createProjects"></div></div>
+    <div class="field"><div class="lab">권한</div><div class="checks"><label><input type="checkbox" id="createCanSubmit"> 대행사 (스레드 글 등록 권한) — 체크 안 하면 뷰어(보기 전용)</label></div></div>
+    <div class="field"><div class="lab">사용할 순위체크 도구 <span class="meta" style="font-weight:400">— 로그인하면 체크한 도구만 보입니다</span></div><div class="checks" id="createTools">
       <label><input type="checkbox" name="tool" value="rank" checked> 🏆 순위 체크 (Naver 카페)</label>
       <label><input type="checkbox" name="tool" value="threads" checked> 🧵 순위 체크 (Threads)</label>
     </div></div>

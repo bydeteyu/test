@@ -77,6 +77,29 @@ test("관리자/회원 권한", async () => {
     assert.strictEqual((await v.call("GET", "/")).location, "/home.html");
     assert.strictEqual((await v.call("GET", "/admin.html")).location, "/home.html");
     assert.strictEqual((await v.call("GET", "/rank.html")).status, 200);
+    assert.strictEqual((await v.call("GET", "/threads.html")).status, 200); // 도구 미지정(기존 계정)은 둘 다 허용
+
+    // 도구 제한: 카페만 허용된 회원은 스레드 접근 불가
+    await admin.call("POST", "/api/users", { username: "rankonly", password: "rankpass12", projectIds: [p1], tools: ["rank"] });
+    const r1 = client(s.base);
+    await r1.call("POST", "/api/login", { username: "rankonly", password: "rankpass12" });
+    assert.deepStrictEqual((await r1.call("GET", "/api/me")).data.tools, ["rank"]);
+    assert.strictEqual((await r1.call("GET", `/api/rank?projectId=${p1}`)).status, 200);
+    assert.strictEqual((await r1.call("GET", "/rank.html")).status, 200);
+    assert.strictEqual((await r1.call("GET", `/api/threads?projectId=${p1}`)).status, 403);
+    assert.strictEqual((await r1.call("GET", "/threads.html")).location, "/home.html");
+    // 스레드만 허용된 회원은 카페 접근 불가
+    await admin.call("POST", "/api/users", { username: "thronly", password: "thrpass123", projectIds: [p1], tools: ["threads"] });
+    const t1 = client(s.base);
+    await t1.call("POST", "/api/login", { username: "thronly", password: "thrpass123" });
+    assert.deepStrictEqual((await t1.call("GET", "/api/me")).data.tools, ["threads"]);
+    assert.strictEqual((await t1.call("GET", `/api/threads?projectId=${p1}`)).status, 200);
+    assert.strictEqual((await t1.call("GET", `/api/rank?projectId=${p1}`)).status, 403);
+    assert.strictEqual((await t1.call("GET", "/rank.html")).location, "/home.html");
+    // 대행사로 바꾸면 스레드 도구가 보장된다
+    const roId = (await admin.call("GET", "/api/users")).data.users.find((u) => u.username === "rankonly").id;
+    await admin.call("PATCH", `/api/users/${roId}`, { canSubmit: true });
+    assert.deepStrictEqual((await admin.call("GET", "/api/users")).data.users.find((u) => u.username === "rankonly").tools.sort(), ["rank", "threads"]);
 
     // 비밀번호를 바꾸면 기존 세션이 끊긴다
     const id = (await admin.call("GET", "/api/users")).data.users[0].id;

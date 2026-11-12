@@ -49,6 +49,10 @@ tbody tr:last-child td{border-bottom:0}
     </form>
     <div><div class="meta" style="margin-bottom:6px">볼 수 있는 프로젝트</div><div class="checks" id="createProjects"></div></div>
     <div><label><input type="checkbox" id="createCanSubmit"> <b>대행사(스레드 글 등록 권한)</b> — 체크하면 지정한 프로젝트에 스레드 글을 등록할 수 있습니다(위에서 전용 프로젝트를 지정하세요)</label></div>
+    <div><div class="meta" style="margin-bottom:6px">사용할 순위체크 도구 — 로그인하면 체크한 도구만 보입니다</div><div class="checks" id="createTools">
+      <label><input type="checkbox" name="tool" value="rank" checked> 🏆 순위 체크 (Naver 카페)</label>
+      <label><input type="checkbox" name="tool" value="threads" checked> 🧵 순위 체크 (Threads)</label>
+    </div></div>
     <div><button class="primary" type="submit" form="createForm">계정 만들기</button></div>
   </section>
 
@@ -88,23 +92,27 @@ async function load() {
   renderRows();
 }
 const pname = (id) => (projects.find((p) => p.id === id) || { name: "(삭제된 프로젝트)" }).name;
+const TOOLN = { rank: "카페", threads: "스레드" };
+const TOOL_LIST = [["rank", "🏆 카페"], ["threads", "🧵 스레드"]];
 function renderRows() {
   $("#rows").innerHTML = users.length ? users.map((u) => `<tr data-id="${esc(u.id)}">
     <td><b>${esc(u.username)}</b></td><td>${esc(u.name)}</td>
     <td>${u.projectIds.length ? u.projectIds.map((id) => `<span class="tag">${esc(pname(id))}</span>`).join("") : '<span class="meta">없음</span>'}</td>
-    <td style="white-space:nowrap">${u.canSubmit ? '<span class="tag">대행사(등록)</span>' : '<span class="meta">뷰어</span>'}</td>
-    <td style="white-space:nowrap"><button data-act="submit">${u.canSubmit ? "뷰어로" : "대행사로"}</button> <button data-act="proj">프로젝트 수정</button> <button data-act="pw">비밀번호 변경</button> <button class="danger" data-act="del">삭제</button></td></tr>`).join("") : '<tr><td colspan="5" class="meta">만든 회원 계정이 없습니다.</td></tr>';
+    <td style="white-space:nowrap">${u.canSubmit ? '<span class="tag">대행사(등록)</span>' : '<span class="meta">뷰어</span>'}<div style="margin-top:3px">${(u.tools && u.tools.length ? u.tools : ["rank", "threads"]).map((t) => `<span class="tag">${TOOLN[t] || t}</span>`).join("")}</div></td>
+    <td style="white-space:nowrap"><button data-act="submit">${u.canSubmit ? "뷰어로" : "대행사로"}</button> <button data-act="proj">프로젝트 수정</button> <button data-act="tools">도구 수정</button> <button data-act="pw">비밀번호 변경</button> <button class="danger" data-act="del">삭제</button></td></tr>`).join("") : '<tr><td colspan="5" class="meta">만든 회원 계정이 없습니다.</td></tr>';
 }
 $("#createForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(e.target));
   const projectIds = [...document.querySelectorAll('#createProjects input:checked')].map((x) => x.value);
   const canSubmit = $("#createCanSubmit").checked;
+  const tools = [...document.querySelectorAll('#createTools input:checked')].map((x) => x.value);
+  if (!tools.length) { say("사용할 순위체크 도구를 하나 이상 선택하세요.", false); return; }
   const extra = canSubmit && !projectIds.length ? " ⚠️ 대행사에 지정된 프로젝트가 없습니다. '프로젝트 수정'에서 전용 프로젝트를 지정해 주세요." : "";
   try {
     if (!canSubmit && !projectIds.length && !confirm("연결된 프로젝트가 없으면 로그인해도 볼 수 있는 것이 없습니다. 그래도 만들까요?")) return;
-    await api("/api/users", "POST", { ...f, projectIds, canSubmit });
-    e.target.reset(); $("#createCanSubmit").checked = false; document.querySelectorAll('#createProjects input').forEach((x) => (x.checked = false));
+    await api("/api/users", "POST", { ...f, projectIds, canSubmit, tools });
+    e.target.reset(); $("#createCanSubmit").checked = false; document.querySelectorAll('#createProjects input').forEach((x) => (x.checked = false)); document.querySelectorAll('#createTools input').forEach((x) => (x.checked = true));
     say(`계정을 만들었습니다. 아이디 "${f.username}", 비밀번호 "${f.password}" 를 회원에게 전달하세요.` + extra); await load(); }
   catch (er) { say(er.message, false); }
 });
@@ -121,6 +129,14 @@ $("#rows").addEventListener("click", async (e) => {
     } else if (act === "save") {
       const ids = [...tr.querySelectorAll('input:checked')].map((x) => x.value);
       await api("/api/users/" + u.id, "PATCH", { projectIds: ids }); say("프로젝트를 저장했습니다."); await load();
+    } else if (act === "tools") {
+      const cur = u.tools && u.tools.length ? u.tools : ["rank", "threads"];
+      const cell = tr.children[3];
+      cell.innerHTML = '<div class="checks">' + TOOL_LIST.map(([v, label]) => `<label><input type="checkbox" value="${v}" ${cur.includes(v) ? "checked" : ""}> ${label}</label>`).join("") + '</div><button data-act="savetools" style="margin-top:6px">저장</button>';
+    } else if (act === "savetools") {
+      const tools = [...tr.children[3].querySelectorAll('input:checked')].map((x) => x.value);
+      if (!tools.length) { say("도구를 하나 이상 선택하세요.", false); return; }
+      await api("/api/users/" + u.id, "PATCH", { tools }); say("사용할 도구를 저장했습니다."); await load();
     }
   } catch (er) { say(er.message, false); }
 });

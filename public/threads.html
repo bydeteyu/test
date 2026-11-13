@@ -352,8 +352,7 @@ $("#extScopeBtn").addEventListener("click", async () => {
   const conn = sel.filter((p) => p.source !== "public").length;
   try {
     const r = await api("/api/threads/ext-scope", "POST", { projectId: $("#project").value, postIds: [...selected] });
-    selected.clear();
-    alert(`확장(T) 조회 대상을 체크한 ${r.on}개 글로 지정했습니다.\n나머지 글은 확장에서 제외됩니다.` + (conn ? `\n(연결 계정 글 ${conn}건 포함 — 토큰이 만료돼 서버가 못 읽을 때 확장이 대신 읽습니다)` : ""));
+    alert(`확장(T) 조회 대상을 체크한 ${r.on}개 글로 지정했습니다.\n이제 확장은 지정된 글만 조회합니다(모든 프로젝트 통틀어).` + (conn ? `\n(연결 계정 글 ${conn}건 포함 — 토큰이 만료돼 서버가 못 읽을 때 확장이 대신 읽습니다)` : ""));
     await refresh();
   } catch (er) { alert("지정 실패: " + er.message); }
 });

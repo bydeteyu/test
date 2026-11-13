@@ -147,7 +147,11 @@ function mount(app, { dataDir }) {
   const requireSubmit = (req, res, next) => (req.user && (req.user.role === "admin" || req.user.canSubmit) ? next() : res.status(403).json({ error: "forbidden" }));
   // 확장(T)이 이 글을 열어 읽을 대상인가? 기본값: 공개 링크 글은 대상, 연결 계정 글은 비대상(서버가 API로 읽음).
   // 관리자가 "선택만 확장대상"으로 지정하면 소스와 무관하게 extScan(true/false)으로 덮어쓴다.
-  const scanTarget = (p) => (p.extScan === true ? true : p.extScan === false ? false : p.source === "public" && !p.extOff);
+  // 확장(T)은 모든 프로젝트를 통틀어 한 번에 돈다. 그래서 대상 판정도 전역으로 한다:
+  // - 어떤 글이든 "확장 대상"으로 명시 지정(extScan===true)된 게 하나라도 있으면 → 그 지정된 글만 대상
+  // - 지정이 하나도 없으면(기본) → 공개 링크 글 전체가 대상(연결 계정 글은 서버 API가 읽음)
+  const anyExplicitScan = (db) => db.posts.some((p) => p.extScan === true);
+  const scanTarget = (p, explicit) => (explicit ? p.extScan === true : p.source === "public" && !p.extOff);
   const needConfig = (req, res, next) => (configured() ? next() : res.status(400).json({ error: "not_configured", message: "서버 환경 변수 THREADS_APP_ID / THREADS_APP_SECRET 이 설정되어 있지 않습니다." }));
 
   async function graph(method, url, params = {}) {
@@ -274,7 +278,7 @@ function mount(app, { dataDir }) {
     res.json({
       configured: configured(),
       accounts: onlyMine ? [] : db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
-      posts: db.posts.filter((p) => (!pid || p.projectId === pid) && (!onlyMine || p.createdBy === req.user.username)).map((p) => { const { id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite } = p; return { id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite, extScan: scanTarget(p) }; }),
+      posts: (() => { const explicit = anyExplicitScan(db); return db.posts.filter((p) => (!pid || p.projectId === pid) && (!onlyMine || p.createdBy === req.user.username)).map((p) => { const { id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite } = p; return { id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite, extScan: scanTarget(p, explicit) }; }); })(),
       running,
       lastAutoDate: db.meta.lastAutoDate || null,
     });
@@ -465,7 +469,8 @@ function mount(app, { dataDir }) {
   app.get("/api/threads/ext/tasks", extAuth, (req, res) => {
     const db = load();
     // 확장 스캔 대상인 글만 (기본: 공개 링크 글 + 관리자가 지정한 연결 계정 글)
-    res.json({ date: today(), posts: db.posts.filter(scanTarget).map((p) => ({ id: p.id, url: p.url })) });
+    const explicit = anyExplicitScan(db);
+    res.json({ date: today(), posts: db.posts.filter((p) => scanTarget(p, explicit)).map((p) => ({ id: p.id, url: p.url })) });
   });
 
   // 확장 조회 대상 지정 (관리자 전용): 해당 프로젝트에서 체크한 글만 확장 스캔 대상으로 남기고 나머지는 제외 (공개·연결 계정 모두 가능)
@@ -475,7 +480,7 @@ function mount(app, { dataDir }) {
     const pid = String(body.projectId || "").trim();
     if (!pid) return res.status(400).json({ error: "invalid_input", message: "프로젝트를 지정하세요." });
     const ps = db.posts.filter((p) => p.projectId === pid);
-    if (body.reset) { for (const p of ps) { delete p.extScan; delete p.extOff; } save(db); return res.json({ ok: true, count: ps.filter(scanTarget).length }); }
+    if (body.reset) { for (const p of ps) { delete p.extScan; delete p.extOff; } save(db); const ex = anyExplicitScan(db); return res.json({ ok: true, count: ps.filter((p) => scanTarget(p, ex)).length }); }
     const ids = Array.isArray(body.postIds) ? body.postIds.map(String) : [];
     if (!ids.length) return res.status(400).json({ error: "invalid_input", message: "대상으로 지정할 글을 먼저 체크하세요." });
     let on = 0;
@@ -485,7 +490,8 @@ function mount(app, { dataDir }) {
   });
   app.post("/api/threads/ext/report", extAuth, (req, res) => {
     const db = load();
-    const p = db.posts.find((x) => x.id === String((req.body || {}).postId || "") && scanTarget(x));
+    const explicit = anyExplicitScan(db);
+    const p = db.posts.find((x) => x.id === String((req.body || {}).postId || "") && scanTarget(x, explicit));
     if (!p) return res.status(404).json({ error: "not_found" });
     const num = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
     const got = {};

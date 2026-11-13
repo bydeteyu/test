@@ -182,6 +182,15 @@ test("Threads: OAuth 설정 없이 액세스 토큰만으로 연결 → 등록 �
     const p = (await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0];
     assert.strictEqual(Object.values(p.history)[0].views, 125);
     assert.strictEqual((await call("POST", "/api/threads/run", { postId: p.id })).data.ok, 1);
+    // 연결 계정 글은 기본적으로 확장(T) 스캔 대상이 아니지만, 지정하면 포함된다(토큰 만료 대비)
+    assert.strictEqual(p.extScan, false);
+    const extKey = (await call("GET", "/api/threads/ext-key")).data.key;
+    assert.strictEqual((await call("POST", "/api/threads/ext-scope", { projectId: pid, postIds: [p.id] })).data.on, 1);
+    assert.strictEqual((await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0].extScan, true);
+    const tk = await (await fetch(base + "/api/threads/ext/tasks", { headers: { "X-Ext-Key": extKey } })).json();
+    assert.ok(tk.posts.some((x) => x.id === p.id), "연결 계정 글이 확장 조회 대상에 포함돼야 함");
+    await call("POST", "/api/threads/ext-scope", { projectId: pid, reset: true }); // 기본값 복원
+    assert.strictEqual((await call("GET", `/api/threads?projectId=${pid}`)).data.posts[0].extScan, false);
     // 토큰 갱신: 새 토큰과 실제 만료일(expires_in)로 바뀐다
     const accId = list.accounts[0].id;
     const rf = await call("POST", `/api/threads/accounts/${accId}/refresh`);
@@ -347,10 +356,11 @@ test("Threads: 확장 프로그램 키로 대상 조회·숫자 보고, 키 없�
     let tasks = await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": key });
     assert.strictEqual(tasks.status, 200);
     assert.deepStrictEqual(tasks.data.posts.map((p) => p.id).sort(), [id, id2].sort()); // 기본: 공개 글 모두
-    // 확장 조회 대상을 id 하나로 지정 → ext/tasks 는 id 만, 다른 글은 extOff
+    // 확장 조회 대상을 id 하나로 지정 → ext/tasks 는 id 만, 다른 글은 제외(extScan=false)
     cookie = saved;
     assert.strictEqual((await call("POST", "/api/threads/ext-scope", { projectId: pid, postIds: [id] })).data.on, 1);
-    assert.strictEqual((await call("GET", `/api/threads?projectId=${pid}`)).data.posts.find((p) => p.id === id2).extOff, true);
+    assert.strictEqual((await call("GET", `/api/threads?projectId=${pid}`)).data.posts.find((p) => p.id === id2).extScan, false);
+    assert.strictEqual((await call("GET", `/api/threads?projectId=${pid}`)).data.posts.find((p) => p.id === id).extScan, true);
     saved = cookie; cookie = "";
     tasks = await call("GET", "/api/threads/ext/tasks", null, { "X-Ext-Key": key });
     assert.deepStrictEqual(tasks.data.posts.map((p) => p.id), [id]);

@@ -145,6 +145,9 @@ function mount(app, { dataDir }) {
   const requireAdmin = (req, res, next) => (req.user && req.user.role === "admin" ? next() : res.status(403).json({ error: "forbidden" }));
   // 대행사(등록 권한) 또는 관리자만 게시글 등록 가능
   const requireSubmit = (req, res, next) => (req.user && (req.user.role === "admin" || req.user.canSubmit) ? next() : res.status(403).json({ error: "forbidden" }));
+  // 확장(T)이 이 글을 열어 읽을 대상인가? 기본값: 공개 링크 글은 대상, 연결 계정 글은 비대상(서버가 API로 읽음).
+  // 관리자가 "선택만 확장대상"으로 지정하면 소스와 무관하게 extScan(true/false)으로 덮어쓴다.
+  const scanTarget = (p) => (p.extScan === true ? true : p.extScan === false ? false : p.source === "public" && !p.extOff);
   const needConfig = (req, res, next) => (configured() ? next() : res.status(400).json({ error: "not_configured", message: "서버 환경 변수 THREADS_APP_ID / THREADS_APP_SECRET 이 설정되어 있지 않습니다." }));
 
   async function graph(method, url, params = {}) {
@@ -271,7 +274,7 @@ function mount(app, { dataDir }) {
     res.json({
       configured: configured(),
       accounts: onlyMine ? [] : db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
-      posts: db.posts.filter((p) => (!pid || p.projectId === pid) && (!onlyMine || p.createdBy === req.user.username)).map(({ id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite, extOff }) => ({ id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite, extOff: !!extOff })),
+      posts: db.posts.filter((p) => (!pid || p.projectId === pid) && (!onlyMine || p.createdBy === req.user.username)).map((p) => { const { id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite } = p; return { id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite, extScan: scanTarget(p) }; }),
       running,
       lastAutoDate: db.meta.lastAutoDate || null,
     });
@@ -461,28 +464,28 @@ function mount(app, { dataDir }) {
   app.post("/api/threads/ext-key", requireAdmin, (req, res) => { const db = load(); db.meta.extKey = crypto.randomBytes(24).toString("hex"); save(db); res.json({ key: db.meta.extKey }); });
   app.get("/api/threads/ext/tasks", extAuth, (req, res) => {
     const db = load();
-    // extOff=true 로 지정된 글(화면에서 "확장 제외")은 확장 조회 대상에서 뺀다
-    res.json({ date: today(), posts: db.posts.filter((p) => p.source === "public" && !p.extOff).map((p) => ({ id: p.id, url: p.url })) });
+    // 확장 스캔 대상인 글만 (기본: 공개 링크 글 + 관리자가 지정한 연결 계정 글)
+    res.json({ date: today(), posts: db.posts.filter(scanTarget).map((p) => ({ id: p.id, url: p.url })) });
   });
 
-  // 확장 조회 대상 지정 (관리자 전용): 해당 프로젝트의 공개 글 중 체크한 것만 대상으로 남기고 나머지는 제외
+  // 확장 조회 대상 지정 (관리자 전용): 해당 프로젝트에서 체크한 글만 확장 스캔 대상으로 남기고 나머지는 제외 (공개·연결 계정 모두 가능)
   app.post("/api/threads/ext-scope", requireAdmin, (req, res) => {
     const db = load();
     const body = req.body || {};
     const pid = String(body.projectId || "").trim();
     if (!pid) return res.status(400).json({ error: "invalid_input", message: "프로젝트를 지정하세요." });
-    const pub = db.posts.filter((p) => p.projectId === pid && p.source === "public");
-    if (body.reset) { for (const p of pub) delete p.extOff; save(db); return res.json({ ok: true, count: pub.length }); }
+    const ps = db.posts.filter((p) => p.projectId === pid);
+    if (body.reset) { for (const p of ps) { delete p.extScan; delete p.extOff; } save(db); return res.json({ ok: true, count: ps.filter(scanTarget).length }); }
     const ids = Array.isArray(body.postIds) ? body.postIds.map(String) : [];
-    if (!ids.length) return res.status(400).json({ error: "invalid_input", message: "대상으로 지정할 공개 링크 글을 먼저 체크하세요." });
+    if (!ids.length) return res.status(400).json({ error: "invalid_input", message: "대상으로 지정할 글을 먼저 체크하세요." });
     let on = 0;
-    for (const p of pub) { p.extOff = !ids.includes(p.id); if (!p.extOff) on++; }
+    for (const p of ps) { p.extScan = ids.includes(p.id); delete p.extOff; if (p.extScan) on++; }
     save(db);
     res.json({ ok: true, on });
   });
   app.post("/api/threads/ext/report", extAuth, (req, res) => {
     const db = load();
-    const p = db.posts.find((x) => x.id === String((req.body || {}).postId || "") && x.source === "public");
+    const p = db.posts.find((x) => x.id === String((req.body || {}).postId || "") && scanTarget(x));
     if (!p) return res.status(404).json({ error: "not_found" });
     const num = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
     const got = {};

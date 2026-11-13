@@ -116,11 +116,11 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
   <section class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <h2>조회수 현황</h2>
-      <div class="row" style="gap:8px"><button class="primary admin-only" id="runBtn" type="button" disabled>전체조회</button><button class="admin-only" id="extScopeBtn" type="button" disabled title="체크한 공개 링크 글만 확장 프로그램(T) 조회 대상으로 지정">선택만 확장대상</button><button class="admin-only" id="extAllBtn" type="button" title="이 프로젝트의 공개 링크 글을 모두 확장 조회 대상으로 되돌림">확장대상 전체</button><button class="danger admin-only" id="delSelBtn" type="button" disabled>선택 삭제</button><span class="admin-only" id="extStatus"></span></div>
+      <div class="row" style="gap:8px"><button class="primary admin-only" id="runBtn" type="button" disabled>전체조회</button><button class="admin-only" id="extScopeBtn" type="button" disabled title="체크한 글만 확장 프로그램(T) 조회 대상으로 지정(연결 계정 글도 가능)">선택만 확장대상</button><button class="admin-only" id="extAllBtn" type="button" title="확장 조회 대상을 기본값(공개 링크 글 전체)으로 되돌림">확장대상 전체</button><button class="danger admin-only" id="delSelBtn" type="button" disabled>선택 삭제</button><span class="admin-only" id="extStatus"></span></div>
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
-    <div class="meta">매일 오전 9시(KST) 이후 서버가 등록된 모든 게시글을 자동으로 기록합니다. 체크한 게시글만 "전체조회"로 지금 바로 조회하거나 "선택 삭제"로 지울 수 있습니다. 공개 링크 글의 좋아요·댓글을 읽는 확장 프로그램(T)은, 체크 후 "선택만 확장대상"을 누르면 체크한 글만 열어 확인합니다("확장대상 전체"로 되돌림). 날짜는 등록일(조회일), 조회수 증감은 직전 기록 대비입니다.</div>
+    <div class="meta">매일 오전 9시(KST) 이후 서버가 등록된 모든 게시글을 자동으로 기록합니다. 체크한 게시글만 "전체조회"로 지금 바로 조회하거나 "선택 삭제"로 지울 수 있습니다. 확장 프로그램(T)은 기본적으로 공개 링크 글을 엽니다. 토큰이 만료된 연결 계정 글도 확장으로 읽으려면, 해당 글을 체크하고 "선택만 확장대상"을 누르세요(체크한 글만 확장이 열고, 나머지는 제외 — "확장대상 전체"로 되돌림). 날짜는 등록일(조회일), 조회수 증감은 직전 기록 대비입니다.</div>
   </section>
 </div>
 <script src="/programs.js"></script>
@@ -189,7 +189,7 @@ function render() {
     const um = /@([^/]+)\/post\/([^/?#]+)/.exec(p.url || "");
     const title = esc(p.text || (um ? `@${decodeURIComponent(um[1])} · ${um[2]} (본문 없음)` : p.url));
     const pub = p.source === "public";
-    h += `<tr class="${p.favorite ? "fav" : ""}">${admin ? `<td><input type="checkbox" data-sel="${esc(p.id)}" aria-label="조회할 게시글 선택"${selected.has(p.id) ? " checked" : ""}></td>` : ""}<td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a><div class="sub">${pub ? "공개 링크" : "연결 계정"}${pub && p.extOff ? ' · <span style="color:var(--warn)">확장 제외</span>' : ""}${admin ? ` <button class="icon" data-urledit="${esc(p.id)}" title="링크 수정">✏️</button>` : ""}</div>${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${p.createdAt ? esc(p.createdAt.slice(5, 10)) : "-"}<div class="sub">(${last ? esc(last.slice(5)) : "-"})</div></td>`;
+    h += `<tr class="${p.favorite ? "fav" : ""}">${admin ? `<td><input type="checkbox" data-sel="${esc(p.id)}" aria-label="조회할 게시글 선택"${selected.has(p.id) ? " checked" : ""}></td>` : ""}<td class="l"><a class="plink" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${title}</a><div class="sub">${pub ? "공개 링크" : "연결 계정"}${p.extScan ? ' · <span style="color:var(--good)">확장 대상</span>' : ""}${admin ? ` <button class="icon" data-urledit="${esc(p.id)}" title="링크 수정">✏️</button>` : ""}</div>${p.lastError ? `<div class="sub" style="color:var(--bad)">${esc(p.lastError)}</div>` : ""}</td><td>${p.createdAt ? esc(p.createdAt.slice(5, 10)) : "-"}<div class="sub">(${last ? esc(last.slice(5)) : "-"})</div></td>`;
     h += metricCell(p, "views", true) + metricCell(p, "likes") + metricCell(p, "replies") + metricCell(p, "reposts");
     h += `<td class="act"><div class="acts">${admin ? `<button class="star${p.favorite ? "" : " off"}" data-fav="${esc(p.id)}" title="즐겨찾기">${p.favorite ? "★" : "☆"}</button><button data-move="${esc(p.id)}" title="다른 프로젝트로 복사">복사</button>` : ""}<button data-more="${esc(p.id)}">${expanded.has(p.id) ? "접기" : "차트"}</button></div></td></tr>`;
     if (expanded.has(p.id)) h += `<tr class="detail"><td colspan="${admin ? 8 : 7}"><div class="chart"><h3>누적 조회수 · 일별 조회수 증가</h3>${chart(p)}</div></td></tr>`;
@@ -206,14 +206,14 @@ function updateRunBtn() {
   const es = $("#extScopeBtn"), est = $("#extStatus");
   if (es) { es.textContent = selected.size ? `선택만 확장대상 (${selected.size})` : "선택만 확장대상"; es.disabled = !selected.size; }
   if (est) {
-    const pub = (data.posts || []).filter((p) => p.source === "public");
-    const off = pub.filter((p) => p.extOff).length;
-    const active = off > 0; // 일부라도 "확장 제외"면 선택 모드
+    const posts = data.posts || [];
+    const n = posts.filter((p) => p.extScan).length; // 확장 스캔 대상 글 수(소스 무관)
+    const active = posts.some((p) => p.extScan !== (p.source === "public")); // 기본값과 다르면 '지정됨'
     est.classList.toggle("on", active);
-    est.hidden = pub.length === 0;
-    est.textContent = active ? `확장대상: 선택 ${pub.length - off}건 ✓` : `확장대상: 전체 (${pub.length}건)`;
+    est.hidden = posts.length === 0;
+    est.textContent = active ? `확장(T) 대상: ${n}건 ✓` : `확장(T) 대상: 공개글 ${n}건`;
     const es2 = $("#extScopeBtn"); if (es2) es2.classList.toggle("on", active);
-    const ea = $("#extAllBtn"); if (ea) ea.disabled = !active; // 선택 모드일 때만 '전체로' 활성화
+    const ea = $("#extAllBtn"); if (ea) ea.disabled = !active; // 지정됐을 때만 '전체로' 활성화
   }
 }
 
@@ -349,18 +349,17 @@ $("#delSelBtn").addEventListener("click", async () => {
 $("#extScopeBtn").addEventListener("click", async () => {
   if (!selected.size) return;
   const sel = data.posts.filter((p) => selected.has(p.id));
-  const pubSel = sel.filter((p) => p.source === "public");
-  if (!pubSel.length) { alert("확장(T) 조회 대상은 '공개 링크' 글만 지정할 수 있습니다.\n체크하신 글은 모두 '연결 계정' 글이라 확장 대상이 아닙니다.\n(연결 계정 글은 서버가 공식 API로 직접 읽습니다)\n\n공개 링크 글을 체크한 뒤 다시 눌러주세요."); return; }
-  const skipped = sel.length - pubSel.length;
+  const conn = sel.filter((p) => p.source !== "public").length;
   try {
-    const r = await api("/api/threads/ext-scope", "POST", { projectId: $("#project").value, postIds: pubSel.map((p) => p.id) });
+    const r = await api("/api/threads/ext-scope", "POST", { projectId: $("#project").value, postIds: [...selected] });
     selected.clear();
-    alert(`확장(T) 조회 대상을 공개 링크 ${r.on}개 글로 지정했습니다.\n나머지 공개 링크 글은 확장에서 제외됩니다.` + (skipped ? `\n(체크한 글 중 '연결 계정' ${skipped}건은 확장 대상이 아니라 제외했습니다)` : ""));
+    alert(`확장(T) 조회 대상을 체크한 ${r.on}개 글로 지정했습니다.\n나머지 글은 확장에서 제외됩니다.` + (conn ? `\n(연결 계정 글 ${conn}건 포함 — 토큰이 만료돼 서버가 못 읽을 때 확장이 대신 읽습니다)` : ""));
     await refresh();
   } catch (er) { alert("지정 실패: " + er.message); }
 });
 $("#extAllBtn").addEventListener("click", async () => {
-  try { await api("/api/threads/ext-scope", "POST", { projectId: $("#project").value, reset: true }); alert("이 프로젝트의 공개 링크 글을 모두 확장(T) 조회 대상으로 되돌렸습니다."); await refresh(); }
+  if (!confirm("확장(T) 조회 대상을 기본값으로 되돌립니다.\n(공개 링크 글 전체가 대상, 연결 계정 글은 서버 API가 읽음)\n계속할까요?")) return;
+  try { await api("/api/threads/ext-scope", "POST", { projectId: $("#project").value, reset: true }); alert("확장(T) 조회 대상을 기본값(공개 링크 글 전체)으로 되돌렸습니다."); await refresh(); }
   catch (er) { alert("실패: " + er.message); }
 });
 $("#accounts").addEventListener("click", async (e) => {

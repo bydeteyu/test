@@ -271,7 +271,9 @@ function sortItems(items) {
       const nx = vx == null ? -Infinity : vx, ny = vy == null ? -Infinity : vy;
       if (nx !== ny) return rankSort.dir * (ny - nx);
     }
-    return x.i - y.i;
+    const cx = x.it.createdAt || "", cy = y.it.createdAt || ""; // 기본: 최신 등록 키워드가 위로
+    if (cx !== cy) return cx < cy ? 1 : -1;
+    return y.i - x.i; // 등록일이 같으면 나중에 추가된 항목이 위로
   });
   return a.map((o) => o.it);
 }

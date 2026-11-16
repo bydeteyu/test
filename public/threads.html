@@ -152,7 +152,9 @@ function sortPosts(posts) {
       const na = va == null ? -Infinity : va, nb = vb == null ? -Infinity : vb;
       if (na !== nb) return sort.dir * (nb - na);
     }
-    return a.i - b.i; // 원래 순서 유지
+    const ca = a.p.createdAt || "", cb = b.p.createdAt || ""; // 기본: 최신 등록 글이 위로
+    if (ca !== cb) return ca < cb ? 1 : -1;
+    return b.i - a.i; // 등록일이 같으면 나중에 추가된 글이 위로
   });
   return arr.map((x) => x.p);
 }

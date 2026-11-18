@@ -127,7 +127,7 @@ let allItems=[]; const openCmt=new Set();
 function fmtTime(iso){ try{ const d=new Date(iso); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }catch(e){ return ""; } }
 function commentPanel(it){
   const cs=it.comments||[];
-  const list = cs.length ? cs.map(c=>`<div class="cmt-item"><div class="cmt-meta"><b>${esc(c.author||"익명")}</b> · ${fmtTime(c.createdAt)}<button class="cmt-del" data-cdel="${esc(c.id)}" title="코멘트 삭제">✕</button></div><div class="cmt-text">${esc(c.text)}</div></div>`).join("") : `<div class="hint">아직 코멘트가 없습니다. 동료의 의견을 남겨보세요.</div>`;
+  const list = cs.length ? cs.map(c=>`<div class="cmt-item"><div class="cmt-meta"><b>${esc(c.author||"익명")}</b> · ${fmtTime(c.createdAt)}${c.editedAt?' <span class="hint">(수정됨)</span>':""}<button class="cmt-del" data-cedit="${esc(c.id)}" title="코멘트 수정">✏️</button><button class="cmt-del" data-cdel="${esc(c.id)}" title="코멘트 삭제">✕</button></div><div class="cmt-text">${esc(c.text)}</div></div>`).join("") : `<div class="hint">아직 코멘트가 없습니다. 동료의 의견을 남겨보세요.</div>`;
   return `<tr class="detail-row" data-detail="${esc(it.id)}"><td colspan="${COLSPAN}"><div class="cmt-panel">`
     + `<div class="cmt-list">${list}</div>`
     + `<div class="cmt-form"><div class="r"><input class="cmt-author" placeholder="이름(선택)"><button class="cmt-add" data-cadd="${esc(it.id)}">코멘트 등록</button></div>`
@@ -181,6 +181,20 @@ $("#rows").addEventListener("click",async(e)=>{
     const text=panel.querySelector(".cmt-input").value.trim();
     if(!text){ flash("코멘트 내용을 입력하세요.","err"); return; }
     try{ const r=await api("/api/experiments/"+id+"/comments","POST",{author,text}); const it=allItems.find(x=>x.id===id); if(it) it.comments=r.comments; render(); flash("코멘트를 등록했습니다."); }
+    catch(err){ flash(err.message,"err"); }
+    return;
+  }
+  // 코멘트 수정
+  if(t.matches("[data-cedit]")){
+    const id=t.closest("[data-detail]").getAttribute("data-detail");
+    const cid=t.getAttribute("data-cedit");
+    const it=allItems.find(x=>x.id===id);
+    const cur=((it&&it.comments)||[]).find(c=>c.id===cid);
+    const next=prompt("코멘트를 수정합니다.", (cur&&cur.text)||"");
+    if(next==null) return;
+    if(!next.trim()){ flash("코멘트 내용을 입력하세요.","err"); return; }
+    if(cur && next.trim()===cur.text) return;
+    try{ const r=await api("/api/experiments/"+id+"/comments/"+cid,"PATCH",{text:next.trim()}); if(it) it.comments=r.comments; render(); flash("코멘트를 수정했습니다."); }
     catch(err){ flash(err.message,"err"); }
     return;
   }

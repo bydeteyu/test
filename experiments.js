@@ -57,6 +57,20 @@ function mount(app, { dataDir }) {
     res.json({ comment: c, comments: it.comments });
   });
 
+  app.patch("/api/experiments/:id/comments/:cid", requireAdmin, (req, res) => {
+    const db = load();
+    const it = db.items.find((x) => x.id === req.params.id);
+    if (!it) return res.status(404).json({ error: "not_found" });
+    const c = (it.comments || []).find((x) => x.id === req.params.cid);
+    if (!c) return res.status(404).json({ error: "not_found" });
+    const text = clean((req.body || {}).text);
+    if (!text) return res.status(400).json({ error: "empty", message: "코멘트 내용을 입력하세요." });
+    c.text = text;
+    c.editedAt = new Date().toISOString();
+    save(db);
+    res.json({ comment: c, comments: it.comments });
+  });
+
   app.delete("/api/experiments/:id/comments/:cid", requireAdmin, (req, res) => {
     const db = load();
     const it = db.items.find((x) => x.id === req.params.id);
@@ -101,7 +115,7 @@ function mount(app, { dataDir }) {
     for (const f of FIELDS) o[f] = clean(it[f]);
     if (!o.date) o.date = KST();
     o.comments = Array.isArray(it.comments)
-      ? it.comments.filter((c) => c && c.text).map((c) => ({ id: (typeof c.id === "string" && c.id) || crypto.randomBytes(6).toString("hex"), author: clean(c.author), text: clean(c.text), createdAt: c.createdAt || new Date().toISOString() }))
+      ? it.comments.filter((c) => c && c.text).map((c) => ({ id: (typeof c.id === "string" && c.id) || crypto.randomBytes(6).toString("hex"), author: clean(c.author), text: clean(c.text), createdAt: c.createdAt || new Date().toISOString(), ...(c.editedAt ? { editedAt: c.editedAt } : {}) }))
       : [];
     return o;
   };

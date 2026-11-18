@@ -53,6 +53,13 @@ test("실험 노트: 추가/수정/CSV/삭제 + 회원 차단", async () => {
     const cid = addc.data.comment.id;
     assert.strictEqual((await admin.call("POST", "/api/experiments/" + id + "/comments", { text: "" })).status, 400);
     assert.strictEqual((await admin.call("GET", "/api/experiments")).data.items[0].comments[0].text, "이 가설 좋네요");
+    // 코멘트 수정
+    assert.strictEqual((await admin.call("PATCH", "/api/experiments/" + id + "/comments/" + cid, { text: "" })).status, 400);
+    const edc = await admin.call("PATCH", "/api/experiments/" + id + "/comments/" + cid, { text: "수정된 코멘트" });
+    assert.strictEqual(edc.data.comment.text, "수정된 코멘트");
+    assert.ok(edc.data.comment.editedAt);
+    assert.strictEqual((await admin.call("GET", "/api/experiments")).data.items[0].comments[0].text, "수정된 코멘트");
+    assert.strictEqual((await admin.call("PATCH", "/api/experiments/" + id + "/comments/nope", { text: "x" })).status, 404);
     assert.strictEqual((await admin.call("DELETE", "/api/experiments/" + id + "/comments/" + cid)).data.comments.length, 0);
 
     // 백업(JSON): 그대로 되돌릴 수 있는 형식
@@ -83,7 +90,7 @@ test("실험 노트: 추가/수정/CSV/삭제 + 회원 차단", async () => {
     await admin.call("POST", "/api/users", { username: "member", password: "memberpass1", projectIds: [] });
     const v = client();
     await v.call("POST", "/api/login", { username: "member", password: "memberpass1" });
-    for (const [m, u, b] of [["GET", "/api/experiments"], ["POST", "/api/experiments", { author: "x" }], ["PATCH", "/api/experiments/any", { author: "x" }], ["DELETE", "/api/experiments/any"], ["GET", "/api/experiments/export.csv"], ["GET", "/api/experiments/backup.json"], ["POST", "/api/experiments/import", { items: [] }], ["GET", "/api/experiments/storage"], ["POST", "/api/experiments/any/comments", { text: "x" }], ["DELETE", "/api/experiments/any/comments/any"]]) {
+    for (const [m, u, b] of [["GET", "/api/experiments"], ["POST", "/api/experiments", { author: "x" }], ["PATCH", "/api/experiments/any", { author: "x" }], ["DELETE", "/api/experiments/any"], ["GET", "/api/experiments/export.csv"], ["GET", "/api/experiments/backup.json"], ["POST", "/api/experiments/import", { items: [] }], ["GET", "/api/experiments/storage"], ["POST", "/api/experiments/any/comments", { text: "x" }], ["PATCH", "/api/experiments/any/comments/any", { text: "x" }], ["DELETE", "/api/experiments/any/comments/any"]]) {
       assert.strictEqual((await v.call(m, u, b)).status, 403, `${m} ${u}`);
     }
   } finally { child.kill(); }

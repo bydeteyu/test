@@ -42,15 +42,16 @@ function collectComments(j) {
 }
 
 // 한 카페 글의 댓글을 읽어온다. { ok, comments:[{nick,content,deleted}], reason, trace }
-async function fetchComments(raw, { maxPages = 5 } = {}) {
+async function fetchComments(raw, { art = null } = {}) {
   const ref = await toCafeRef(raw);
   if (!ref) return { ok: false, comments: [], reason: "카페 글 주소를 인식하지 못했습니다(cafe.naver.com/…/글번호 형태).", trace: { raw: String(raw).slice(0, 120) } };
+  const artToken = art || ref.artToken; // 검색에서 받은 새 art 토큰이 있으면 우선(저장된 주소의 토큰은 만료될 수 있음)
   const headers = { "User-Agent": UA, Accept: "application/json, text/plain, */*", "Accept-Language": "ko-KR,ko;q=0.9", Referer: "https://cafe.naver.com/" };
-  const trace = { key: ref.key, hasArt: !!ref.artToken };
+  const trace = { key: ref.key, hasArt: !!artToken };
   const clubId = /^\d+$/.test(ref.club) ? ref.club : await resolveClubId(ref.club, headers);
   trace.clubId = clubId || null;
   if (!clubId) return { ok: false, comments: [], reason: "카페 번호를 찾지 못했습니다.", trace };
-  const artQ = ref.artToken ? `&art=${encodeURIComponent(ref.artToken)}` : "";
+  const artQ = artToken ? `&art=${encodeURIComponent(artToken)}` : "";
   const all = [];
   let lastStatus = null, totalCount = null, forbidden = false;
   trace.tried = [];
@@ -124,7 +125,8 @@ async function checkItem(it) {
     } else rank = null;
   } catch (e) { error = "순위 조회 오류: " + e.message; }
   try {
-    const r = await fetchComments(it.url);
+    // 검색에서 글을 찾았으면 그때 받은 새 art 토큰으로 읽는다(회원공개 카페는 저장된 주소의 토큰이 만료됨)
+    const r = await fetchComments(it.postKey || it.url, { art: it.postArt || null });
     if (r.ok) present = authorPresent(r.comments, it.author);
     else error = (error ? error + " / " : "") + "댓글: " + r.reason;
   } catch (e) { error = (error ? error + " / " : "") + "댓글 조회 오류: " + e.message; }
@@ -217,15 +219,34 @@ function mount(app, { dataDir } = {}) {
   // 진단: 서버가 이 글의 댓글을 읽는지 + 특정 작성자가 있는지 확인
   // 예) /api/cafe-comments/debug?url=cafe.naver.com/안사는게/12345&author=애비수
   app.get("/api/cafe-comments/debug", requireAdmin, async (req, res) => {
-    const url = String(req.query.url || "").trim();
+    let url = String(req.query.url || "").trim();
     const author = String(req.query.author || "").trim();
+    const keyword = String(req.query.keyword || "").trim();
     if (!url) return res.status(400).json({ error: "invalid_input", message: "url 파라미터에 카페 글 주소를 넣으세요." });
-    const r = await fetchComments(url);
+    // keyword 를 주면 실제 점검과 동일하게 검색→새 art 토큰을 받아서 그 토큰으로 댓글을 읽는다
+    let art = null, rankInfo = null;
+    if (keyword) {
+      const it = { keyword, match: url, titleContains: String(req.query.title || "") };
+      try {
+        await ensureMatchKey(it);
+        const f = await fetchKeyword(keyword, { maxRank: 30, delayMs: 0 });
+        const posts = f.cafe;
+        if (posts && posts.length) {
+          const hit = findTarget(posts.slice(0, 30), it, {});
+          rankInfo = hit ? { rank: hit.rank ?? null, key: hit.key } : { rank: null };
+          if (hit && hit.art) art = hit.art;
+          if (hit && hit.key) url = hit.key;
+        } else rankInfo = { rank: null, note: posts === null ? "검색 실패" : "결과 없음" };
+      } catch (e) { rankInfo = { error: e.message }; }
+    }
+    const r = await fetchComments(url, { art });
     res.json({
       ok: r.ok,
       reason: r.reason,
+      usedArt: !!art,
+      rankInfo,
       commentCount: r.comments.length,
-      authors: [...new Set(r.comments.map((c) => c.nick))].slice(0, 50),
+      authors: [...new Set(r.comments.map((c) => c.nick))].slice(0, 80),
       authorPresent: author ? authorPresent(r.comments, author) : null,
       sample: r.comments.slice(0, 10),
       trace: r.trace,

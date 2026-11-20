@@ -1,7 +1,12 @@
 // 카페 댓글 체크: 등록한 카페 글에 특정 작성자의 댓글이 유지되고 있는지 매일 확인한다.
 // 1단계(현재): 서버가 그 글의 댓글을 읽을 수 있는지 확인하는 진단 엔드포인트.
 //   - 네이버가 막혀 있는 개발 샌드박스에서는 실제 조회가 안 되므로, 배포(Railway)에서 실제 글로 검증한다.
-const { normalize, resolveShortUrl, resolveClubId, UA } = require("./rank-tracker/core");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { normalize, resolveShortUrl, resolveClubId, UA, fetchKeyword, findTarget, ensureMatchKey, today } = require("./rank-tracker/core");
+
+const AUTO_HOUR = Number(process.env.CAFE_COMMENT_HOUR || 11); // KST, 기본 오전 11시
 
 const squash = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
 
@@ -83,8 +88,111 @@ function authorPresent(comments, author) {
   return comments.some((c) => !c.deleted && squash(c.nick) === a);
 }
 
+// 한 항목 점검: 카페 검색 순위(1~30 / 범위 밖) + 지정 작성자 댓글 유지 여부
+async function checkItem(it) {
+  let rank = null, present = null, error = null;
+  try {
+    it.match = it.url; // findTarget 이 쓰는 주소 필드
+    await ensureMatchKey(it); // naver.me 단축 주소는 카페 글 키로 풀어둔다
+    const fetched = await fetchKeyword(it.keyword, { maxRank: 30, delayMs: 1500 });
+    const posts = fetched.cafe;
+    if (posts === null) error = "카페 검색 조회 실패";
+    else if (posts.length) {
+      const hit = findTarget(posts.slice(0, 30), it, {});
+      rank = hit ? (hit.rank ?? null) : null; // null = 30위 밖
+      if (hit && hit.key) { it.postKey = hit.key; if (hit.art) it.postArt = hit.art; }
+    } else rank = null;
+  } catch (e) { error = "순위 조회 오류: " + e.message; }
+  try {
+    const r = await fetchComments(it.url);
+    if (r.ok) present = authorPresent(r.comments, it.author);
+    else error = (error ? error + " / " : "") + "댓글: " + r.reason;
+  } catch (e) { error = (error ? error + " / " : "") + "댓글 조회 오류: " + e.message; }
+  const day = today();
+  (it.history ??= {})[day] = { rank, present };
+  it.lastCheckedAt = new Date().toISOString();
+  it.lastError = error;
+  return { rank, present, error };
+}
+
 function mount(app, { dataDir } = {}) {
   const requireAdmin = (req, res, next) => (req.user && req.user.role === "admin" ? next() : res.status(403).json({ error: "forbidden" }));
+  const file = path.join(dataDir || ".", "cafe-comments.json");
+  function load() {
+    try { if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, "utf-8")); } catch { /* 새로 시작 */ }
+    return { items: [], meta: {} };
+  }
+  function save(db) { fs.writeFileSync(file, JSON.stringify(db, null, 2)); }
+  const clean = (s, n = 200) => String(s == null ? "" : s).trim().slice(0, n);
+  const pub = (it) => ({ id: it.id, keyword: it.keyword, titleContains: it.titleContains || "", url: it.url, author: it.author, favorite: !!it.favorite, history: it.history || {}, lastCheckedAt: it.lastCheckedAt || null, lastError: it.lastError || null, createdAt: it.createdAt || null });
+  let running = false;
+
+  async function runChecks(ids) {
+    if (running) return;
+    running = true;
+    try {
+      for (const id of ids) {
+        const db = load();
+        const it = db.items.find((x) => x.id === id);
+        if (!it) continue;
+        await checkItem(it);
+        const cur = load(); // 점검 중 변경 대비 저장 직전 재로딩
+        const t = cur.items.find((x) => x.id === id);
+        if (t) { t.history = it.history; t.lastCheckedAt = it.lastCheckedAt; t.lastError = it.lastError; t.postKey = it.postKey; t.postArt = it.postArt; t.matchKey = it.matchKey; t.matchArt = it.matchArt; save(cur); }
+      }
+    } finally { running = false; }
+  }
+
+  app.get("/api/cafe-comments", requireAdmin, (req, res) => {
+    const db = load();
+    res.json({ items: db.items.map(pub), running, lastAutoDate: db.meta.lastAutoDate || null });
+  });
+
+  app.post("/api/cafe-comments/items", requireAdmin, async (req, res) => {
+    const b = req.body || {};
+    const keyword = clean(b.keyword, 100), url = clean(b.url, 500), author = clean(b.author, 80), titleContains = clean(b.titleContains, 200);
+    if (!keyword) return res.status(400).json({ error: "invalid_input", message: "검색어를 입력하세요." });
+    if (!(await toCafeRef(url))) return res.status(400).json({ error: "invalid_input", message: "카페 글 주소(cafe.naver.com/…/글번호 또는 공유 링크)를 입력하세요." });
+    if (!author) return res.status(400).json({ error: "invalid_input", message: "확인할 댓글 작성자 닉네임을 입력하세요." });
+    const db = load();
+    const it = { id: crypto.randomUUID(), keyword, titleContains, url, author, history: {}, createdAt: new Date().toISOString(), createdBy: req.user.username };
+    db.items.push(it);
+    save(db);
+    if (process.env.CAFE_COMMENT_AUTO !== "off") runChecks([it.id]).catch((e) => console.error("[cafe-comments] check failed:", e)); // 등록 즉시 1회 확인
+    res.status(201).json({ item: pub(it) });
+  });
+
+  app.patch("/api/cafe-comments/items/:id", requireAdmin, async (req, res) => {
+    const db = load();
+    const it = db.items.find((x) => x.id === req.params.id);
+    if (!it) return res.status(404).json({ error: "not_found" });
+    const b = req.body || {};
+    if (typeof b.favorite === "boolean") it.favorite = b.favorite;
+    if (b.keyword !== undefined) it.keyword = clean(b.keyword, 100) || it.keyword;
+    if (b.titleContains !== undefined) it.titleContains = clean(b.titleContains, 200);
+    if (b.author !== undefined) it.author = clean(b.author, 80) || it.author;
+    if (b.url !== undefined) { const u = clean(b.url, 500); if (u && !(await toCafeRef(u))) return res.status(400).json({ error: "invalid_input", message: "카페 글 주소를 확인하세요." }); if (u) { it.url = u; delete it.matchKey; delete it.matchArt; delete it.postKey; delete it.postArt; } }
+    save(db);
+    res.json({ item: pub(it) });
+  });
+
+  app.delete("/api/cafe-comments/items/:id", requireAdmin, (req, res) => {
+    const db = load();
+    const before = db.items.length;
+    db.items = db.items.filter((x) => x.id !== req.params.id);
+    save(db);
+    res.json({ ok: true, removed: before - db.items.length });
+  });
+
+  app.post("/api/cafe-comments/run", requireAdmin, async (req, res) => {
+    if (running) return res.status(409).json({ error: "busy", message: "확인이 진행 중입니다." });
+    const db = load();
+    const sel = Array.isArray((req.body || {}).itemIds) ? req.body.itemIds : null;
+    const ids = db.items.filter((x) => !sel || sel.includes(x.id)).map((x) => x.id);
+    await runChecks(ids);
+    const after = load();
+    res.json({ ok: true, checked: ids.length, items: after.items.map(pub) });
+  });
 
   // 진단: 서버가 이 글의 댓글을 읽는지 + 특정 작성자가 있는지 확인
   // 예) /api/cafe-comments/debug?url=cafe.naver.com/안사는게/12345&author=애비수
@@ -104,7 +212,20 @@ function mount(app, { dataDir } = {}) {
     });
   });
 
-  return { fetchComments, authorPresent };
+  // 매일 KST AUTO_HOUR(기본 11시) 이후 첫 확인 시점에 전체 1회 자동 실행 (CAFE_COMMENT_AUTO=off 로 끔)
+  if (process.env.CAFE_COMMENT_AUTO !== "off") {
+    setInterval(() => {
+      const kst = new Date(Date.now() + 9 * 3600e3);
+      if (running || kst.getUTCHours() < AUTO_HOUR) return;
+      const db = load();
+      if (db.meta.lastAutoDate === today() || db.items.length === 0) return;
+      db.meta.lastAutoDate = today();
+      save(db);
+      runChecks(db.items.map((i) => i.id)).catch((e) => console.error("[cafe-comments] auto run failed:", e));
+    }, 10 * 60 * 1000).unref();
+  }
+
+  return { fetchComments, authorPresent, checkItem };
 }
 
 module.exports = { mount, fetchComments, authorPresent, toCafeRef };

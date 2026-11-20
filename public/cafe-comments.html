@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>카페 댓글 체크</title>
+<style>
+:root{color-scheme:light;--bg:#F7F5F0;--surface:#fff;--surface-2:#F0ECE3;--ink:#1E2420;--ink-soft:#63706A;--border:#DDD6C8;--accent:#0E6E58;--accent-ink:#fff;--bad:#AE4430;--bad-soft:#FBE9E3;--good:#1F7A4D;--good-soft:#E4F5EA;--warn:#A6741A;--warn-soft:#FBF0DA}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#14181A;--surface:#1C2220;--surface-2:#232B28;--ink:#ECEFEC;--ink-soft:#9AA6A0;--border:#313A36;--accent:#3FCB9F;--accent-ink:#0B1512;--bad:#FF7A5C;--bad-soft:#2E1B16;--good:#4ADE94;--good-soft:#17281F;--warn:#E3B24E;--warn-soft:#2E2716}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 48px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2{margin:0}h1{font-size:1.4rem}h2{font-size:1.02rem}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.meta{font-size:.82rem;color:var(--ink-soft);line-height:1.6}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;align-items:end}
+label{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--ink-soft)}
+label b{color:var(--ink);font-size:.82rem}
+input{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0;width:100%}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--ink);padding:7px 12px;font-size:.8rem}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;padding:10px 18px;font-size:.92rem}
+button.danger{color:var(--bad);border-color:var(--bad-soft)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.msg{border-radius:8px;padding:9px 12px;font-size:.85rem;display:none}.msg.show{display:block}
+.msg.ok{background:var(--good-soft);color:var(--good)}.msg.err{background:var(--bad-soft);color:var(--bad)}.msg.warn{background:var(--warn-soft);color:var(--warn)}
+.tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:.84rem}
+th,td{border-bottom:1px solid var(--border);padding:8px 10px;vertical-align:top;text-align:left}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+tr.fav>td{background:var(--warn-soft)}
+a.plink{color:inherit;text-decoration:none}a.plink:hover{color:var(--accent);text-decoration:underline}
+.sub{color:var(--ink-soft);font-size:.76rem}
+.pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:.78rem;font-weight:700;white-space:nowrap}
+.pill.good{background:var(--good-soft);color:var(--good)}.pill.bad{background:var(--bad-soft);color:var(--bad)}.pill.gray{background:var(--surface-2);color:var(--ink-soft)}.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.rank{font-weight:800;font-size:1.02rem}
+.star{border:none;background:transparent;cursor:pointer;font-size:1.1rem;line-height:1;color:#c9a227;padding:0 3px}.star.off{color:var(--border)}
+.act button{margin:2px 0 2px 4px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>카페 댓글 체크</h1></header>
+  <div class="meta">등록한 카페 글에 <b>지정한 작성자의 댓글이 유지되고 있는지</b> 매일 오전 11시(KST)에 확인합니다. 함께 <b>카페 검색 순위</b>(검색어로 카페 탭 검색, 1~30위, 범위 밖이면 "30위 밖")도 기록합니다. 검색어·제목으로 글을 찾고 등록한 주소로 확인합니다.</div>
+
+  <div class="msg" id="flash"></div>
+
+  <section class="card">
+    <h2>체크 항목 추가</h2>
+    <form id="addForm" class="grid">
+      <label><b>검색어</b><input name="keyword" required placeholder="예: 용종 미니보험"></label>
+      <label><b>제목 포함(선택)</b><input name="titleContains" placeholder="예: 추천부탁"></label>
+      <label><b>카페 글 주소</b><input name="url" required placeholder="cafe.naver.com/카페/글번호 또는 공유 링크"></label>
+      <label><b>확인할 댓글 작성자</b><input name="author" required placeholder="예: 애비수"></label>
+      <div><button class="primary" type="submit">추가</button></div>
+    </form>
+    <div class="meta">제목 포함은 같은 검색어에 글이 여러 개일 때 내 글을 집어내는 용도입니다(선택). 주소는 글의 공유 → 링크 복사로 얻습니다.</div>
+  </section>
+
+  <section class="card">
+    <div class="grid" style="grid-template-columns:1fr auto;align-items:center">
+      <h2>현황</h2>
+      <div><button class="primary" id="runBtn" type="button">전체 지금 확인</button></div>
+    </div>
+    <div class="meta" id="status"></div>
+    <div class="tablewrap"><table>
+      <thead><tr><th style="width:34px"></th><th>검색어 · 제목</th><th>글</th><th>작성자</th><th style="width:88px">순위</th><th style="width:96px">댓글</th><th style="width:120px">마지막 확인</th><th style="width:150px"></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+  </section>
+</div>
+<script src="/programs.js"></script>
+<script>
+Programs.mountBar("cafecomment");
+const $=(s)=>document.querySelector(s);
+const esc=(s)=>String(s??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=async(url,method="GET",body)=>{const r=await fetch(url,{method,headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});if(r.status===401){location.href="/login.html";throw new Error("login");}const d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(d.message||"요청에 실패했습니다."),{status:r.status});return d;};
+let timer=null;
+const flash=(t,kind="ok")=>{const f=$("#flash");f.textContent=t;f.className="msg show "+kind;clearTimeout(timer);timer=setTimeout(()=>f.classList.remove("show"),4000);};
+let items=[];
+const lastDay=(h)=>{const ks=Object.keys(h||{}).sort();return ks.length?ks[ks.length-1]:null;};
+function rankCell(it){
+  const d=lastDay(it.history); const rec=d?it.history[d]:null;
+  if(it.lastError && (!rec || rec.rank==null)) return `<span class="pill warn" title="${esc(it.lastError)}">확인 불가</span>`;
+  if(!rec) return `<span class="sub">아직 확인 전</span>`;
+  if(rec.rank==null) return `<span class="pill gray">30위 밖</span>`;
+  return `<span class="rank">${rec.rank}위</span>`;
+}
+function cmtCell(it){
+  const d=lastDay(it.history); const rec=d?it.history[d]:null;
+  if(!rec) return `<span class="sub">-</span>`;
+  if(rec.present===true) return `<span class="pill good">유지 ✓</span>`;
+  if(rec.present===false) return `<span class="pill bad">삭제됨</span>`;
+  return `<span class="pill gray" title="${esc(it.lastError||"")}">확인 불가</span>`;
+}
+function fmtTime(s){ if(!s) return "-"; const d=new Date(s); if(isNaN(d)) return "-"; const p=(n)=>String(n).padStart(2,"0"); return `${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function render(){
+  if(!items.length){ $("#rows").innerHTML=`<tr><td colspan="8" class="meta">등록된 항목이 없습니다. 위에서 추가하세요.</td></tr>`; return; }
+  const sorted=[...items].sort((a,b)=>{const fa=a.favorite?1:0,fb=b.favorite?1:0; if(fa!==fb)return fb-fa; const ca=a.createdAt||"",cb=b.createdAt||""; return ca<cb?1:ca>cb?-1:0;});
+  $("#rows").innerHTML=sorted.map((it)=>`<tr class="${it.favorite?"fav":""}" data-id="${esc(it.id)}">
+    <td><button class="star${it.favorite?"":" off"}" data-fav title="즐겨찾기">${it.favorite?"★":"☆"}</button></td>
+    <td><b>${esc(it.keyword)}</b>${it.titleContains?`<div class="sub">제목: ${esc(it.titleContains)}</div>`:""}</td>
+    <td><a class="plink" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">글 열기 ↗</a></td>
+    <td>${esc(it.author)}</td>
+    <td>${rankCell(it)}</td>
+    <td>${cmtCell(it)}</td>
+    <td class="sub">${fmtTime(it.lastCheckedAt)}</td>
+    <td class="act"><button data-run>확인</button><button data-edit>수정</button><button class="danger" data-del>삭제</button></td></tr>`).join("");
+}
+async function refresh(){
+  const d=await api("/api/cafe-comments");
+  items=d.items;
+  $("#runBtn").disabled=d.running||!items.length;
+  $("#status").textContent=d.running?"확인 중입니다…":d.lastAutoDate?`마지막 자동 기록: ${d.lastAutoDate}`:"매일 오전 11시(KST) 이후 첫 확인 시점에 자동 기록됩니다.";
+  render();
+}
+$("#addForm").addEventListener("submit",async(e)=>{
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target));
+  try{ await api("/api/cafe-comments/items","POST",{keyword:f.keyword.trim(),titleContains:(f.titleContains||"").trim(),url:f.url.trim(),author:f.author.trim()}); e.target.reset(); flash("추가했습니다. 첫 확인을 진행 중입니다(잠시 후 반영)."); await refresh(); setTimeout(refresh,8000); }
+  catch(err){ flash(err.message,"err"); }
+});
+$("#runBtn").addEventListener("click",async()=>{
+  $("#runBtn").disabled=true; $("#status").textContent="확인 중입니다… (항목 수에 따라 시간이 걸립니다)";
+  try{ const r=await api("/api/cafe-comments/run","POST",{}); items=r.items; render(); flash(`확인 완료: ${r.checked}건`); }
+  catch(err){ flash(err.message,"err"); }
+  await refresh();
+});
+$("#rows").addEventListener("click",async(e)=>{
+  const tr=e.target.closest("tr[data-id]"); if(!tr) return; const id=tr.dataset.id; const it=items.find(x=>x.id===id);
+  if(e.target.matches("[data-fav]")){ const next=!(it&&it.favorite); try{ await api("/api/cafe-comments/items/"+id,"PATCH",{favorite:next}); if(it)it.favorite=next; render(); }catch(err){ flash(err.message,"err"); } return; }
+  if(e.target.matches("[data-del]")){ if(!confirm("이 항목을 삭제할까요?")) return; try{ await api("/api/cafe-comments/items/"+id,"DELETE"); flash("삭제했습니다."); await refresh(); }catch(err){ flash(err.message,"err"); } return; }
+  if(e.target.matches("[data-run]")){ e.target.disabled=true; e.target.textContent="확인 중…"; try{ await api("/api/cafe-comments/run","POST",{itemIds:[id]}); flash("확인했습니다."); }catch(err){ flash(err.message,"err"); } await refresh(); return; }
+  if(e.target.matches("[data-edit]")){
+    const kw=prompt("검색어",it.keyword); if(kw==null) return;
+    const tc=prompt("제목 포함(선택)",it.titleContains||""); if(tc==null) return;
+    const url=prompt("카페 글 주소",it.url); if(url==null) return;
+    const au=prompt("확인할 댓글 작성자",it.author); if(au==null) return;
+    try{ await api("/api/cafe-comments/items/"+id,"PATCH",{keyword:kw.trim(),titleContains:tc.trim(),url:url.trim(),author:au.trim()}); flash("수정했습니다."); await refresh(); }
+    catch(err){ flash(err.message,"err"); }
+    return;
+  }
+});
+refresh().catch(()=>{});
+</script>
+</body>
+</html>

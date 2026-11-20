@@ -266,4 +266,4 @@ async function fetchKeyword(keyword, { maxRank = 30, delayMs = 3000 } = {}) {
   return out;
 }
 
-module.exports = { normalize, fetchCafeViews, locatePost, resolveShortUrl, ensureMatchKey, SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep };
+module.exports = { normalize, fetchCafeViews, locatePost, resolveShortUrl, ensureMatchKey, SOURCE, apiConfigured, fetchHtml, extractPosts, CHANNELS, fetchKeyword, findTarget, today, sleep, resolveClubId, UA };

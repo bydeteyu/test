@@ -24,18 +24,19 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .msg{border-radius:8px;padding:9px 12px;font-size:.85rem;display:none}.msg.show{display:block}
 .msg.ok{background:var(--good-soft);color:var(--good)}.msg.err{background:var(--bad-soft);color:var(--bad)}.msg.warn{background:var(--warn-soft);color:var(--warn)}
 .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
-table{border-collapse:collapse;width:100%;font-size:.84rem}
-th,td{border-bottom:1px solid var(--border);padding:8px 10px;vertical-align:top;text-align:left}
-th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{border-bottom:1px solid var(--border);padding:10px 12px;vertical-align:middle;text-align:left}
+th{background:var(--surface-2);font-weight:600;white-space:nowrap;color:var(--ink-soft);font-size:.8rem}
+tbody tr:hover>td{background:var(--surface-2)}
 tbody tr:last-child td{border-bottom:none}
-tr.fav>td{background:var(--warn-soft)}
-a.plink{color:inherit;text-decoration:none}a.plink:hover{color:var(--accent);text-decoration:underline}
-.sub{color:var(--ink-soft);font-size:.76rem}
-.pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:.78rem;font-weight:700;white-space:nowrap}
+tr.fav>td{background:var(--warn-soft)}tr.fav:hover>td{background:var(--warn-soft)}
+a.plink{color:var(--accent);text-decoration:none;font-size:.82rem;white-space:nowrap}a.plink:hover{text-decoration:underline}
+.sub{color:var(--ink-soft);font-size:.76rem;margin-top:2px}
+.pill{display:inline-block;border-radius:999px;padding:3px 10px;font-size:.78rem;font-weight:600;white-space:nowrap}
 .pill.good{background:var(--good-soft);color:var(--good)}.pill.bad{background:var(--bad-soft);color:var(--bad)}.pill.gray{background:var(--surface-2);color:var(--ink-soft)}.pill.warn{background:var(--warn-soft);color:var(--warn)}
-.rank{font-weight:800;font-size:1.02rem}
+.rank{font-weight:800;font-size:1rem}
 .star{border:none;background:transparent;cursor:pointer;font-size:1.1rem;line-height:1;color:#c9a227;padding:0 3px}.star.off{color:var(--border)}
-.act button{margin:2px 0 2px 4px}
+.act{white-space:nowrap;text-align:right}.act button{margin-left:6px;padding:5px 11px;font-size:.78rem}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -65,7 +66,7 @@ a.plink{color:inherit;text-decoration:none}a.plink:hover{color:var(--accent);tex
     </div>
     <div class="meta" id="status"></div>
     <div class="tablewrap"><table>
-      <thead><tr><th style="width:30px"><input type="checkbox" id="selAll" aria-label="전체 선택"></th><th style="width:30px"></th><th>검색어 · 제목</th><th>글</th><th>작성자</th><th style="width:100px">순위(카페탭)</th><th style="width:96px">댓글</th><th style="width:120px">마지막 확인</th><th style="width:150px"></th></tr></thead>
+      <thead><tr><th style="width:30px"><input type="checkbox" id="selAll" aria-label="전체 선택"></th><th style="width:30px"></th><th>검색어 · 제목</th><th>글</th><th>작성자</th><th style="width:100px">순위(카페탭)</th><th style="width:96px">댓글</th><th style="width:116px">마지막 확인</th><th style="width:108px"></th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
   </section>
@@ -111,7 +112,7 @@ function render(){
     <td>${rankCell(it)}</td>
     <td>${cmtCell(it)}</td>
     <td class="sub">${fmtTime(it.lastCheckedAt)}</td>
-    <td class="act"><button data-run>확인</button><button data-edit>수정</button><button class="danger" data-del>삭제</button></td></tr>`).join("");
+    <td class="act"><button data-edit>수정</button><button class="danger" data-del>삭제</button></td></tr>`).join("");
 }
 async function refresh(){
   const d=await api("/api/cafe-comments");
@@ -141,7 +142,6 @@ $("#rows").addEventListener("click",async(e)=>{
   const tr=e.target.closest("tr[data-id]"); if(!tr) return; const id=tr.dataset.id; const it=items.find(x=>x.id===id);
   if(e.target.matches("[data-fav]")){ const next=!(it&&it.favorite); try{ await api("/api/cafe-comments/items/"+id,"PATCH",{favorite:next}); if(it)it.favorite=next; render(); }catch(err){ flash(err.message,"err"); } return; }
   if(e.target.matches("[data-del]")){ if(!confirm("이 항목을 삭제할까요?")) return; try{ await api("/api/cafe-comments/items/"+id,"DELETE"); flash("삭제했습니다."); await refresh(); }catch(err){ flash(err.message,"err"); } return; }
-  if(e.target.matches("[data-run]")){ e.target.disabled=true; e.target.textContent="확인 중…"; try{ await api("/api/cafe-comments/run","POST",{itemIds:[id]}); flash("확인했습니다."); }catch(err){ flash(err.message,"err"); } await refresh(); return; }
   if(e.target.matches("[data-edit]")){
     const kw=prompt("검색어",it.keyword); if(kw==null) return;
     const tc=prompt("제목 포함(선택)",it.titleContains||""); if(tc==null) return;

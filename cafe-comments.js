@@ -78,11 +78,10 @@ async function fetchComments(raw, { art = null } = {}) {
   if (!forbidden && (totalCount == null || all.length < totalCount)) {
     const base = `https://apis.naver.com/cafe-web/cafe-articleapi`;
     const forms = [
+      (p) => `${base}/v2/cafes/${clubId}/articles/${ref.art}/comments/pages/${p}?requestFrom=A&orderBy=asc${artQ}`, // 실제로 되는 경로(우선)
       (p) => `${base}/v2.1/cafes/${clubId}/articles/${ref.art}/comments/pages/${p}?requestFrom=A&orderBy=asc&useCafeId=true${artQ}`,
-      (p) => `${base}/v2/cafes/${clubId}/articles/${ref.art}/comments/pages/${p}?requestFrom=A&orderBy=asc${artQ}`,
       (p) => `${base}/v2.1/cafes/${clubId}/articles/${ref.art}/comments?requestFrom=A&orderBy=asc&page=${p}&pageSize=100&useCafeId=true${artQ}`,
       (p) => `${base}/v3/cafes/${clubId}/articles/${ref.art}/comments?requestFrom=A&orderBy=asc&page=${p}&pageSize=100${artQ}`,
-      (p) => `https://apis.naver.com/cafe-web/cafe-articleapi/v2.0/cafes/${clubId}/articles/${ref.art}/comments/pages/${p}?requestFrom=A&orderBy=asc${artQ}`,
     ];
     let form = null;
     // 페이지 1로 되는 형태를 찾는다

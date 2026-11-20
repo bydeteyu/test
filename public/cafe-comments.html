@@ -61,11 +61,11 @@ a.plink{color:inherit;text-decoration:none}a.plink:hover{color:var(--accent);tex
   <section class="card">
     <div class="grid" style="grid-template-columns:1fr auto;align-items:center">
       <h2>현황</h2>
-      <div><button class="primary" id="runBtn" type="button">전체 지금 확인</button></div>
+      <div><button class="primary" id="runBtn" type="button">전체조회</button></div>
     </div>
     <div class="meta" id="status"></div>
     <div class="tablewrap"><table>
-      <thead><tr><th style="width:34px"></th><th>검색어 · 제목</th><th>글</th><th>작성자</th><th style="width:88px">순위</th><th style="width:96px">댓글</th><th style="width:120px">마지막 확인</th><th style="width:150px"></th></tr></thead>
+      <thead><tr><th style="width:30px"><input type="checkbox" id="selAll" aria-label="전체 선택"></th><th style="width:30px"></th><th>검색어 · 제목</th><th>글</th><th>작성자</th><th style="width:88px">순위</th><th style="width:96px">댓글</th><th style="width:120px">마지막 확인</th><th style="width:150px"></th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
   </section>
@@ -79,6 +79,8 @@ const api=async(url,method="GET",body)=>{const r=await fetch(url,{method,headers
 let timer=null;
 const flash=(t,kind="ok")=>{const f=$("#flash");f.textContent=t;f.className="msg show "+kind;clearTimeout(timer);timer=setTimeout(()=>f.classList.remove("show"),4000);};
 let items=[];
+const selected=new Set();
+function updateRunBtn(){ const b=$("#runBtn"); if(!b) return; b.textContent=selected.size?`선택 조회 (${selected.size})`:"전체조회"; b.disabled=!items.length; const sa=$("#selAll"); if(sa) sa.checked=items.length>0&&items.every(it=>selected.has(it.id)); }
 const lastDay=(h)=>{const ks=Object.keys(h||{}).sort();return ks.length?ks[ks.length-1]:null;};
 function rankCell(it){
   const d=lastDay(it.history); const rec=d?it.history[d]:null;
@@ -96,9 +98,12 @@ function cmtCell(it){
 }
 function fmtTime(s){ if(!s) return "-"; const d=new Date(s); if(isNaN(d)) return "-"; const p=(n)=>String(n).padStart(2,"0"); return `${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function render(){
-  if(!items.length){ $("#rows").innerHTML=`<tr><td colspan="8" class="meta">등록된 항목이 없습니다. 위에서 추가하세요.</td></tr>`; return; }
+  for(const id of [...selected]) if(!items.some(it=>it.id===id)) selected.delete(id);
+  updateRunBtn();
+  if(!items.length){ $("#rows").innerHTML=`<tr><td colspan="9" class="meta">등록된 항목이 없습니다. 위에서 추가하세요.</td></tr>`; return; }
   const sorted=[...items].sort((a,b)=>{const fa=a.favorite?1:0,fb=b.favorite?1:0; if(fa!==fb)return fb-fa; const ca=a.createdAt||"",cb=b.createdAt||""; return ca<cb?1:ca>cb?-1:0;});
   $("#rows").innerHTML=sorted.map((it)=>`<tr class="${it.favorite?"fav":""}" data-id="${esc(it.id)}">
+    <td><input type="checkbox" data-sel${selected.has(it.id)?" checked":""} aria-label="선택"></td>
     <td><button class="star${it.favorite?"":" off"}" data-fav title="즐겨찾기">${it.favorite?"★":"☆"}</button></td>
     <td><b>${esc(it.keyword)}</b>${it.titleContains?`<div class="sub">제목: ${esc(it.titleContains)}</div>`:""}</td>
     <td><a class="plink" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">글 열기 ↗</a></td>
@@ -111,9 +116,9 @@ function render(){
 async function refresh(){
   const d=await api("/api/cafe-comments");
   items=d.items;
-  $("#runBtn").disabled=d.running||!items.length;
   $("#status").textContent=d.running?"확인 중입니다…":d.lastAutoDate?`마지막 자동 기록: ${d.lastAutoDate}`:"매일 오전 11시(KST) 이후 첫 확인 시점에 자동 기록됩니다.";
   render();
+  if(d.running) $("#runBtn").disabled=true;
 }
 $("#addForm").addEventListener("submit",async(e)=>{
   e.preventDefault();
@@ -122,11 +127,16 @@ $("#addForm").addEventListener("submit",async(e)=>{
   catch(err){ flash(err.message,"err"); }
 });
 $("#runBtn").addEventListener("click",async()=>{
+  const body=selected.size?{itemIds:[...selected]}:{};
   $("#runBtn").disabled=true; $("#status").textContent="확인 중입니다… (항목 수에 따라 시간이 걸립니다)";
-  try{ const r=await api("/api/cafe-comments/run","POST",{}); items=r.items; render(); flash(`확인 완료: ${r.checked}건`); }
+  try{ const r=await api("/api/cafe-comments/run","POST",body); items=r.items; render(); flash(`확인 완료: ${r.checked}건`); }
   catch(err){ flash(err.message,"err"); }
   await refresh();
 });
+$("#rows").addEventListener("change",(e)=>{
+  if(e.target.matches("[data-sel]")){ const id=e.target.closest("tr[data-id]").dataset.id; e.target.checked?selected.add(id):selected.delete(id); updateRunBtn(); }
+});
+$("#selAll").addEventListener("change",(e)=>{ for(const it of items) e.target.checked?selected.add(it.id):selected.delete(it.id); render(); });
 $("#rows").addEventListener("click",async(e)=>{
   const tr=e.target.closest("tr[data-id]"); if(!tr) return; const id=tr.dataset.id; const it=items.find(x=>x.id===id);
   if(e.target.matches("[data-fav]")){ const next=!(it&&it.favorite); try{ await api("/api/cafe-comments/items/"+id,"PATCH",{favorite:next}); if(it)it.favorite=next; render(); }catch(err){ flash(err.message,"err"); } return; }

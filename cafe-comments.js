@@ -47,22 +47,26 @@ async function fetchComments(raw, { maxPages = 5 } = {}) {
   if (!clubId) return { ok: false, comments: [], reason: "카페 번호를 찾지 못했습니다.", trace };
   const artQ = ref.artToken ? `&art=${encodeURIComponent(ref.artToken)}` : "";
   const all = [];
-  let lastStatus = null, rawHit = false;
-  for (let page = 1; page <= maxPages; page++) {
-    const url = `https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${clubId}/articles/${ref.art}/comments/pages/${page}?requestFrom=A&orderBy=asc${artQ}`;
+  let lastStatus = null;
+  // 후보 1: 글 API(조회수를 읽는 바로 그 호출). 보통 result.comments.items 에 댓글이 함께 온다.
+  // 후보 2~3: 전용 댓글 API(버전/경로가 바뀔 수 있어 여러 개 시도).
+  const candidates = [
+    { tag: "article", url: `https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${clubId}/articles/${ref.art}?query=&useCafeId=true&requestFrom=A${artQ}` },
+    { tag: "comments-v2", url: `https://apis.naver.com/cafe-web/cafe-articleapi/v2/cafes/${clubId}/articles/${ref.art}/comments/pages/1?requestFrom=A&orderBy=asc&pageSize=100${artQ}` },
+    { tag: "comments-v2.1", url: `https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${clubId}/articles/${ref.art}/comments?requestFrom=A&orderBy=asc${artQ}` },
+  ];
+  trace.tried = [];
+  for (const c of candidates) {
     let res;
-    try { res = await fetch(url, { headers }); } catch (e) { trace.error = e.message; break; }
+    try { res = await fetch(c.url, { headers }); } catch (e) { trace.tried.push({ tag: c.tag, error: e.message }); continue; }
     lastStatus = res.status;
-    if (res.status === 401 || res.status === 403) return { ok: false, comments: [], reason: "가입(로그인) 필요 또는 비공개 카페 — 서버가 댓글을 읽을 수 없습니다.", trace: { ...trace, status: res.status } };
-    if (!res.ok) { trace.status = res.status; break; }
+    if (res.status === 401 || res.status === 403) return { ok: false, comments: [], reason: "가입(로그인) 필요 또는 비공개 카페 — 서버가 댓글을 읽을 수 없습니다.", trace: { ...trace, status: res.status, tag: c.tag } };
+    if (!res.ok) { trace.tried.push({ tag: c.tag, status: res.status }); continue; }
     const text = await res.text();
-    if (page === 1 && ref.artToken && text) rawHit = true; // 최소한 응답은 받음
-    let j; try { j = JSON.parse(text); } catch { trace.parse = "non-json"; break; }
+    let j; try { j = JSON.parse(text); } catch { trace.tried.push({ tag: c.tag, parse: "non-json" }); continue; }
     const items = collectComments(j);
-    all.push(...items);
-    // 다음 페이지 유무 추정: 페이지 크기(보통 몇십 개)보다 적게 오면 마지막 페이지
-    const more = j?.result?.comments?.pageInfo?.nextPage || (items.length >= 20);
-    if (!more) break;
+    trace.tried.push({ tag: c.tag, status: res.status, resultKeys: Object.keys(j && j.result ? j.result : j || {}).slice(0, 20), found: items.length });
+    if (items.length) { all.push(...items); trace.via = c.tag; break; }
   }
   trace.status = lastStatus;
   // 중복 제거

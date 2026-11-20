@@ -66,29 +66,50 @@ async function fetchComments(raw, { art = null } = {}) {
     else if (res.ok) {
       const j = await res.json();
       totalCount = totalOf(j);
+      const cm = j && j.result && j.result.comments;
+      if (cm) trace.commentsMeta = Object.fromEntries(Object.entries(cm).map(([k, v]) => [k, Array.isArray(v) ? `[${v.length}]` : v && typeof v === "object" ? v : v])); // items 배열 길이·pageInfo 노출
       const items = collectComments(j);
       all.push(...items);
       trace.tried.push({ tag: "article", status: res.status, found: items.length, totalCount });
     } else trace.tried.push({ tag: "article", status: res.status });
   } catch (e) { trace.tried.push({ tag: "article", error: e.message }); }
 
-  // 2) 댓글이 더 있으면 전용 댓글 API로 페이지를 끝까지 넘겨 모두 모은다(최신 댓글 누락 방지).
+  // 2) 댓글이 더 있으면 전용 댓글 API로 전부 모은다. 어느 경로가 되는지 여러 형태를 시도한다.
   if (!forbidden && (totalCount == null || all.length < totalCount)) {
-    const pageUrl = (p) => `https://apis.naver.com/cafe-web/cafe-articleapi/v2.1/cafes/${clubId}/articles/${ref.art}/comments/pages/${p}?requestFrom=A&orderBy=asc&useCafeId=true&pageSize=100${artQ}`;
-    for (let p = 1; p <= 30; p++) {
-      let res;
-      try { res = await fetch(pageUrl(p), { headers }); } catch (e) { trace.tried.push({ tag: "comments", page: p, error: e.message }); break; }
+    const base = `https://apis.naver.com/cafe-web/cafe-articleapi`;
+    const forms = [
+      (p) => `${base}/v2.1/cafes/${clubId}/articles/${ref.art}/comments/pages/${p}?requestFrom=A&orderBy=asc&useCafeId=true${artQ}`,
+      (p) => `${base}/v2/cafes/${clubId}/articles/${ref.art}/comments/pages/${p}?requestFrom=A&orderBy=asc${artQ}`,
+      (p) => `${base}/v2.1/cafes/${clubId}/articles/${ref.art}/comments?requestFrom=A&orderBy=asc&page=${p}&pageSize=100&useCafeId=true${artQ}`,
+      (p) => `${base}/v3/cafes/${clubId}/articles/${ref.art}/comments?requestFrom=A&orderBy=asc&page=${p}&pageSize=100${artQ}`,
+      (p) => `https://apis.naver.com/cafe-web/cafe-articleapi/v2.0/cafes/${clubId}/articles/${ref.art}/comments/pages/${p}?requestFrom=A&orderBy=asc${artQ}`,
+    ];
+    let form = null;
+    // 페이지 1로 되는 형태를 찾는다
+    for (let fi = 0; fi < forms.length; fi++) {
+      let res; try { res = await fetch(forms[fi](1), { headers }); } catch (e) { trace.tried.push({ tag: "cform" + fi, error: e.message }); continue; }
       lastStatus = res.status;
-      if (res.status === 401 || res.status === 403) { if (!all.length) forbidden = true; break; }
-      if (!res.ok) { trace.tried.push({ tag: "comments", page: p, status: res.status }); break; }
-      const j = await res.json();
+      if (!res.ok) { trace.tried.push({ tag: "cform" + fi, status: res.status }); continue; }
+      let j; try { j = await res.json(); } catch { trace.tried.push({ tag: "cform" + fi, parse: "non-json" }); continue; }
       const items = collectComments(j);
-      if (p === 1) trace.tried.push({ tag: "comments", page: 1, status: res.status, found: items.length, totalCount: totalOf(j) });
-      if (!items.length) break;
-      all.push(...items);
-      const tc = totalOf(j) ?? totalCount;
-      const seenN = new Set(all.map((c) => c.nick + "\u0000" + c.content)).size;
-      if ((tc != null && seenN >= tc) || items.length < 100) break; // 총수 채웠거나 마지막 페이지
+      trace.tried.push({ tag: "cform" + fi, status: res.status, found: items.length, totalCount: totalOf(j) });
+      if (items.length) { form = forms[fi]; totalCount = totalCount ?? totalOf(j); trace.via = "cform" + fi; break; }
+    }
+    if (form) {
+      all.length = 0; // 글 API 10개는 버리고 전용 API로 다시 끝까지
+      let prevSeen = -1;
+      for (let p = 1; p <= 60; p++) {
+        let res; try { res = await fetch(form(p), { headers }); } catch { break; }
+        if (!res.ok) break;
+        const j = await res.json();
+        const items = collectComments(j);
+        if (!items.length) break;
+        all.push(...items);
+        const tc = totalOf(j) ?? totalCount;
+        const seenN = new Set(all.map((c) => c.nick + "\u0000" + c.content)).size;
+        if ((tc != null && seenN >= tc) || seenN === prevSeen) break; // 총수 채웠거나 새 댓글이 더 없으면 끝
+        prevSeen = seenN;
+      }
     }
   }
   trace.status = lastStatus;

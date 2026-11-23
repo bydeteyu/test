@@ -19,6 +19,7 @@ label b{color:var(--ink)}
 input,select{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0}
 button{font:inherit;font-weight:600;cursor:pointer;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--ink);padding:6px 10px;font-size:.78rem}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;padding:9px 16px;font-size:.9rem}
+.dl{display:inline-flex;align-items:center;gap:6px;background:#1a6e3c;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.82rem;font-weight:600;text-decoration:none}
 button.danger{color:var(--bad);border-color:var(--bad-soft)}
 button:disabled{opacity:.5;cursor:not-allowed}
 .meta{font-size:.8rem;color:var(--ink-soft)}.sub{color:var(--ink-soft);font-size:.76rem}
@@ -116,11 +117,20 @@ tr.detail>td{background:var(--surface-2);padding:14px;text-align:left}
   <section class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <h2>조회수 현황</h2>
-      <div class="row" style="gap:8px"><button class="primary admin-only" id="runBtn" type="button" disabled>전체조회</button><button class="admin-only" id="extScopeBtn" type="button" disabled title="체크한 글만 확장 프로그램(T) 조회 대상으로 지정(연결 계정 글도 가능)">선택만 확장대상</button><button class="admin-only" id="extAllBtn" type="button" title="확장 조회 대상을 기본값(공개 링크 글 전체)으로 되돌림">확장대상 전체</button><button class="danger admin-only" id="delSelBtn" type="button" disabled>선택 삭제</button><span class="admin-only" id="extStatus"></span></div>
+      <div class="row" style="gap:8px"><button class="primary admin-only" id="runBtn" type="button" disabled>전체조회</button><button class="admin-only" id="extScopeBtn" type="button" disabled title="체크한 글만 확장 프로그램(T) 조회 대상으로 지정(연결 계정 글도 가능)">선택만 확장대상</button><button class="admin-only" id="extAllBtn" type="button" title="확장 조회 대상을 기본값(공개 링크 글 전체)으로 되돌림">확장대상 전체</button><button class="admin-only" id="xlsxBtn" type="button" title="현재 프로젝트 게시글을 글 주소(URL) 포함 CSV로 내려받기">엑셀 다운로드</button><button class="danger admin-only" id="delSelBtn" type="button" disabled>선택 삭제</button><span class="admin-only" id="extStatus"></span></div>
     </div>
     <div class="meta" id="status"></div>
     <div id="table"></div>
     <div class="meta">매일 오전 9시(KST) 이후 서버가 등록된 모든 게시글을 자동으로 기록합니다. 체크한 게시글만 "전체조회"로 지금 바로 조회하거나 "선택 삭제"로 지울 수 있습니다. 확장 프로그램(T)은 기본적으로 공개 링크 글을 엽니다. 토큰이 만료된 연결 계정 글도 확장으로 읽으려면, 해당 글을 체크하고 "선택만 확장대상"을 누르세요(체크한 글만 확장이 열고, 나머지는 제외 — "확장대상 전체"로 되돌림). 날짜는 등록일(조회일), 조회수 증감은 직전 기록 대비입니다.</div>
+  </section>
+
+  <section class="card admin-only">
+    <h2>데이터 백업</h2>
+    <div class="row" style="gap:10px;align-items:center">
+      <a class="dl" id="backupBtn" href="/api/threads/backup.json">백업 파일 내려받기</a>
+      <label style="flex-direction:row;align-items:center;gap:8px">백업에서 복원 <input type="file" id="restoreFile" accept="application/json,.json"></label>
+    </div>
+    <div class="meta">스레드 게시글·연결 계정 전체가 한 파일(JSON)로 저장됩니다. 복원하면 <b>기존에 없는 기록만 추가</b>되어 안전합니다(중복 id 는 건너뜀). 백업 파일에는 계정 토큰이 포함되니 안전하게 보관하세요.</div>
   </section>
 </div>
 <script src="/programs.js"></script>
@@ -347,6 +357,21 @@ $("#delSelBtn").addEventListener("click", async () => {
   try { for (const id of ids) await api("/api/threads/posts/" + id, "DELETE"); selected.clear(); flash("삭제했습니다."); }
   catch (er) { flash(er.message, "err"); }
   await refresh();
+});
+$("#xlsxBtn").addEventListener("click", () => {
+  const pid = $("#project").value;
+  location.href = "/api/threads/export.csv" + (pid ? "?projectId=" + encodeURIComponent(pid) : "");
+});
+$("#restoreFile").addEventListener("change", async (e) => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  if (!confirm("이 백업 파일의 기록을 현재 데이터에 추가할까요? (기존에 없는 id 만 추가됩니다)")) { e.target.value = ""; return; }
+  try {
+    const data = JSON.parse(await f.text());
+    const r = await api("/api/threads/import", "POST", data);
+    flash(`복원 완료: 게시글 ${r.addedPosts}개, 계정 ${r.addedAccounts}개 추가했습니다.`);
+    await refresh();
+  } catch (er) { flash("복원 실패: " + er.message, "err"); }
+  e.target.value = "";
 });
 $("#extScopeBtn").addEventListener("click", async () => {
   if (!selected.size) return;

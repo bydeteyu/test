@@ -109,14 +109,15 @@ async function buildWorkbook({ projectName = "", items = [], channels = [], maxR
   let nDraw = 0;
 
   // 1) 요약: 화면의 순위표와 같은 내용(항목마다 가장 최근 기록)
-  const head = ["키워드", "콘텐츠", "최종 조회일"];
+  const head = ["키워드", "콘텐츠", "글 주소", "최종 조회일"];
   for (const c of channels) head.push(`${c.label} 순위`, `${c.label} 조회수`, `${c.label} 전일 대비`);
   const sumRows = [head.map((h) => ({ v: h, s: S.head }))];
+  const itemUrl = (it) => (it.match ? (/^https?:\/\//.test(it.match) ? it.match : "https://" + it.match) : it.postKey ? "https://" + it.postKey : it.matchKey ? "https://" + it.matchKey : "");
   for (const it of items) {
     const dates = Object.keys(it.history || {}).sort();
     const last = dates[dates.length - 1];
     const hist = history(it, channels);
-    const row = [it.keyword, it.label || it.titleContains || it.match, { v: last || "-", s: S.center }];
+    const row = [it.keyword, it.label || it.titleContains || it.match, itemUrl(it), { v: last || "-", s: S.center }];
     channels.forEach((c) => {
       const rec = last ? it.history[last][c.key] : null;
       const st = statusText(rec, maxRank);
@@ -129,7 +130,7 @@ async function buildWorkbook({ projectName = "", items = [], channels = [], maxR
     });
     sumRows.push(row);
   }
-  sheets.push({ name: "순위표", xml: sheetXml(sumRows, { widths: [26, 46, 13, ...channels.flatMap(() => [12, 12, 12])], freeze: true }) });
+  sheets.push({ name: "순위표", xml: sheetXml(sumRows, { widths: [26, 46, 40, 13, ...channels.flatMap(() => [12, 12, 12])], freeze: true }) });
 
   // 2) 항목별 시트: 날짜별 기록 + 더보기와 같은 차트
   const colsPerSheet = channels.length + 3; // 날짜, 순위들, 조회수, 일별 증가

@@ -558,6 +558,48 @@ function mount(app, { dataDir }) {
     }, Number(process.env.THREADS_AUTO_INTERVAL_MS || 10 * 60 * 1000)).unref(); // 테스트에서만 짧게 바꾼다
   }
 
+  // ---- 데이터 백업(JSON) ----
+  app.get("/api/threads/backup.json", requireAdmin, (req, res) => {
+    res.set("Content-Disposition", `attachment; filename="threads-backup-${today()}.json"`);
+    res.type("application/json").send(JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data: load() }, null, 2));
+  });
+  app.post("/api/threads/import", requireAdmin, (req, res) => {
+    const body = req.body || {};
+    const incoming = body.data && typeof body.data === "object" ? body.data : body; // {version,data} 또는 원본 모두 허용
+    if (!incoming || !Array.isArray(incoming.posts)) return res.status(400).json({ error: "invalid", message: "백업 파일 형식이 올바르지 않습니다(posts 배열이 없음)." });
+    const db = load();
+    const have = new Set(db.posts.map((p) => p.id));
+    let addedPosts = 0;
+    for (const p of incoming.posts) if (p && p.id && !have.has(p.id)) { db.posts.push(p); have.add(p.id); addedPosts++; }
+    const haveAcc = new Set(db.accounts.map((a) => a.id));
+    let addedAccounts = 0;
+    for (const a of (incoming.accounts || [])) if (a && a.id && !haveAcc.has(a.id)) { db.accounts.push(a); haveAcc.add(a.id); addedAccounts++; }
+    save(db);
+    res.json({ ok: true, addedPosts, addedAccounts }); // 기존에 없는 id 만 추가(안전 병합)
+  });
+
+  // ---- 엑셀(CSV) 다운로드: 작업한 글 주소(URL) 포함 ----
+  app.get("/api/threads/export.csv", requireAdmin, (req, res) => {
+    const db = load();
+    const pid = String(req.query.projectId || "");
+    let projects = [];
+    try { projects = (JSON.parse(fs.readFileSync(path.join(dataDir, "db.json"), "utf-8")).projects) || []; } catch { /* 이름 못 읽으면 ID 로 */ }
+    const pname = (id) => (projects.find((p) => p.id === id) || {}).name || id || "";
+    const csvCell = (v) => { const s = String(v == null ? "" : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const head = ["프로젝트", "게시글", "글 주소(URL)", "소스", "등록일", "최근 조회일", "조회수", "좋아요", "댓글", "리포스트"];
+    const rows = [head];
+    for (const p of db.posts.filter((x) => !pid || x.projectId === pid)) {
+      const dates = Object.keys(p.history || {}).sort();
+      const last = dates[dates.length - 1];
+      const h = (last && p.history[last]) || {};
+      rows.push([pname(p.projectId), p.text || p.url || "", p.url || "", p.source === "public" ? "공개 링크" : "연결 계정", (p.createdAt || "").slice(0, 10), last || "", h.views ?? "", h.likes ?? "", h.replies ?? "", h.reposts ?? ""]);
+    }
+    const csv = "﻿" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n"); // BOM: 엑셀 한글 깨짐 방지
+    const fname = `스레드_${pid ? pname(pid) || "프로젝트" : "전체"}_${today()}.csv`.replace(/[\\/:*?"<>|]/g, "_");
+    res.set("Content-Disposition", `attachment; filename="threads.csv"; filename*=UTF-8''${encodeURIComponent(fname)}`);
+    res.type("text/csv; charset=utf-8").send(csv);
+  });
+
   return { exportData: () => load(), importData: (d) => save(d), file };
 }
 

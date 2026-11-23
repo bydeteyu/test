@@ -88,13 +88,32 @@ test("Threads: 연결 → 게시글 등록 → 조회수 기록 → 회원 권�
     assert.strictEqual((await admin.call("GET", `/api/threads?projectId=${pid}`)).data.posts[0].favorite, true);
     assert.strictEqual((await admin.call("POST", `/api/threads/posts/${p.id}/favorite`, { favorite: false })).data.favorite, false);
 
+    // 엑셀(CSV) 다운로드: 글 주소(URL) 포함 + BOM
+    const csvRes = await fetch(base + `/api/threads/export.csv?projectId=${pid}`, { headers: { cookie: admin.cookie() } });
+    assert.strictEqual(csvRes.status, 200);
+    assert.match(csvRes.headers.get("content-type"), /csv/);
+    const csvBuf = Buffer.from(await csvRes.arrayBuffer());
+    assert.deepStrictEqual([...csvBuf.subarray(0, 3)], [0xEF, 0xBB, 0xBF], "엑셀 한글용 BOM");
+    const csvText = csvBuf.toString("utf-8");
+    assert.match(csvText, /글 주소\(URL\)/);
+    assert.match(csvText, /post\/TargetPost1/); // 작업한 URL 이 들어 있다
+
+    // 백업 JSON + 복원(기존에 없는 id 만 추가)
+    const bk = await admin.call("GET", "/api/threads/backup.json");
+    assert.strictEqual(bk.status, 200);
+    assert.ok(Array.isArray(bk.data.data.posts) && bk.data.data.posts.length >= 1);
+    const imp = await admin.call("POST", "/api/threads/import", { data: { posts: [{ id: "imported-1", projectId: pid2, url: "https://www.threads.com/@x/post/IMPORTED", source: "public", history: {} }, { id: p.id, url: "dup" }] } });
+    assert.strictEqual(imp.data.addedPosts, 1); // 새 1개만, 중복 id 는 건너뜀
+    assert.ok((await admin.call("GET", `/api/threads?projectId=${pid2}`)).data.posts.some((x) => x.id === "imported-1"));
+    assert.strictEqual((await admin.call("POST", "/api/threads/import", { foo: 1 })).status, 400); // posts 배열 없으면 거부
+
     // 회원: 자기 프로젝트의 Threads 데이터만 읽기, 쓰기/연결은 불가
     await admin.call("POST", "/api/users", { username: "kyobo", password: "kyobopass1", projectIds: [pid] });
     const v = client();
     await v.call("POST", "/api/login", { username: "kyobo", password: "kyobopass1" });
     assert.strictEqual((await v.call("GET", `/api/threads?projectId=${pid}`)).data.posts.length, 1);
     assert.strictEqual((await v.call("GET", `/api/threads?projectId=${pid2}`)).status, 403);
-    for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["POST", "/api/threads/posts", { projectId: pid, url: "x" }], ["DELETE", `/api/threads/posts/${p.id}`], ["POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true }], ["GET", `/api/threads/connect?projectId=${pid}`], ["GET", "/api/threads/config"], ["DELETE", "/api/threads/accounts/x"]]) assert.strictEqual((await v.call(m, u, b)).status, 403, `${m} ${u}`);
+    for (const [m, u, b] of [["POST", "/api/threads/run", { projectId: pid }], ["POST", "/api/threads/posts", { projectId: pid, url: "x" }], ["DELETE", `/api/threads/posts/${p.id}`], ["POST", `/api/threads/posts/${p.id}/favorite`, { favorite: true }], ["GET", `/api/threads/connect?projectId=${pid}`], ["GET", "/api/threads/config"], ["DELETE", "/api/threads/accounts/x"], ["GET", "/api/threads/backup.json"], ["POST", "/api/threads/import", { posts: [] }], ["GET", "/api/threads/export.csv"]]) assert.strictEqual((await v.call(m, u, b)).status, 403, `${m} ${u}`);
     assert.strictEqual((await v.call("GET", "/threads.html")).status, 200);
     assert.strictEqual((await v.call("GET", "/home.html")).status, 200);
     // 일반 회원은 글 등록 불가

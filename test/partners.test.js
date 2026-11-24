@@ -29,6 +29,12 @@ test("업체 관리: 충전/차감으로 잔액 계산 + 회원 차단", async (
     const topup = (await admin.call("GET", "/api/partners")).data.partners[0].entries.find((e) => e.type === "topup");
     assert.strictEqual(topup.vat, true);
     assert.strictEqual(topup.vatAmount, 50000); // 부가세는 잔액에 반영 안 됨(기록만)
+    // 내역에서 부가세 발행 여부 토글(발행 ↔ 미발행)
+    const off = await admin.call("PATCH", `/api/partners/${id}/entries/${topup.id}`, { vat: false });
+    assert.strictEqual(off.data.entry.vat, false);
+    assert.strictEqual(off.data.entry.vatAmount, 0);
+    assert.strictEqual(off.data.balance, 500000); // 잔액 불변
+    assert.strictEqual((await admin.call("PATCH", `/api/partners/${id}/entries/${topup.id}`, { vat: true })).data.entry.vatAmount, 50000);
     // 차감: 스레드 발행 3건 3만원
     assert.strictEqual((await admin.call("POST", `/api/partners/${id}/entries`, { type: "charge", amount: 30000, label: "스레드 발행 3건" })).data.balance, 470000);
     // 금액 0 이하 거부

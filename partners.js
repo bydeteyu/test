@@ -74,7 +74,9 @@ function mount(app, { dataDir } = {}) {
     if (amount == null || amount <= 0) return res.status(400).json({ error: "invalid_input", message: "금액을 0보다 큰 숫자로 입력하세요." });
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || "")) ? b.date : today();
     const label = clean(b.label, 80) || (type === "topup" ? "선금 충전" : "차감");
-    const e = { id: crypto.randomUUID(), type, date, label, amount, note: clean(b.note, 300), createdAt: new Date().toISOString() };
+    const vat = !!b.vat; // 세금계산서(부가세) 발행 여부 — 주로 충전에 사용
+    const vatAmount = vat ? Math.round(amount * 0.1) : 0; // 부가세 10%(참고용). 잔액에는 공급가액(amount)만 반영
+    const e = { id: crypto.randomUUID(), type, date, label, amount, vat, vatAmount, note: clean(b.note, 300), createdAt: new Date().toISOString() };
     (p.entries ??= []).push(e);
     save(db);
     res.status(201).json({ entry: e, balance: balanceOf(p) });

@@ -81,21 +81,33 @@ tbody tr:last-child td{border-bottom:none}
     </section>
 
     <section class="card">
-      <h2>내역 추가</h2>
+      <h2>잔액 충전</h2>
+      <div class="row">
+        <label style="flex:0 0 140px"><b>날짜</b><input type="date" id="tDate"></label>
+        <label style="flex:0 0 160px"><b>충전 금액(원)</b><input id="tAmount" type="number" min="0" step="10000" placeholder="예: 500000"></label>
+        <label style="flex:0 1 190px;flex-direction:row;align-items:center;gap:7px;padding-bottom:9px"><input type="checkbox" id="tVat" style="width:auto"> <b style="font-size:.82rem">세금계산서(부가세) 발행</b></label>
+        <label style="flex:1 1 160px"><b>메모(선택)</b><input id="tNote" placeholder="예: 11월 선금"></label>
+        <div><button class="primary" id="addTopup" title="예치금 충전">＋ 충전</button></div>
+      </div>
+      <div class="meta" id="vatHint">세금계산서를 발행하면 공급가액(충전 금액)의 <b>부가세 10%</b>가 함께 기록됩니다. 잔액에는 충전 금액만 반영됩니다.</div>
+    </section>
+
+    <section class="card">
+      <h2>비용 차감</h2>
       <div class="row">
         <label style="flex:0 0 140px"><b>날짜</b><input type="date" id="eDate"></label>
         <label style="flex:1 1 180px"><b>항목</b><input id="eLabel" placeholder="예: 스레드 발행 3건"></label>
         <label style="flex:0 0 150px"><b>금액(원)</b><input id="eAmount" type="number" min="0" step="1000" placeholder="예: 30000"></label>
         <label style="flex:1 1 160px"><b>메모(선택)</b><input id="eNote" placeholder=""></label>
-        <div style="display:flex;gap:8px"><button class="primary" id="addCharge" title="예치금에서 차감">차감</button><button id="addTopup" title="예치금 충전">＋ 충전</button></div>
+        <div><button class="primary" id="addCharge" title="예치금에서 차감">차감</button></div>
       </div>
-      <div class="meta">요율표 항목을 클릭하면 항목·금액이 자동 입력됩니다. <b>차감</b>은 잔액에서 빼고, <b>충전</b>은 더합니다(잔액이 음수가 되면 경고로 표시).</div>
+      <div class="meta">요율표 항목을 클릭하면 항목·금액이 자동 입력됩니다. 잔액이 음수가 되면 경고로 표시됩니다.</div>
     </section>
 
     <section class="card">
       <h2>예치금 내역</h2>
       <div style="overflow-x:auto"><table>
-        <thead><tr><th style="width:104px">날짜</th><th style="width:66px">구분</th><th>항목</th><th style="width:130px" class="amt">금액(원)</th><th>메모</th><th style="width:48px"></th></tr></thead>
+        <thead><tr><th style="width:104px">날짜</th><th style="width:66px">구분</th><th>항목</th><th style="width:130px" class="amt">금액(원)</th><th style="width:120px">세금계산서</th><th>메모</th><th style="width:48px"></th></tr></thead>
         <tbody id="ledger"></tbody>
       </table></div>
     </section>
@@ -135,7 +147,7 @@ function renderDetail(){
   b.innerHTML=won(bal)+(bal<0?' <small>⚠ 잔액 부족</small>':"");
   $("#pMemo").value=p.memo||"";
   renderRates();
-  $("#ledger").innerHTML=(p.entries&&p.entries.length?p.entries:[]).map(e=>`<tr data-eid="${esc(e.id)}"><td>${esc(e.date)}</td><td><span class="tag ${e.type}">${e.type==="topup"?"충전":"차감"}</span></td><td>${esc(e.label)}</td><td class="amt ${e.type==="topup"?"plus":"minus"}">${e.type==="topup"?"+":"−"}${Math.abs(e.amount).toLocaleString("ko-KR")}</td><td class="sub">${esc(e.note||"")}</td><td><button data-edel title="삭제">✕</button></td></tr>`).join("")||'<tr><td colspan="6" class="sub">내역이 없습니다. 먼저 "충전"으로 선금을 넣으세요.</td></tr>';
+  $("#ledger").innerHTML=(p.entries&&p.entries.length?p.entries:[]).map(e=>`<tr data-eid="${esc(e.id)}"><td>${esc(e.date)}</td><td><span class="tag ${e.type}">${e.type==="topup"?"충전":"차감"}</span></td><td>${esc(e.label)}</td><td class="amt ${e.type==="topup"?"plus":"minus"}">${e.type==="topup"?"+":"−"}${Math.abs(e.amount).toLocaleString("ko-KR")}</td><td>${e.type==="topup"?(e.vat?`<span class="tag topup">발행</span><div class="sub">부가세 ${Math.round((e.vatAmount!=null?e.vatAmount:e.amount*0.1)).toLocaleString("ko-KR")}원</div>`:'<span class="sub">미발행</span>'):'<span class="sub">-</span>'}</td><td class="sub">${esc(e.note||"")}</td><td><button data-edel title="삭제">✕</button></td></tr>`).join("")||'<tr><td colspan="7" class="sub">내역이 없습니다. 먼저 "충전"으로 선금을 넣으세요.</td></tr>';
 }
 
 $("#addForm").addEventListener("submit",async(e)=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{const r=await api("/api/partners","POST",{name:f.name.trim(),media:(f.media||"").trim()});e.target.reset();await reload(r.partner.id);flash("업체를 추가했습니다.");}catch(err){flash(err.message,"err");}});
@@ -153,16 +165,28 @@ $("#saveRates").addEventListener("click",async()=>{
   const rates=[...document.querySelectorAll("#rates .rate")].map(d=>({label:d.querySelector(".rl").value.trim(),price:Number(d.querySelector(".rp").value)||0})).filter(r=>r.label);
   try{await api("/api/partners/"+curId,"PATCH",{rates});await reload(curId);flash("요율을 저장했습니다.");}catch(err){flash(err.message,"err");}
 });
-async function addEntry(type){
-  const amount=Number($("#eAmount").value);
-  if(!(amount>0)){flash("금액을 0보다 큰 숫자로 입력하세요.","err");return;}
-  const body={type,date:$("#eDate").value||todayKST(),label:$("#eLabel").value.trim(),amount,note:$("#eNote").value.trim()};
-  try{await api("/api/partners/"+curId+"/entries","POST",body);$("#eLabel").value="";$("#eAmount").value="";$("#eNote").value="";await reload(curId);flash(type==="topup"?"충전했습니다.":"차감했습니다.");}catch(err){flash(err.message,"err");}
+async function post(body,msg,clear){
+  try{await api("/api/partners/"+curId+"/entries","POST",body);clear();await reload(curId);flash(msg);}catch(err){flash(err.message,"err");}
 }
-$("#addCharge").addEventListener("click",()=>addEntry("charge"));
-$("#addTopup").addEventListener("click",()=>addEntry("topup"));
+$("#addCharge").addEventListener("click",()=>{
+  const amount=Number($("#eAmount").value);
+  if(!(amount>0)){flash("차감 금액을 0보다 큰 숫자로 입력하세요.","err");return;}
+  post({type:"charge",date:$("#eDate").value||todayKST(),label:$("#eLabel").value.trim(),amount,note:$("#eNote").value.trim()},"차감했습니다.",()=>{$("#eLabel").value="";$("#eAmount").value="";$("#eNote").value="";});
+});
+$("#addTopup").addEventListener("click",()=>{
+  const amount=Number($("#tAmount").value);
+  if(!(amount>0)){flash("충전 금액을 0보다 큰 숫자로 입력하세요.","err");return;}
+  const vat=$("#tVat").checked;
+  post({type:"topup",date:$("#tDate").value||todayKST(),label:vat?"선금 충전(세금계산서)":"선금 충전",amount,vat,note:$("#tNote").value.trim()},"충전했습니다.",()=>{$("#tAmount").value="";$("#tNote").value="";$("#tVat").checked=false;updateVatHint();});
+});
+function updateVatHint(){
+  const a=Number($("#tAmount").value)||0, on=$("#tVat").checked;
+  $("#vatHint").innerHTML=on&&a>0?`부가세 10% = <b>${Math.round(a*0.1).toLocaleString("ko-KR")}원</b> · 세금계산서 합계 = <b>${Math.round(a*1.1).toLocaleString("ko-KR")}원</b> (잔액에는 충전 금액 ${a.toLocaleString("ko-KR")}원만 반영)`:'세금계산서를 발행하면 공급가액(충전 금액)의 <b>부가세 10%</b>가 함께 기록됩니다. 잔액에는 충전 금액만 반영됩니다.';
+}
+$("#tAmount").addEventListener("input",updateVatHint);
+$("#tVat").addEventListener("change",updateVatHint);
 $("#ledger").addEventListener("click",async(e)=>{if(!e.target.matches("[data-edel]"))return;const eid=e.target.closest("tr").dataset.eid;if(!confirm("이 내역을 삭제할까요?"))return;try{await api("/api/partners/"+curId+"/entries/"+eid,"DELETE");await reload(curId);flash("삭제했습니다.");}catch(err){flash(err.message,"err");}});
-$("#eDate").value=todayKST();
+$("#eDate").value=todayKST();$("#tDate").value=todayKST();
 reload().catch(()=>{});
 </script>
 </body>

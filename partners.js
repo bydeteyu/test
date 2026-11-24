@@ -82,6 +82,21 @@ function mount(app, { dataDir } = {}) {
     res.status(201).json({ entry: e, balance: balanceOf(p) });
   });
 
+  // 내역 수정: 세금계산서(부가세) 발행 여부 토글 등
+  app.patch("/api/partners/:id/entries/:eid", requireAdmin, (req, res) => {
+    const db = load();
+    const p = db.partners.find((x) => x.id === req.params.id);
+    if (!p) return res.status(404).json({ error: "not_found" });
+    const e = (p.entries || []).find((x) => x.id === req.params.eid);
+    if (!e) return res.status(404).json({ error: "not_found" });
+    const b = req.body || {};
+    if (typeof b.vat === "boolean") { e.vat = b.vat; e.vatAmount = b.vat ? Math.round((e.amount || 0) * 0.1) : 0; }
+    if (b.label !== undefined) e.label = clean(b.label, 80) || e.label;
+    if (b.note !== undefined) e.note = clean(b.note, 300);
+    save(db);
+    res.json({ entry: e, balance: balanceOf(p) });
+  });
+
   app.delete("/api/partners/:id/entries/:eid", requireAdmin, (req, res) => {
     const db = load();
     const p = db.partners.find((x) => x.id === req.params.id);

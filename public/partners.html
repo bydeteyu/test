@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>업체 관리</title>
+<style>
+:root{color-scheme:light;--bg:#F7F5F0;--surface:#fff;--surface-2:#F0ECE3;--ink:#1E2420;--ink-soft:#63706A;--border:#DDD6C8;--accent:#0E6E58;--accent-ink:#fff;--bad:#AE4430;--bad-soft:#FBE9E3;--good:#1F7A4D;--good-soft:#E4F5EA;--warn:#A6741A;--warn-soft:#FBF0DA}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#14181A;--surface:#1C2220;--surface-2:#232B28;--ink:#ECEFEC;--ink-soft:#9AA6A0;--border:#313A36;--accent:#3FCB9F;--accent-ink:#0B1512;--bad:#FF7A5C;--bad-soft:#2E1B16;--good:#4ADE94;--good-soft:#17281F;--warn:#E3B24E;--warn-soft:#2E2716}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1,h2,h3{margin:0}h1{font-size:1.4rem}h2{font-size:1.05rem}h3{font-size:.9rem}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.meta{font-size:.82rem;color:var(--ink-soft);line-height:1.6}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+label{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--ink-soft)}
+label b{color:var(--ink);font-size:.82rem}
+input,select,textarea{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0;width:100%}
+textarea{min-height:52px;resize:vertical}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--ink);padding:7px 12px;font-size:.8rem}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;padding:9px 16px;font-size:.88rem}
+button.danger{color:var(--bad);border-color:var(--bad-soft)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.msg{border-radius:8px;padding:9px 12px;font-size:.85rem;display:none}.msg.show{display:block}
+.msg.ok{background:var(--good-soft);color:var(--good)}.msg.err{background:var(--bad-soft);color:var(--bad)}
+.bal{font-size:1.8rem;font-weight:800;letter-spacing:-.02em}.bal.neg{color:var(--bad)}
+.bal small{font-size:.8rem;font-weight:600;color:var(--ink-soft);margin-left:4px}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left;vertical-align:middle}
+th{background:var(--surface-2);font-weight:600;color:var(--ink-soft);font-size:.78rem;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+.amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:700}
+.amt.plus{color:var(--good)}.amt.minus{color:var(--bad)}
+.tag{display:inline-block;background:var(--surface-2);border-radius:999px;padding:2px 9px;font-size:.76rem}
+.tag.topup{background:var(--good-soft);color:var(--good)}.tag.charge{background:var(--bad-soft);color:var(--bad)}
+.rate{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rate input.rl{flex:1 1 160px}.rate input.rp{flex:0 0 130px}
+.chip{border:1px solid var(--border);border-radius:999px;padding:4px 11px;font-size:.8rem;cursor:pointer;background:var(--surface-2)}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.hl{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.sub{color:var(--ink-soft);font-size:.78rem}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>업체 관리</h1></header>
+  <div class="meta">파트너별로 <b>선금(예치금)을 충전</b>해 두고, 작업(스레드 발행·댓글 추가 등)마다 <b>금액을 차감</b>해 잔액을 관리합니다. 비용 조건·단가(요율)는 파트너마다 자유롭게 수정할 수 있습니다.</div>
+  <div class="msg" id="flash"></div>
+
+  <section class="card">
+    <h2>업체 추가</h2>
+    <form id="addForm" class="row">
+      <label style="flex:1 1 200px"><b>파트너(업체) 이름</b><input name="name" required placeholder="예: J컴퍼니"></label>
+      <label style="flex:0 1 160px"><b>매체</b><input name="media" placeholder="예: 스레드"></label>
+      <div><button class="primary" type="submit">추가</button></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="hl"><h2>파트너 선택</h2><select id="partnerSel" style="max-width:260px"></select></div>
+  </section>
+
+  <div id="detail" hidden>
+    <section class="card">
+      <div class="hl">
+        <div><h2 id="pName"></h2><div class="sub" id="pMedia"></div></div>
+        <div style="text-align:right"><div class="sub">잔액</div><div class="bal" id="pBal"></div></div>
+      </div>
+      <div><div class="sub" style="margin-bottom:4px">계약 내용 / 메모 (예: 스레드 발행 1건 1만원 / 댓글 0.5만원 / AS 24시간 이내)</div>
+        <textarea id="pMemo" placeholder="계약 조건·특이사항을 적어두세요"></textarea>
+        <div style="margin-top:6px"><button id="saveMemo">메모 저장</button> <button class="danger" id="delPartner" style="float:right">업체 삭제</button></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="hl"><h2>요율표 <span class="sub">(비용 조건 · 단가 — 차감 입력 시 클릭하면 자동 채움)</span></h2><button id="addRate">+ 항목 추가</button></div>
+      <div id="rates"></div>
+      <div><button class="primary" id="saveRates">요율 저장</button></div>
+    </section>
+
+    <section class="card">
+      <h2>내역 추가</h2>
+      <div class="row">
+        <label style="flex:0 0 140px"><b>날짜</b><input type="date" id="eDate"></label>
+        <label style="flex:1 1 180px"><b>항목</b><input id="eLabel" placeholder="예: 스레드 발행 3건"></label>
+        <label style="flex:0 0 150px"><b>금액(원)</b><input id="eAmount" type="number" min="0" step="1000" placeholder="예: 30000"></label>
+        <label style="flex:1 1 160px"><b>메모(선택)</b><input id="eNote" placeholder=""></label>
+        <div style="display:flex;gap:8px"><button class="primary" id="addCharge" title="예치금에서 차감">차감</button><button id="addTopup" title="예치금 충전">＋ 충전</button></div>
+      </div>
+      <div class="meta">요율표 항목을 클릭하면 항목·금액이 자동 입력됩니다. <b>차감</b>은 잔액에서 빼고, <b>충전</b>은 더합니다(잔액이 음수가 되면 경고로 표시).</div>
+    </section>
+
+    <section class="card">
+      <h2>예치금 내역</h2>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th style="width:104px">날짜</th><th style="width:66px">구분</th><th>항목</th><th style="width:130px" class="amt">금액(원)</th><th>메모</th><th style="width:48px"></th></tr></thead>
+        <tbody id="ledger"></tbody>
+      </table></div>
+    </section>
+  </div>
+</div>
+<script src="/programs.js"></script>
+<script>
+Programs.mountBar("partners");
+const $=(s)=>document.querySelector(s);
+const esc=(s)=>String(s??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const won=(n)=>(n<0?"-":"")+Math.abs(n).toLocaleString("ko-KR")+"원";
+const api=async(url,method="GET",body)=>{const r=await fetch(url,{method,headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});if(r.status===401){location.href="/login.html";throw new Error("login");}const d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(d.message||"요청에 실패했습니다."),{status:r.status});return d;};
+let timer=null;const flash=(t,kind="ok")=>{const f=$("#flash");f.textContent=t;f.className="msg show "+kind;clearTimeout(timer);timer=setTimeout(()=>f.classList.remove("show"),4000);};
+let partners=[],curId=null;
+const cur=()=>partners.find(p=>p.id===curId);
+const todayKST=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
+
+async function reload(keep){
+  const d=await api("/api/partners");partners=d.partners;
+  if(keep&&partners.some(p=>p.id===keep))curId=keep;
+  if(!partners.some(p=>p.id===curId))curId=partners[0]?partners[0].id:null;
+  $("#partnerSel").innerHTML=partners.length?partners.map(p=>`<option value="${esc(p.id)}"${p.id===curId?" selected":""}>${esc(p.name)}${p.media?" ("+esc(p.media)+")":""}</option>`).join(""):'<option value="">(업체 없음 — 위에서 추가)</option>';
+  renderDetail();
+}
+function renderRates(){
+  const p=cur();
+  $("#rates").innerHTML=(p.rates&&p.rates.length?p.rates:[]).map((r,i)=>`<div class="rate" data-i="${i}" style="margin-bottom:6px"><input class="rl" value="${esc(r.label)}" placeholder="조건 (예: 스레드 발행)"><input class="rp" type="number" min="0" step="1000" value="${esc(r.price)}" placeholder="단가(원)"><button data-rdel title="삭제">✕</button></div>`).join("")||'<div class="sub">요율 항목이 없습니다. "+ 항목 추가"로 만드세요.</div>';
+}
+function renderDetail(){
+  const p=cur();
+  $("#detail").hidden=!p;
+  if(!p)return;
+  $("#pName").textContent=p.name;
+  $("#pMedia").textContent=p.media?("매체: "+p.media):"";
+  const bal=p.balance;
+  const b=$("#pBal");b.textContent=won(bal);b.className="bal"+(bal<0?" neg":"");
+  b.innerHTML=won(bal)+(bal<0?' <small>⚠ 잔액 부족</small>':"");
+  $("#pMemo").value=p.memo||"";
+  renderRates();
+  $("#ledger").innerHTML=(p.entries&&p.entries.length?p.entries:[]).map(e=>`<tr data-eid="${esc(e.id)}"><td>${esc(e.date)}</td><td><span class="tag ${e.type}">${e.type==="topup"?"충전":"차감"}</span></td><td>${esc(e.label)}</td><td class="amt ${e.type==="topup"?"plus":"minus"}">${e.type==="topup"?"+":"−"}${Math.abs(e.amount).toLocaleString("ko-KR")}</td><td class="sub">${esc(e.note||"")}</td><td><button data-edel title="삭제">✕</button></td></tr>`).join("")||'<tr><td colspan="6" class="sub">내역이 없습니다. 먼저 "충전"으로 선금을 넣으세요.</td></tr>';
+}
+
+$("#addForm").addEventListener("submit",async(e)=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{const r=await api("/api/partners","POST",{name:f.name.trim(),media:(f.media||"").trim()});e.target.reset();await reload(r.partner.id);flash("업체를 추가했습니다.");}catch(err){flash(err.message,"err");}});
+$("#partnerSel").addEventListener("change",(e)=>{curId=e.target.value;renderDetail();});
+$("#saveMemo").addEventListener("click",async()=>{try{await api("/api/partners/"+curId,"PATCH",{memo:$("#pMemo").value});await reload(curId);flash("메모를 저장했습니다.");}catch(err){flash(err.message,"err");}});
+$("#delPartner").addEventListener("click",async()=>{const p=cur();if(!p)return;if(!confirm(`"${p.name}" 업체와 모든 내역을 삭제할까요?`))return;try{await api("/api/partners/"+curId,"DELETE");curId=null;await reload();flash("삭제했습니다.");}catch(err){flash(err.message,"err");}});
+$("#addRate").addEventListener("click",()=>{const p=cur();(p.rates??=[]).push({label:"",price:0});renderRates();});
+$("#rates").addEventListener("click",(e)=>{if(e.target.matches("[data-rdel]")){const i=+e.target.closest(".rate").dataset.i;cur().rates.splice(i,1);renderRates();}});
+$("#rates").addEventListener("click",(e)=>{
+  const row=e.target.closest(".rate");if(!row||e.target.matches("input")||e.target.matches("[data-rdel]"))return;
+  const i=+row.dataset.i,r=cur().rates[i];if(!r)return;
+  $("#eLabel").value=r.label;$("#eAmount").value=r.price;$("#eAmount").focus();
+});
+$("#saveRates").addEventListener("click",async()=>{
+  const rates=[...document.querySelectorAll("#rates .rate")].map(d=>({label:d.querySelector(".rl").value.trim(),price:Number(d.querySelector(".rp").value)||0})).filter(r=>r.label);
+  try{await api("/api/partners/"+curId,"PATCH",{rates});await reload(curId);flash("요율을 저장했습니다.");}catch(err){flash(err.message,"err");}
+});
+async function addEntry(type){
+  const amount=Number($("#eAmount").value);
+  if(!(amount>0)){flash("금액을 0보다 큰 숫자로 입력하세요.","err");return;}
+  const body={type,date:$("#eDate").value||todayKST(),label:$("#eLabel").value.trim(),amount,note:$("#eNote").value.trim()};
+  try{await api("/api/partners/"+curId+"/entries","POST",body);$("#eLabel").value="";$("#eAmount").value="";$("#eNote").value="";await reload(curId);flash(type==="topup"?"충전했습니다.":"차감했습니다.");}catch(err){flash(err.message,"err");}
+}
+$("#addCharge").addEventListener("click",()=>addEntry("charge"));
+$("#addTopup").addEventListener("click",()=>addEntry("topup"));
+$("#ledger").addEventListener("click",async(e)=>{if(!e.target.matches("[data-edel]"))return;const eid=e.target.closest("tr").dataset.eid;if(!confirm("이 내역을 삭제할까요?"))return;try{await api("/api/partners/"+curId+"/entries/"+eid,"DELETE");await reload(curId);flash("삭제했습니다.");}catch(err){flash(err.message,"err");}});
+$("#eDate").value=todayKST();
+reload().catch(()=>{});
+</script>
+</body>
+</html>

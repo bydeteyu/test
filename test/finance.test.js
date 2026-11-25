@@ -11,7 +11,7 @@ test("마스터 전용 입출금 + admin 은 마스터 수정/삭제 불가", as
   const port = 4300 + Math.floor(Math.random() * 300);
   const child = spawn("node", [path.join(__dirname, "..", "server.js")], { env: { ...process.env, PORT: String(port), DATA_DIR: dir, RANK_AUTO: "off", CAFE_COMMENT_AUTO: "off", APP_PASSWORD: "adminpass123", MASTER_PASSWORD: "masterpass123" }, stdio: "ignore" });
   const base = `http://127.0.0.1:${port}`;
-  const client = () => { let cookie = ""; return { call: async (m, p, b) => { const r = await fetch(base + p, { method: m, redirect: "manual", headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) }, body: b ? JSON.stringify(b) : undefined }); const sc = r.headers.get("set-cookie"); if (sc) cookie = sc.split(";")[0]; const data = await r.json().catch(() => null); return { status: r.status, data, location: r.headers.get("location") }; } }; };
+  const client = () => { let cookie = ""; return { cookie: () => cookie, call: async (m, p, b) => { const r = await fetch(base + p, { method: m, redirect: "manual", headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) }, body: b ? JSON.stringify(b) : undefined }); const sc = r.headers.get("set-cookie"); if (sc) cookie = sc.split(";")[0]; const data = await r.json().catch(() => null); return { status: r.status, data, location: r.headers.get("location") }; } }; };
   try {
     for (let i = 0; i < 50; i++) { try { await fetch(base + "/healthz"); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
     const admin = client(), master = client(), anon = client();
@@ -47,6 +47,31 @@ test("마스터 전용 입출금 + admin 은 마스터 수정/삭제 불가", as
     assert.strictEqual(nov.total.net, 350000);
     assert.strictEqual((await master.call("PATCH", `/api/finance/${a.data.entry.id}`, { amount: 600000 })).data.entry.amount, 600000);
     assert.strictEqual((await master.call("DELETE", `/api/finance/${a.data.entry.id}`)).data.removed, 1);
+    // 삭제는 숨김일 뿐: 목록·합계에서는 빠지지만 보관되고 복구된다
+    assert.strictEqual((await master.call("GET", "/api/finance?month=2026-11")).data.entries.length, 1);
+    const del = (await master.call("GET", "/api/finance/deleted")).data.entries;
+    assert.strictEqual(del.length, 1);
+    assert.strictEqual(del[0].amount, 600000);
+    assert.strictEqual((await master.call("PATCH", `/api/finance/${a.data.entry.id}`, { amount: 1 })).status, 404); // 삭제된 내역은 수정 불가
+    assert.strictEqual((await master.call("POST", `/api/finance/${a.data.entry.id}/restore`)).status, 200);
+    assert.strictEqual((await master.call("GET", "/api/finance?month=2026-11")).data.entries.length, 2);
+    assert.strictEqual((await master.call("GET", "/api/finance/deleted")).data.entries.length, 0);
+    await master.call("DELETE", `/api/finance/${a.data.entry.id}`);
+    // 변경 기록(추가/수정/삭제/복구)과 전체 백업(삭제된 내역 포함)
+    const log = (await master.call("GET", "/api/finance/log")).data.log;
+    assert.deepStrictEqual(log.filter((x) => x.id === a.data.entry.id).map((x) => x.action).reverse(), ["create", "update", "delete", "restore", "delete"]);
+    assert.strictEqual(log[0].by, "master");
+    const raw = await fetch(base + "/api/finance/backup", { headers: { cookie: master.cookie() } });
+    assert.match(raw.headers.get("content-disposition"), /finance-backup-\d{4}-\d{2}-\d{2}\.json/);
+    const bk = await raw.json();
+    assert.strictEqual(bk.entries.length, 3);
+    assert.ok(bk.entries.some((e) => e.deletedAt));
+    assert.strictEqual(bk.log.length, 7);
+    assert.ok(fs.existsSync(path.join(dir, "finance-log.jsonl")));
+    assert.ok(fs.readdirSync(path.join(dir, "finance-backups")).length >= 1); // 일일 스냅샷
+    assert.strictEqual((await admin.call("GET", "/api/finance/backup")).status, 403);
+    assert.strictEqual((await admin.call("GET", "/api/finance/log")).status, 403);
+    assert.strictEqual((await admin.call("POST", `/api/finance/${a.data.entry.id}/restore`)).status, 403);
 
     // admin 은 마스터 계정을 만들거나 바꾸거나 지울 수 없다
     assert.strictEqual((await admin.call("POST", "/api/users", { username: "master", password: "whatever123" })).status, 409);

@@ -75,6 +75,7 @@ tbody tr:last-child td{border-bottom:none}
         <label><b>월</b><input type="month" id="month"></label>
         <button id="allBtn" type="button">전체 보기</button>
         <a href="/api/finance/csv"><button type="button">엑셀(CSV) 내려받기</button></a>
+        <a href="/api/finance/backup"><button type="button" title="삭제된 내역과 변경 기록까지 모두 포함한 전체 백업">백업 파일(JSON) 받기</button></a>
       </div>
     </div>
     <div class="stats">
@@ -87,6 +88,17 @@ tbody tr:last-child td{border-bottom:none}
       <thead><tr><th style="width:104px">날짜</th><th style="width:64px">구분</th><th class="amt" style="width:130px">금액(원)</th><th>분류</th><th>거래처</th><th>메모</th><th style="width:48px"></th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
+  </section>
+
+  <section class="card">
+    <div class="hl"><h2>삭제된 내역 · 변경 기록</h2><button id="moreBtn" type="button">펼치기</button></div>
+    <div class="meta">내역을 삭제해도 데이터는 지워지지 않고 아래 "삭제된 내역"에 보관되며 복구할 수 있습니다. 모든 추가·수정·삭제·복구는 변경 기록에 남습니다. 서버에도 하루 1회 자동 스냅샷이 저장됩니다.</div>
+    <div id="more" hidden>
+      <h3>삭제된 내역</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th style="width:104px">날짜</th><th style="width:64px">구분</th><th class="amt" style="width:130px">금액(원)</th><th>분류</th><th>거래처</th><th>삭제</th><th style="width:70px"></th></tr></thead><tbody id="delRows"></tbody></table></div>
+      <h3 style="margin-top:14px">변경 기록 (최근 100건)</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th style="width:150px">시각</th><th style="width:90px">계정</th><th style="width:70px">작업</th><th>내용</th></tr></thead><tbody id="logRows"></tbody></table></div>
+    </div>
   </section>
 </div>
 <script src="/programs.js"></script>
@@ -113,8 +125,18 @@ async function reload(){
 }
 $("#month").addEventListener("change",()=>reload().catch(e=>flash(e.message,"err")));
 $("#allBtn").addEventListener("click",()=>{$("#month").value="";reload().catch(e=>flash(e.message,"err"));});
-$("#addForm").addEventListener("submit",async(ev)=>{ev.preventDefault();const f=Object.fromEntries(new FormData(ev.target));f.amount=String(f.amount||"").replace(/\D/g,"");try{await api("/api/finance","POST",f);ev.target.reset();$("#fDate").value=f.date;await reload();flash("추가했습니다.");}catch(err){flash(err.message,"err");}});
-$("#rows").addEventListener("click",async(ev)=>{const id=ev.target.dataset&&ev.target.dataset.del;if(!id||!confirm("이 내역을 삭제할까요?"))return;try{await api("/api/finance/"+id,"DELETE");await reload();flash("삭제했습니다.");}catch(err){flash(err.message,"err");}});
+$("#addForm").addEventListener("submit",async(ev)=>{ev.preventDefault();const f=Object.fromEntries(new FormData(ev.target));f.amount=String(f.amount||"").replace(/\D/g,"");try{await api("/api/finance","POST",f);ev.target.reset();$("#fDate").value=f.date;await reload();if(!$("#more").hidden)await loadMore();flash("추가했습니다.");}catch(err){flash(err.message,"err");}});
+$("#rows").addEventListener("click",async(ev)=>{const id=ev.target.dataset&&ev.target.dataset.del;if(!id||!confirm("이 내역을 삭제할까요? (삭제된 내역에서 복구할 수 있습니다)"))return;try{await api("/api/finance/"+id,"DELETE");await reload();if(!$("#more").hidden)await loadMore();flash("삭제했습니다. (복구 가능)");}catch(err){flash(err.message,"err");}});
+const ACT={create:"추가",update:"수정",delete:"삭제",restore:"복구"};
+const kst=(iso)=>new Date(new Date(iso).getTime()+9*3600e3).toISOString().slice(0,16).replace("T"," ");
+const desc=(l)=>{const e=l.after||l.before||{};return `${e.date||""} ${e.type==="in"?"입금":"출금"} ${(e.amount||0).toLocaleString("ko-KR")}원 ${[e.category,e.counterparty].filter(Boolean).join(" · ")}`;};
+async function loadMore(){
+  const [d,l]=await Promise.all([api("/api/finance/deleted"),api("/api/finance/log")]);
+  $("#delRows").innerHTML=d.entries.length?d.entries.map(e=>`<tr><td>${esc(e.date)}</td><td class="${e.type}">${e.type==="in"?"입금":"출금"}</td><td class="amt">${e.amount.toLocaleString("ko-KR")}</td><td>${esc(e.category)}</td><td>${esc(e.counterparty)}</td><td>${esc(kst(e.deletedAt))}</td><td><button data-restore="${esc(e.id)}">복구</button></td></tr>`).join(""):'<tr><td colspan="7" class="meta">삭제된 내역이 없습니다.</td></tr>';
+  $("#logRows").innerHTML=l.log.length?l.log.map(x=>`<tr><td>${esc(kst(x.at))}</td><td>${esc(x.by)}</td><td>${esc(ACT[x.action]||x.action)}</td><td>${esc(desc(x))}</td></tr>`).join(""):'<tr><td colspan="4" class="meta">기록이 없습니다.</td></tr>';
+}
+$("#moreBtn").addEventListener("click",()=>{const open=$("#more").hidden;$("#more").hidden=!open;$("#moreBtn").textContent=open?"접기":"펼치기";if(open)loadMore().catch(e=>flash(e.message,"err"));});
+$("#delRows").addEventListener("click",async(ev)=>{const id=ev.target.dataset&&ev.target.dataset.restore;if(!id)return;try{await api("/api/finance/"+id+"/restore","POST");await reload();await loadMore();flash("복구했습니다.");}catch(err){flash(err.message,"err");}});
 reload().catch(e=>flash(e.message,"err"));
 </script>
 </body>

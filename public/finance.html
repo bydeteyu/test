@@ -53,6 +53,10 @@ tbody tr:last-child td{border-bottom:none}
 .diff.good{background:var(--good-soft);color:var(--good)}.diff.bad{background:var(--bad-soft);color:var(--bad)}.diff.flat{background:var(--surface-2);color:var(--ink-soft)}
 .chips{display:flex;flex-wrap:wrap;gap:6px}.chips .chip{display:inline-flex;gap:6px;align-items:center;cursor:default}.chips .chip button{border:0;padding:0 2px;color:var(--ink-soft);font-size:.8rem}
 details>summary{cursor:pointer;font-weight:600;font-size:.85rem}
+tfoot .footSum td{border-top:2px solid var(--border);background:var(--surface-2);font-size:.86rem}
+.msel{position:relative}.msel>summary{list-style:none;border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:7px 9px;font-weight:400;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.msel>summary::-webkit-details-marker{display:none}
+.mpanel{position:absolute;z-index:6;top:100%;left:0;margin-top:3px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px;max-height:240px;overflow:auto;min-width:180px;box-shadow:0 6px 18px rgba(0,0,0,.14)}
+.mpanel label{display:flex;gap:7px;align-items:center;padding:4px 6px;font-size:.84rem;cursor:pointer;border-radius:6px}.mpanel label:hover{background:var(--surface-2)}.mpanel input{width:auto}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .stat{background:var(--surface-2);border-radius:12px;padding:12px 14px}.stat .l{font-size:.78rem;color:var(--ink-soft)}.stat .v{font-size:1.35rem;font-weight:800}
 </style>
@@ -112,18 +116,19 @@ details>summary{cursor:pointer;font-weight:600;font-size:.85rem}
           <th><select id="fltType"><option value="">전체</option><option value="in">입금</option><option value="out">출금</option></select></th>
           <th><input id="fltMin" inputmode="numeric" placeholder="최소 금액"><input id="fltMax" inputmode="numeric" placeholder="최대 금액"></th>
           <th></th>
-          <th><select id="fltCat"></select></th>
-          <th><select id="fltCp"></select></th>
+          <th><details class="msel"><summary id="fltCatSum">전체</summary><div class="mpanel" id="fltCatOpts"></div></details></th>
+          <th><details class="msel"><summary id="fltCpSum">전체</summary><div class="mpanel" id="fltCpOpts"></div></details></th>
           <th><input id="fltNote" placeholder="메모 검색"></th>
           <th><button type="button" id="fltReset" title="정렬·필터 초기화">↺</button></th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
+      <tfoot id="rowsFoot"></tfoot>
     </table></div>
     <div id="cmpBox" hidden>
       <h3 id="cmpTitle">전월 대비 변동</h3>
-      <div class="meta">같은 구분·분류·거래처끼리 월 합계를 비교합니다. 입금은 늘면 초록, 출금은 늘면 빨강으로 표시됩니다.</div>
-      <div style="overflow-x:auto"><table><thead><tr><th style="width:64px">구분</th><th>분류</th><th>거래처</th><th class="amt" id="cmpPrevH">전월</th><th class="amt" id="cmpCurH">이번 달</th><th class="amt">차액</th></tr></thead><tbody id="cmpRows"></tbody></table></div>
+      <div class="meta">같은 구분·분류·거래처끼리 월 합계를 비교합니다. <b>전월 기록이 없으면 가장 최근에 기록된 달(최근)</b>을 기준으로 비교합니다. 입금은 늘면 초록, 출금은 늘면 빨강으로 표시됩니다.</div>
+      <div style="overflow-x:auto"><table><thead><tr><th style="width:64px">구분</th><th>분류</th><th>거래처</th><th class="amt" id="cmpRecentH">최근(이전 기록)</th><th class="amt" id="cmpPrevH">전월</th><th class="amt" id="cmpCurH">이번 달</th><th class="amt">차액</th></tr></thead><tbody id="cmpRows"></tbody></table></div>
     </div>
   </section>
 
@@ -186,18 +191,19 @@ document.addEventListener("click",async(ev)=>{const b=ev.target.closest&&ev.targ
 
 // ---- 엑셀식 정렬·필터 (현재 보고 있는 기간의 내역에 적용) ----
 let lastData=null;const S={key:"date",dir:"desc"};
-const FV=()=>({from:$("#fltFrom").value,to:$("#fltTo").value,type:$("#fltType").value,min:$("#fltMin").value.replace(/\D/g,""),max:$("#fltMax").value.replace(/\D/g,""),cat:$("#fltCat").value,cp:$("#fltCp").value,note:$("#fltNote").value.trim().toLowerCase()});
-function fillFilters(){
-  for(const [id,key] of [["#fltCat","category"],["#fltCp","counterparty"]]){
-    const sel=$(id),keep=sel.value;
-    const vals=[...new Set(lastData.entries.map(e=>e[key]||""))].sort((a,b)=>a.localeCompare(b,"ko"));
-    sel.innerHTML=`<option value="">전체</option>`+vals.map(v=>`<option value="${esc(v||"__empty__")}">${esc(v||"(미지정)")}</option>`).join("");
-    sel.value=[...sel.options].some(o=>o.value===keep)?keep:"";
-  }
+const msChecked=(panelId)=>[...$(panelId).querySelectorAll("input:checked")].map(i=>i.value);
+const FV=()=>({from:$("#fltFrom").value,to:$("#fltTo").value,type:$("#fltType").value,min:$("#fltMin").value.replace(/\D/g,""),max:$("#fltMax").value.replace(/\D/g,""),cat:msChecked("#fltCatOpts"),cp:msChecked("#fltCpOpts"),note:$("#fltNote").value.trim().toLowerCase()});
+function msSum(sumId,panelId){const ck=[...$(panelId).querySelectorAll("input:checked")];$(sumId).textContent=ck.length===0?"전체":ck.length===1?ck[0].parentElement.textContent.trim():`${ck.length}개 선택`;}
+function msFill(panelId,sumId,key){
+  const panel=$(panelId),prev=new Set(msChecked(panelId));
+  const vals=[...new Set(lastData.entries.map(e=>e[key]||""))].sort((a,b)=>a.localeCompare(b,"ko"));
+  panel.innerHTML=vals.length?vals.map(v=>{const val=v||"__empty__";return `<label><input type="checkbox" value="${esc(val)}"${prev.has(val)?" checked":""}> ${esc(v||"(미지정)")}</label>`;}).join(""):'<div class="meta">값 없음</div>';
+  msSum(sumId,panelId);
 }
+function fillFilters(){ msFill("#fltCatOpts","#fltCatSum","category"); msFill("#fltCpOpts","#fltCpSum","counterparty"); }
 function visibleEntries(){
   const f=FV();
-  const hit=(val,sel)=>!sel||(sel==="__empty__"?!val:val===sel);
+  const hit=(val,arr)=>!arr.length||arr.includes(val||"__empty__");
   let list=lastData.entries.filter(e=>(!f.from||e.date>=f.from)&&(!f.to||e.date<=f.to)&&(!f.type||e.type===f.type)&&(!f.min||e.amount>=Number(f.min))&&(!f.max||e.amount<=Number(f.max))&&hit(e.category,f.cat)&&hit(e.counterparty,f.cp)&&(!f.note||(e.note||"").toLowerCase().includes(f.note)));
   const k=S.key,dir=S.dir==="asc"?1:-1;
   if(k){list=list.slice().sort((a,b)=>{const x=a[k]??"",y=b[k]??"";const r=k==="amount"?x-y:String(x).localeCompare(String(y),"ko");return (r||(a.date<b.date?-1:a.date>b.date?1:0)*-1)*dir;});}
@@ -212,13 +218,17 @@ function renderRows(){
   const sum=list.reduce((a,e)=>{a[e.type]+=e.amount;return a;},{in:0,out:0});
   const filtered=list.length!==d.entries.length;
   $("#fltInfo").textContent=`${filtered?"필터 적용: ":""}표시 ${list.length}건 / 전체 ${d.entries.length}건 · 입금 ${won(sum.in)} · 출금 ${won(sum.out)} · 순증감 ${won(sum.in-sum.out)}`;
+  const net=sum.in-sum.out;
+  $("#rowsFoot").innerHTML=list.length?`<tr class="footSum"><td colspan="2"><b>${filtered?"필터 합계":"합계"}</b> (${list.length}건)</td><td class="amt"><b class="${net<0?"out":"in"}">${net<0?"−":"+"}${Math.abs(net).toLocaleString("ko-KR")}</b></td><td colspan="5" class="meta">입금 ${won(sum.in)} · 출금 ${won(sum.out)} · 순증감 ${won(net)}</td></tr>`:"";
   for(const th of document.querySelectorAll(".sortRow th[data-sort]"))th.querySelector("i").textContent=th.dataset.sort===S.key?(S.dir==="asc"?"▲":"▼"):"";
 }
 document.querySelector(".sortRow").addEventListener("click",(ev)=>{const th=ev.target.closest("th[data-sort]");if(!th)return;const k=th.dataset.sort;if(S.key===k)S.dir=S.dir==="asc"?"desc":"asc";else{S.key=k;S.dir=k==="amount"?"desc":"asc";}renderRows();});
-for(const id of ["#fltFrom","#fltTo","#fltType","#fltCat","#fltCp"])$(id).addEventListener("change",renderRows);
+for(const id of ["#fltFrom","#fltTo","#fltType"])$(id).addEventListener("change",renderRows);
+$("#fltCatOpts").addEventListener("change",()=>{msSum("#fltCatSum","#fltCatOpts");renderRows();});
+$("#fltCpOpts").addEventListener("change",()=>{msSum("#fltCpSum","#fltCpOpts");renderRows();});
 for(const id of ["#fltMin","#fltMax"])$(id).addEventListener("input",()=>{const el=$(id),dg=el.value.replace(/\D/g,"");el.value=dg?Number(dg).toLocaleString("ko-KR"):"";renderRows();});
 $("#fltNote").addEventListener("input",renderRows);
-$("#fltReset").addEventListener("click",()=>{for(const id of ["#fltFrom","#fltTo","#fltType","#fltMin","#fltMax","#fltCat","#fltCp","#fltNote"])$(id).value="";S.key="date";S.dir="desc";renderRows();});
+$("#fltReset").addEventListener("click",()=>{for(const id of ["#fltFrom","#fltTo","#fltType","#fltMin","#fltMax","#fltNote"])$(id).value="";for(const p of ["#fltCatOpts","#fltCpOpts"])$(p).querySelectorAll("input:checked").forEach(i=>i.checked=false);msSum("#fltCatSum","#fltCatOpts");msSum("#fltCpSum","#fltCpOpts");S.key="date";S.dir="desc";renderRows();});
 async function reload(){
   const m=$("#month").value;
   const d=await api("/api/finance"+(m?"?month="+m:""));
@@ -230,9 +240,18 @@ async function reload(){
   // 전월 대비 변동표 (월을 선택했을 때만)
   $("#cmpBox").hidden=!cmp;
   if(cmp){
-    $("#cmpTitle").textContent=`전월 대비 변동 (${mlabel(cmp.previousMonth)} → ${mlabel(m)})`;
+    $("#cmpTitle").textContent=`전월·최근 대비 변동 (${mlabel(cmp.previousMonth)} → ${mlabel(m)})`;
     $("#cmpPrevH").textContent=mlabel(cmp.previousMonth)+"(원)";$("#cmpCurH").textContent=mlabel(m)+"(원)";
-    $("#cmpRows").innerHTML=cmp.items.length?cmp.items.map(c=>`<tr><td class="${c.type}">${c.type==="in"?"입금":"출금"}</td><td>${esc(c.category||"(미지정)")}</td><td>${esc(c.counterparty||"(미지정)")}</td><td class="amt">${c.previous?c.previous.toLocaleString("ko-KR"):"-"}</td><td class="amt">${c.current?c.current.toLocaleString("ko-KR"):"-"}</td><td class="amt">${!c.previous&&c.current?'<span class="diff flat">신규</span>':!c.current&&c.previous?`<span class="diff ${c.type==="in"?"bad":"good"}">이번 달 없음 ${sgn(c.diff)}</span>`:c.diff===0?'<span class="diff flat">변동 없음</span>':`<span class="diff ${(c.type==="in")===(c.diff>0)?"good":"bad"}">${sgn(c.diff)}</span>`}</td></tr>`).join(""):'<tr><td colspan="6" class="meta">비교할 내역이 없습니다.</td></tr>';
+    $("#cmpRows").innerHTML=cmp.items.length?cmp.items.map(c=>{
+      const base=c.base||0, isNew=c.current>0&&base===0, gone=c.current===0&&c.previous>0;
+      const recentCell=c.recent?`${c.recent.toLocaleString("ko-KR")} <small>(${mlabel(c.recentMonth)})</small>`:"-";
+      let diffCell;
+      if(isNew)diffCell='<span class="diff flat">신규</span>';
+      else if(gone)diffCell=`<span class="diff ${c.type==="in"?"bad":"good"}">이번 달 없음 ${sgn(c.diff)}</span>`;
+      else if(c.diff===0)diffCell='<span class="diff flat">변동 없음</span>';
+      else diffCell=`<span class="diff ${(c.type==="in")===(c.diff>0)?"good":"bad"}">${sgn(c.diff)}${c.baseMonth&&c.baseMonth!==cmp.previousMonth?` <small>vs ${mlabel(c.baseMonth)}</small>`:""}</span>`;
+      return `<tr><td class="${c.type}">${c.type==="in"?"입금":"출금"}</td><td>${esc(c.category||"(미지정)")}</td><td>${esc(c.counterparty||"(미지정)")}</td><td class="amt">${recentCell}</td><td class="amt">${c.previous?c.previous.toLocaleString("ko-KR"):"-"}</td><td class="amt">${c.current?c.current.toLocaleString("ko-KR"):"-"}</td><td class="amt">${diffCell}</td></tr>`;
+    }).join(""):'<tr><td colspan="7" class="meta">비교할 내역이 없습니다.</td></tr>';
   }
 }
 $("#month").addEventListener("change",()=>reload().catch(e=>flash(e.message,"err")));

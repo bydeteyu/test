@@ -90,6 +90,16 @@ test("마스터 전용 입출금 + admin 은 마스터 수정/삭제 불가", as
     const pay = cmp.items.find((c) => c.category === "인건비" && c.counterparty === "병득");
     assert.deepStrictEqual([pay.previous, pay.current, pay.diff], [6000000, 6500000, 500000]);
     assert.strictEqual(cmp.items.find((c) => c.category === "신규비용").previous, 0);
+    // 최근(이전 기록) 기준 비교: 양기웅 10월 없음, 5월 3,500,000 → 11월 4,200,000 = base 3,500,000, diff +700,000
+    await master.call("POST", "/api/finance", { type: "out", amount: 3500000, date: "2026-05-20", category: "인건비", counterparty: "양기웅" });
+    await master.call("POST", "/api/finance", { type: "out", amount: 4200000, date: "2026-11-20", category: "인건비", counterparty: "양기웅" });
+    const cmp2 = (await master.call("GET", "/api/finance?month=2026-11")).data.compare;
+    const yg = cmp2.items.find((c) => c.counterparty === "양기웅");
+    assert.strictEqual(yg.previous, 0); // 전월(10월) 기록 없음
+    assert.strictEqual(yg.recent, 3500000);
+    assert.strictEqual(yg.recentMonth, "2026-05");
+    assert.strictEqual(yg.base, 3500000);
+    assert.strictEqual(yg.diff, 700000); // 최근 기준 증가
     assert.strictEqual((await master.call("GET", "/api/finance?month=2027-01")).data.compare.previousMonth, "2026-12"); // 연도 경계
     assert.strictEqual((await master.call("GET", "/api/finance")).data.compare, null); // 전체 보기에는 비교 없음
     assert.ok((await master.call("GET", "/api/finance/options")).data.counterparties.includes("A사")); // 자동 등록

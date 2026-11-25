@@ -20,19 +20,35 @@ function summarize(entries) {
 // 월(YYYY-MM)의 직전 달
 const prevMonth = (m) => { const [y, mo] = m.split("-").map(Number); return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, "0")}`; };
 
-// 구분+분류+거래처 단위로 이번 달과 전월 합계를 비교한다 (예: 인건비·병득 10월 6,000,000 → 11월 6,500,000 = +500,000)
+// 구분+분류+거래처 단위로 이번 달과 비교 기준(전월, 전월이 없으면 가장 최근에 기록된 달)을 비교한다.
+// 예: 인건비·병득 10월 6,000,000 → 11월 6,500,000 = +500,000
+//     인건비·양기웅 10월 없음, 5월 3,500,000(최근) → 11월 4,200,000 = +700,000
 function compareMonths(entries, month) {
   const pm = prevMonth(month);
-  const groups = new Map();
+  const groups = new Map(); // key -> { type, category, counterparty, months: Map(YYYY-MM -> 합계) }
   for (const e of entries) {
     const m = e.date.slice(0, 7);
-    if (m !== month && m !== pm) continue;
+    if (m > month) continue; // 선택한 달 이후는 제외
     const key = [e.type, e.category || "", e.counterparty || ""].join("\u0001");
-    const g = groups.get(key) || { type: e.type, category: e.category || "", counterparty: e.counterparty || "", current: 0, previous: 0 };
-    g[m === month ? "current" : "previous"] += e.amount || 0;
-    groups.set(key, g);
+    let g = groups.get(key);
+    if (!g) { g = { type: e.type, category: e.category || "", counterparty: e.counterparty || "", months: new Map() }; groups.set(key, g); }
+    g.months.set(m, (g.months.get(m) || 0) + (e.amount || 0));
   }
-  const items = [...groups.values()].map((g) => ({ ...g, diff: g.current - g.previous }));
+  const items = [];
+  for (const g of groups.values()) {
+    const current = g.months.get(month) || 0;
+    const previous = g.months.get(pm) || 0;
+    // 전월 기록이 없으면 그 이전 달 중 가장 최근에 기록된 달을 비교 기준으로 쓴다
+    let recent = null, recentMonth = null;
+    if (!previous) {
+      const priors = [...g.months.keys()].filter((m) => m < month).sort(); // 오름차순
+      if (priors.length) { recentMonth = priors[priors.length - 1]; recent = g.months.get(recentMonth); }
+    }
+    if (!(current > 0 || previous > 0)) continue; // 이번 달·전월 둘 다 없으면 표시 안 함
+    const base = previous || recent || 0;
+    const baseMonth = previous ? pm : recentMonth;
+    items.push({ type: g.type, category: g.category, counterparty: g.counterparty, current, previous, recent, recentMonth, base, baseMonth, diff: current - base });
+  }
   items.sort((a, b) => (a.type === b.type ? (a.category + a.counterparty).localeCompare(b.category + b.counterparty, "ko") : a.type === "out" ? -1 : 1));
   return { previousMonth: pm, items };
 }

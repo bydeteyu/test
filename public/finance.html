@@ -45,6 +45,10 @@ tbody tr:last-child td{border-bottom:none}
 .sub{color:var(--ink-soft);font-size:.78rem}
 [hidden]{display:none!important}
 .in{color:var(--good);font-weight:700}.out{color:var(--bad);font-weight:700}
+.sortRow th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}.sortRow th[data-sort]:hover{color:var(--accent)}
+.sortRow th i{font-style:normal;margin-left:4px;color:var(--accent)}
+.fltRow th{padding:4px 6px;font-weight:400}.fltRow input,.fltRow select{display:block;width:100%;min-width:0;padding:4px 6px;font-size:.76rem;margin-bottom:3px}
+.fltRow button{padding:4px 8px}
 .diff{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap}
 .diff.good{background:var(--good-soft);color:var(--good)}.diff.bad{background:var(--bad-soft);color:var(--bad)}.diff.flat{background:var(--surface-2);color:var(--ink-soft)}
 .chips{display:flex;flex-wrap:wrap;gap:6px}.chips .chip{display:inline-flex;gap:6px;align-items:center;cursor:default}.chips .chip button{border:0;padding:0 2px;color:var(--ink-soft);font-size:.8rem}
@@ -99,8 +103,21 @@ details>summary{cursor:pointer;font-weight:600;font-size:.85rem}
       <div class="stat"><div class="l">순증감</div><div class="v" id="sNet">0원</div></div>
       <div class="stat"><div class="l">누적 잔액(전체 기간)</div><div class="v" id="sTotal">0원</div></div>
     </div>
+    <div class="meta" id="fltInfo"></div>
     <div style="overflow-x:auto"><table>
-      <thead><tr><th style="width:104px">날짜</th><th style="width:64px">구분</th><th class="amt" style="width:130px">금액(원)</th><th style="width:150px">전월 대비</th><th>분류</th><th>거래처</th><th>메모</th><th style="width:48px"></th></tr></thead>
+      <thead>
+        <tr class="sortRow"><th data-sort="date" style="width:150px">날짜<i></i></th><th data-sort="type" style="width:84px">구분<i></i></th><th data-sort="amount" class="amt" style="width:150px">금액(원)<i></i></th><th style="width:150px">전월 대비</th><th data-sort="category">분류<i></i></th><th data-sort="counterparty">거래처<i></i></th><th data-sort="note">메모<i></i></th><th style="width:48px"></th></tr>
+        <tr class="fltRow">
+          <th><input type="date" id="fltFrom" title="시작일"><input type="date" id="fltTo" title="종료일"></th>
+          <th><select id="fltType"><option value="">전체</option><option value="in">입금</option><option value="out">출금</option></select></th>
+          <th><input id="fltMin" inputmode="numeric" placeholder="최소 금액"><input id="fltMax" inputmode="numeric" placeholder="최대 금액"></th>
+          <th></th>
+          <th><select id="fltCat"></select></th>
+          <th><select id="fltCp"></select></th>
+          <th><input id="fltNote" placeholder="메모 검색"></th>
+          <th><button type="button" id="fltReset" title="정렬·필터 초기화">↺</button></th>
+        </tr>
+      </thead>
       <tbody id="rows"></tbody>
     </table></div>
     <div id="cmpBox" hidden>
@@ -112,11 +129,11 @@ details>summary{cursor:pointer;font-weight:600;font-size:.85rem}
 
   <section class="card">
     <div class="hl"><h2>삭제된 내역 · 변경 기록</h2><button id="moreBtn" type="button">펼치기</button></div>
-    <div class="meta">내역을 삭제해도 데이터는 지워지지 않고 아래 "삭제된 내역"에 보관되며 복구할 수 있습니다. 모든 추가·수정·삭제·복구는 변경 기록에 남습니다. 서버에도 하루 1회 자동 스냅샷이 저장됩니다.</div>
+    <div class="meta">내역을 삭제해도 데이터는 지워지지 않고 아래 "삭제된 내역"에 보관되며 복구하거나 영구 삭제할 수 있습니다. 모든 추가·수정·삭제·복구는 변경 기록에 남습니다. 서버에도 하루 1회 자동 스냅샷이 저장됩니다.</div>
     <div id="more" hidden>
       <h3>삭제된 내역</h3>
-      <div style="overflow-x:auto"><table><thead><tr><th style="width:104px">날짜</th><th style="width:64px">구분</th><th class="amt" style="width:130px">금액(원)</th><th>분류</th><th>거래처</th><th>삭제</th><th style="width:70px"></th></tr></thead><tbody id="delRows"></tbody></table></div>
-      <h3 style="margin-top:14px">변경 기록 (최근 100건)</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th style="width:104px">날짜</th><th style="width:64px">구분</th><th class="amt" style="width:130px">금액(원)</th><th>분류</th><th>거래처</th><th>삭제</th><th style="width:150px"></th></tr></thead><tbody id="delRows"></tbody></table></div>
+      <div class="hl" style="margin-top:14px"><h3>변경 기록 (최근 100건)</h3><button class="danger" id="resetLog" type="button">변경 기록 초기화</button></div>
       <div style="overflow-x:auto"><table><thead><tr><th style="width:150px">시각</th><th style="width:90px">계정</th><th style="width:70px">작업</th><th>내용</th></tr></thead><tbody id="logRows"></tbody></table></div>
     </div>
   </section>
@@ -166,15 +183,50 @@ for(const sel of [$("#fCat"),$("#fCp")])sel.addEventListener("change",async()=>{
 });
 document.addEventListener("submit",async(ev)=>{const f=ev.target.closest&&ev.target.closest(".optForm");if(!f)return;ev.preventDefault();const name=f.elements.name.value.trim();if(!name)return;try{await addOpt(f.dataset.kind,name);f.reset();flash("목록에 추가했습니다.");}catch(err){flash(err.message,"err");}});
 document.addEventListener("click",async(ev)=>{const b=ev.target.closest&&ev.target.closest("[data-rmkind]");if(!b)return;if(!confirm(`"${b.dataset.rmname}" 항목을 목록에서 제거할까요? (기록된 내역은 그대로 유지됩니다)`))return;try{opts=await api(`/api/finance/options?kind=${b.dataset.rmkind}&name=${encodeURIComponent(b.dataset.rmname)}`,"DELETE");renderOpts();}catch(err){flash(err.message,"err");}});
+
+// ---- 엑셀식 정렬·필터 (현재 보고 있는 기간의 내역에 적용) ----
+let lastData=null;const S={key:"date",dir:"desc"};
+const FV=()=>({from:$("#fltFrom").value,to:$("#fltTo").value,type:$("#fltType").value,min:$("#fltMin").value.replace(/\D/g,""),max:$("#fltMax").value.replace(/\D/g,""),cat:$("#fltCat").value,cp:$("#fltCp").value,note:$("#fltNote").value.trim().toLowerCase()});
+function fillFilters(){
+  for(const [id,key] of [["#fltCat","category"],["#fltCp","counterparty"]]){
+    const sel=$(id),keep=sel.value;
+    const vals=[...new Set(lastData.entries.map(e=>e[key]||""))].sort((a,b)=>a.localeCompare(b,"ko"));
+    sel.innerHTML=`<option value="">전체</option>`+vals.map(v=>`<option value="${esc(v||"__empty__")}">${esc(v||"(미지정)")}</option>`).join("");
+    sel.value=[...sel.options].some(o=>o.value===keep)?keep:"";
+  }
+}
+function visibleEntries(){
+  const f=FV();
+  const hit=(val,sel)=>!sel||(sel==="__empty__"?!val:val===sel);
+  let list=lastData.entries.filter(e=>(!f.from||e.date>=f.from)&&(!f.to||e.date<=f.to)&&(!f.type||e.type===f.type)&&(!f.min||e.amount>=Number(f.min))&&(!f.max||e.amount<=Number(f.max))&&hit(e.category,f.cat)&&hit(e.counterparty,f.cp)&&(!f.note||(e.note||"").toLowerCase().includes(f.note)));
+  const k=S.key,dir=S.dir==="asc"?1:-1;
+  if(k){list=list.slice().sort((a,b)=>{const x=a[k]??"",y=b[k]??"";const r=k==="amount"?x-y:String(x).localeCompare(String(y),"ko");return (r||(a.date<b.date?-1:a.date>b.date?1:0)*-1)*dir;});}
+  return list;
+}
+function renderRows(){
+  if(!lastData)return;
+  const d=lastData,cmp=d.compare,cmap=new Map(),shown=new Set();
+  if(cmp)for(const c of cmp.items)cmap.set(gkey(c),c);
+  const list=visibleEntries();
+  $("#rows").innerHTML=list.length?list.map(e=>{const c=cmap.get(gkey(e));let badge="";if(c&&!shown.has(gkey(e))){shown.add(gkey(e));badge=diffBadge(c);}return `<tr><td>${esc(e.date)}</td><td class="${e.type}">${e.type==="in"?"입금":"출금"}</td><td class="amt ${e.type}">${e.type==="in"?"+":"-"}${e.amount.toLocaleString("ko-KR")}</td><td>${badge}</td><td>${esc(e.category)}</td><td>${esc(e.counterparty)}</td><td>${esc(e.note)}</td><td><button class="danger" data-del="${esc(e.id)}" title="삭제">✕</button></td></tr>`}).join(""):`<tr><td colspan="8" class="meta">${d.entries.length?"조건에 맞는 내역이 없습니다.":"내역이 없습니다."}</td></tr>`;
+  const sum=list.reduce((a,e)=>{a[e.type]+=e.amount;return a;},{in:0,out:0});
+  const filtered=list.length!==d.entries.length;
+  $("#fltInfo").textContent=`${filtered?"필터 적용: ":""}표시 ${list.length}건 / 전체 ${d.entries.length}건 · 입금 ${won(sum.in)} · 출금 ${won(sum.out)} · 순증감 ${won(sum.in-sum.out)}`;
+  for(const th of document.querySelectorAll(".sortRow th[data-sort]"))th.querySelector("i").textContent=th.dataset.sort===S.key?(S.dir==="asc"?"▲":"▼"):"";
+}
+document.querySelector(".sortRow").addEventListener("click",(ev)=>{const th=ev.target.closest("th[data-sort]");if(!th)return;const k=th.dataset.sort;if(S.key===k)S.dir=S.dir==="asc"?"desc":"asc";else{S.key=k;S.dir=k==="amount"?"desc":"asc";}renderRows();});
+for(const id of ["#fltFrom","#fltTo","#fltType","#fltCat","#fltCp"])$(id).addEventListener("change",renderRows);
+for(const id of ["#fltMin","#fltMax"])$(id).addEventListener("input",()=>{const el=$(id),dg=el.value.replace(/\D/g,"");el.value=dg?Number(dg).toLocaleString("ko-KR"):"";renderRows();});
+$("#fltNote").addEventListener("input",renderRows);
+$("#fltReset").addEventListener("click",()=>{for(const id of ["#fltFrom","#fltTo","#fltType","#fltMin","#fltMax","#fltCat","#fltCp","#fltNote"])$(id).value="";S.key="date";S.dir="desc";renderRows();});
 async function reload(){
   const m=$("#month").value;
   const d=await api("/api/finance"+(m?"?month="+m:""));
-  const cmp=d.compare,cmap=new Map(),shown=new Set();
-  if(cmp)for(const c of cmp.items)cmap.set(gkey(c),c);
+  const cmp=d.compare;
   $("#sIn").textContent=won(d.summary.income);$("#sOut").textContent=won(d.summary.expense);
   $("#sNet").textContent=won(d.summary.net);$("#sNet").className="v "+(d.summary.net<0?"out":"in");
   $("#sTotal").textContent=won(d.total.net);
-  $("#rows").innerHTML=d.entries.length?d.entries.map(e=>{const c=cmap.get(gkey(e));let badge="";if(c&&!shown.has(gkey(e))){shown.add(gkey(e));badge=diffBadge(c);}return `<tr><td>${esc(e.date)}</td><td class="${e.type}">${e.type==="in"?"입금":"출금"}</td><td class="amt ${e.type}">${e.type==="in"?"+":"-"}${e.amount.toLocaleString("ko-KR")}</td><td>${badge}</td><td>${esc(e.category)}</td><td>${esc(e.counterparty)}</td><td>${esc(e.note)}</td><td><button class="danger" data-del="${esc(e.id)}" title="삭제">✕</button></td></tr>`}).join(""):'<tr><td colspan="8" class="meta">내역이 없습니다.</td></tr>';
+  lastData=d;fillFilters();renderRows();
   // 전월 대비 변동표 (월을 선택했을 때만)
   $("#cmpBox").hidden=!cmp;
   if(cmp){
@@ -187,16 +239,29 @@ $("#month").addEventListener("change",()=>reload().catch(e=>flash(e.message,"err
 $("#allBtn").addEventListener("click",()=>{$("#month").value="";reload().catch(e=>flash(e.message,"err"));});
 $("#addForm").addEventListener("submit",async(ev)=>{ev.preventDefault();const f=Object.fromEntries(new FormData(ev.target));f.amount=String(f.amount||"").replace(/\D/g,"");try{await api("/api/finance","POST",f);ev.target.reset();$("#fDate").value=f.date;await reload();if(!$("#more").hidden)await loadMore();flash("추가했습니다.");}catch(err){flash(err.message,"err");}});
 $("#rows").addEventListener("click",async(ev)=>{const id=ev.target.dataset&&ev.target.dataset.del;if(!id||!confirm("이 내역을 삭제할까요? (삭제된 내역에서 복구할 수 있습니다)"))return;try{await api("/api/finance/"+id,"DELETE");await reload();if(!$("#more").hidden)await loadMore();flash("삭제했습니다. (복구 가능)");}catch(err){flash(err.message,"err");}});
-const ACT={create:"추가",update:"수정",delete:"삭제",restore:"복구",option_add:"목록 추가",option_remove:"목록 제거"};
+const ACT={create:"추가",update:"수정",delete:"삭제",restore:"복구",option_add:"목록 추가",option_remove:"목록 제거",purge:"영구 삭제",log_reset:"기록 초기화"};
 const kst=(iso)=>new Date(new Date(iso).getTime()+9*3600e3).toISOString().slice(0,16).replace("T"," ");
-const desc=(l)=>{const e=l.after||l.before||{};if(l.action&&l.action.startsWith("option"))return `${e.kind==="category"?"분류":"거래처"}: ${e.name}`;return `${e.date||""} ${e.type==="in"?"입금":"출금"} ${(e.amount||0).toLocaleString("ko-KR")}원 ${[e.category,e.counterparty].filter(Boolean).join(" · ")}`;};
+const desc=(l)=>{const e=l.after||l.before||{};if(l.action==="log_reset")return `변경 기록 ${(l.after||{}).cleared||0}건 초기화`;if(l.action&&l.action.startsWith("option"))return `${e.kind==="category"?"분류":"거래처"}: ${e.name}`;return `${e.date||""} ${e.type==="in"?"입금":"출금"} ${(e.amount||0).toLocaleString("ko-KR")}원 ${[e.category,e.counterparty].filter(Boolean).join(" · ")}`;};
 async function loadMore(){
   const [d,l]=await Promise.all([api("/api/finance/deleted"),api("/api/finance/log")]);
-  $("#delRows").innerHTML=d.entries.length?d.entries.map(e=>`<tr><td>${esc(e.date)}</td><td class="${e.type}">${e.type==="in"?"입금":"출금"}</td><td class="amt">${e.amount.toLocaleString("ko-KR")}</td><td>${esc(e.category)}</td><td>${esc(e.counterparty)}</td><td>${esc(kst(e.deletedAt))}</td><td><button data-restore="${esc(e.id)}">복구</button></td></tr>`).join(""):'<tr><td colspan="7" class="meta">삭제된 내역이 없습니다.</td></tr>';
+  $("#delRows").innerHTML=d.entries.length?d.entries.map(e=>`<tr><td>${esc(e.date)}</td><td class="${e.type}">${e.type==="in"?"입금":"출금"}</td><td class="amt">${e.amount.toLocaleString("ko-KR")}</td><td>${esc(e.category)}</td><td>${esc(e.counterparty)}</td><td>${esc(kst(e.deletedAt))}</td><td><button data-restore="${esc(e.id)}">복구</button> <button class="danger" data-purge="${esc(e.id)}" title="영구 삭제(복구 불가)">영구 삭제</button></td></tr>`).join(""):'<tr><td colspan="7" class="meta">삭제된 내역이 없습니다.</td></tr>';
   $("#logRows").innerHTML=l.log.length?l.log.map(x=>`<tr><td>${esc(kst(x.at))}</td><td>${esc(x.by)}</td><td>${esc(ACT[x.action]||x.action)}</td><td>${esc(desc(x))}</td></tr>`).join(""):'<tr><td colspan="4" class="meta">기록이 없습니다.</td></tr>';
 }
 $("#moreBtn").addEventListener("click",()=>{const open=$("#more").hidden;$("#more").hidden=!open;$("#moreBtn").textContent=open?"접기":"펼치기";if(open)loadMore().catch(e=>flash(e.message,"err"));});
-$("#delRows").addEventListener("click",async(ev)=>{const id=ev.target.dataset&&ev.target.dataset.restore;if(!id)return;try{await api("/api/finance/"+id+"/restore","POST");await reload();await loadMore();flash("복구했습니다.");}catch(err){flash(err.message,"err");}});
+$("#delRows").addEventListener("click",async(ev)=>{
+  const d=ev.target.dataset||{};
+  try{
+    if(d.restore){await api("/api/finance/"+d.restore+"/restore","POST");await reload();await loadMore();flash("복구했습니다.");}
+    else if(d.purge){
+      if(!confirm("이 내역을 영구 삭제할까요?\n\n화면에서는 다시 복구할 수 없습니다. (서버에는 삭제 직전 백업 파일이 남고, 변경 기록에도 남습니다)"))return;
+      await api("/api/finance/"+d.purge+"/purge","DELETE");await loadMore();flash("영구 삭제했습니다.");
+    }
+  }catch(err){flash(err.message,"err");}
+});
+$("#resetLog").addEventListener("click",async()=>{
+  if(!confirm("변경 기록을 모두 초기화할까요?\n\n기존 기록은 화면에서 사라집니다. (서버의 finance-backups 폴더에 파일로 보관되고, 내역 데이터에는 영향이 없습니다)"))return;
+  try{const r=await api("/api/finance/log/reset","POST");await loadMore();flash(`변경 기록 ${r.cleared}건을 초기화했습니다.`);}catch(err){flash(err.message,"err");}
+});
 loadOpts().then(()=>reload()).catch(e=>flash(e.message,"err"));
 </script>
 </body>

@@ -48,6 +48,16 @@ function bodyOf(t) {
   const skip = /^[\w.]+$|^\d+\s*(초|분|시간|일|주)|조회|^스레드$|^(추천|검색|메시지|활동|프로필|인사이트|팔로우|팔로잉|저장됨|좋아요|보관함|답글|공유|더 보기|\d+)$/;
   return String(t || "").split("\n").map((x) => x.trim()).find((x) => x.length >= 8 && !skip.test(x) && /[^\x00-\x7F]|\s/.test(x))?.slice(0, 200) || "";
 }
+// 로그인/가입 안내 페이지의 제목(예: "Threads에 로그인 또는 가입하기")은 실제 본문이 아니므로 제목으로 쓰지 않는다
+function isJunkText(s) {
+  const t = String(s || "").trim();
+  if (!t) return false;
+  const low = t.toLowerCase();
+  if (/로그인/.test(t) && /가입/.test(t)) return true;
+  if (low.includes("log in") && low.includes("sign up")) return true;
+  if (low === "threads" || t === "스레드" || low === "instagram") return true;
+  return false;
+}
 let browserQueue = Promise.resolve();
 function browserText(url) {
   const job = browserQueue.then(async () => {
@@ -106,6 +116,7 @@ async function fetchPublic(url) {
   if (!res.ok) throw new Error(`공개 페이지를 열지 못했습니다(HTTP ${res.status}). 숫자를 직접 입력할 수 있습니다.`);
   const html = await res.text();
   let views = parseViews(html), counts = {}, text = (metaOf(html, "og:description") || metaOf(html, "og:title")).slice(0, 200), why = "";
+  if (isJunkText(text)) text = ""; // 로그인 안내 페이지 제목은 버린다
   if (views == null) {
     try {
       const b = await browserText(u.href);
@@ -200,7 +211,8 @@ function mount(app, { dataDir }) {
         const r = await fetchPublic(post.url);
         const h = (post.history ??= {});
         h[today()] = { ...(h[today()] || {}), views: r.views, ...r.counts }; // 확장 프로그램이 기록한 좋아요·댓글을 지우지 않는다
-        if ((!post.text || /^[\w.]+$/.test(post.text)) && r.text) post.text = r.text; // 예전에 아이디가 제목으로 잡힌 글도 고친다
+        if (isJunkText(post.text)) post.text = ""; // 예전에 로그인 안내 문구가 제목으로 저장된 글은 비운다
+        if ((!post.text || /^[\w.]+$/.test(post.text)) && r.text && !isJunkText(r.text)) post.text = r.text; // 예전에 아이디가 제목으로 잡힌 글도 고친다
         post.lastError = null;
         return true;
       } catch (e) { post.lastError = e.name === "TimeoutError" ? "공개 페이지 응답 시간이 초과되었습니다" : e.message; return false; }
@@ -278,7 +290,7 @@ function mount(app, { dataDir }) {
     res.json({
       configured: configured(),
       accounts: onlyMine ? [] : db.accounts.filter((a) => !pid || a.projectId === pid).map(publicAccount),
-      posts: (() => { const explicit = anyExplicitScan(db); return db.posts.filter((p) => (!pid || p.projectId === pid) && (!onlyMine || p.createdBy === req.user.username)).map((p) => { const { id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite } = p; return { id, projectId, url, text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite, extScan: scanTarget(p, explicit) }; }); })(),
+      posts: (() => { const explicit = anyExplicitScan(db); return db.posts.filter((p) => (!pid || p.projectId === pid) && (!onlyMine || p.createdBy === req.user.username)).map((p) => { const { id, projectId, url, text, postedAt, history, lastError, source, extAt, createdAt, favorite } = p; return { id, projectId, url, text: isJunkText(text) ? "" : text, postedAt, source: source || "api", extAt: extAt || null, history: history || {}, lastError: lastError || null, createdAt: createdAt || null, favorite: !!favorite, extScan: scanTarget(p, explicit) }; }); })(),
       running,
       lastAutoDate: db.meta.lastAutoDate || null,
     });
@@ -500,7 +512,8 @@ function mount(app, { dataDir }) {
     const h = (p.history ??= {});
     h[today()] = { ...(h[today()] || {}), ...got };
     const t = String((req.body || {}).text || "").trim().slice(0, 200);
-    if (t && (!p.text || /^[\w.]+$/.test(p.text))) p.text = t; // 본문이 아직 없는 글만 채운다(이미 있는 제목은 유지)
+    if (isJunkText(p.text)) p.text = "";
+    if (t && !isJunkText(t) && (!p.text || /^[\w.]+$/.test(p.text))) p.text = t; // 본문이 아직 없는 글만 채운다(이미 있는 제목은 유지)
     p.lastError = null;
     p.extAt = new Date().toISOString();
     save(db);
@@ -603,4 +616,4 @@ function mount(app, { dataDir }) {
   return { exportData: () => load(), importData: (d) => save(d), file };
 }
 
-module.exports = { mount, parseViews, bodyOf };
+module.exports = { mount, parseViews, bodyOf, isJunkText };

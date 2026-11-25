@@ -60,7 +60,7 @@ tbody tr:last-child td{border-bottom:none}
     <form id="addForm" class="row">
       <label style="flex:0 0 130px"><b>날짜</b><input type="date" name="date" id="fDate" required></label>
       <label style="flex:0 0 100px"><b>구분</b><select name="type"><option value="in">입금</option><option value="out">출금</option></select></label>
-      <label style="flex:0 0 150px"><b>금액(원)</b><input type="number" name="amount" min="1" step="1" required placeholder="예: 500000"></label>
+      <label style="flex:0 0 150px"><b>금액(원)</b><input type="text" name="amount" id="fAmount" inputmode="numeric" autocomplete="off" required placeholder="예: 500,000"></label>
       <label style="flex:1 1 120px"><b>분류</b><input name="category" placeholder="예: 매출, 인건비, 광고비"></label>
       <label style="flex:1 1 140px"><b>거래처</b><input name="counterparty" placeholder="예: J컴퍼니"></label>
       <label style="flex:2 1 180px"><b>메모</b><input name="note"></label>
@@ -99,6 +99,9 @@ const api=async(url,method="GET",body)=>{const r=await fetch(url,{method,headers
 let timer=null;const flash=(t,kind="ok")=>{const f=$("#flash");f.textContent=t;f.className="msg show "+kind;clearTimeout(timer);timer=setTimeout(()=>f.classList.remove("show"),4000);};
 const kstToday=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
 $("#fDate").value=kstToday();
+// 금액 입력 시 1,000 단위 쉼표 자동 표시 (숫자 이외 문자는 제거)
+const fAmount=$("#fAmount");
+fAmount.addEventListener("input",()=>{const d=fAmount.value.replace(/\D/g,"").replace(/^0+(?=\d)/,"");fAmount.value=d?Number(d).toLocaleString("ko-KR"):"";});
 $("#month").value=kstToday().slice(0,7);
 async function reload(){
   const m=$("#month").value;
@@ -110,7 +113,7 @@ async function reload(){
 }
 $("#month").addEventListener("change",()=>reload().catch(e=>flash(e.message,"err")));
 $("#allBtn").addEventListener("click",()=>{$("#month").value="";reload().catch(e=>flash(e.message,"err"));});
-$("#addForm").addEventListener("submit",async(ev)=>{ev.preventDefault();const f=Object.fromEntries(new FormData(ev.target));try{await api("/api/finance","POST",f);ev.target.reset();$("#fDate").value=f.date;await reload();flash("추가했습니다.");}catch(err){flash(err.message,"err");}});
+$("#addForm").addEventListener("submit",async(ev)=>{ev.preventDefault();const f=Object.fromEntries(new FormData(ev.target));f.amount=String(f.amount||"").replace(/\D/g,"");try{await api("/api/finance","POST",f);ev.target.reset();$("#fDate").value=f.date;await reload();flash("추가했습니다.");}catch(err){flash(err.message,"err");}});
 $("#rows").addEventListener("click",async(ev)=>{const id=ev.target.dataset&&ev.target.dataset.del;if(!id||!confirm("이 내역을 삭제할까요?"))return;try{await api("/api/finance/"+id,"DELETE");await reload();flash("삭제했습니다.");}catch(err){flash(err.message,"err");}});
 reload().catch(e=>flash(e.message,"err"));
 </script>

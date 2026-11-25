@@ -1,4 +1,6 @@
-// 로그인/권한. 계정은 두 종류:
+// 로그인/권한. 계정은 세 종류:
+//  - 마스터: 환경 변수 MASTER_USER(기본 master) / MASTER_PASSWORD 로 정의. 관리자 권한 전체 + 경영관리(입출금) 접근.
+//    마스터 계정은 users.json 이 아니라 환경 변수에만 있으므로 관리자 화면/API 로 수정·삭제·생성할 수 없다.
 //  - 관리자: 환경 변수 APP_USER(기본 admin) / APP_PASSWORD 로 정의. 모든 프로젝트와 계정 관리 가능.
 //  - 회원(viewer): 관리자가 만든 계정. 지정된 프로젝트의 순위표만 볼 수 있고 아무것도 수정할 수 없다.
 // 회원 계정은 DATA_DIR/users.json 에 비밀번호 해시(scrypt)로 저장된다.
@@ -11,6 +13,9 @@ const COOKIE = "kw_session";
 const SESSION_MS = 7 * 24 * 3600 * 1000;
 const ENV_USER = process.env.APP_USER || "admin";
 const ENV_PASS = process.env.APP_PASSWORD || "";
+const MASTER_USER = process.env.MASTER_USER || "master";
+const MASTER_PASS = process.env.MASTER_PASSWORD || "";
+const MASTER_ON = !!MASTER_PASS && MASTER_USER !== ENV_USER;
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,32}$/;
 
 const sha = (s) => crypto.createHash("sha256").update(String(s)).digest();
@@ -65,7 +70,10 @@ function mount(app, { dataDir }) {
     return t;
   };
   const cleanTools = (tools, canSubmit) => effTools({ tools, canSubmit });
+  const masterPv = () => sha("master:" + MASTER_PASS).toString("hex").slice(0, 8);
+  const masterUser = () => ({ username: MASTER_USER, role: "admin", master: true, name: "마스터", projectIds: null, tools: TOOL_IDS });
   function resolveUser(username, pv) {
+    if (MASTER_ON && username === MASTER_USER) return pv === masterPv() ? masterUser() : null;
     if (ENV_PASS && username === ENV_USER) return pv === envPv() ? { username, role: "admin", name: "관리자", projectIds: null, tools: TOOL_IDS } : null;
     const u = loadUsers().find((x) => x.username === username);
     if (!u || String(u.pv) !== pv) return null;
@@ -86,7 +94,7 @@ function mount(app, { dataDir }) {
     }
     return null;
   }
-  const authEnabled = () => !!ENV_PASS || loadUsers().length > 0;
+  const authEnabled = () => !!ENV_PASS || MASTER_ON || loadUsers().length > 0;
 
   // ---- 로그인 시도 제한 (IP당 10분에 10회 실패 시 잠금) ----
   const fails = new Map();
@@ -140,6 +148,9 @@ function mount(app, { dataDir }) {
     next();
   });
   const requireAdmin = (req, res, next) => (req.user && req.user.role === "admin" ? next() : res.status(403).json({ error: "forbidden" }));
+  // 마스터(또는 로그인 없는 로컬 개발 모드)만 통과 — 경영관리(입출금)용
+  const isMaster = (req) => !!(req.user && (req.user.master || req.user.open));
+  const requireMaster = (req, res, next) => (isMaster(req) ? next() : res.status(403).json({ error: "forbidden", message: "마스터 계정만 접근할 수 있습니다." }));
   const requireManaged = (req, res, next) => (req.user.open ? res.status(400).json({ error: "auth_not_enabled", message: "먼저 서버 환경 변수 APP_PASSWORD 를 설정해 관리자 로그인을 켜세요." }) : next());
 
   // ---- 로그인/로그아웃/내 정보 ----
@@ -149,7 +160,8 @@ function mount(app, { dataDir }) {
     const { username = "", password = "" } = req.body || {};
     const name = String(username).trim();
     let ok = false, pv = "";
-    if (ENV_PASS && name === ENV_USER) { ok = safeEq(password, ENV_PASS); pv = envPv(); }
+    if (MASTER_ON && name === MASTER_USER) { ok = safeEq(password, MASTER_PASS); pv = masterPv(); }
+    else if (ENV_PASS && name === ENV_USER) { ok = safeEq(password, ENV_PASS); pv = envPv(); }
     else {
       const u = loadUsers().find((x) => x.username === name);
       // 없는 계정도 같은 시간이 걸리도록 더미 해시를 계산
@@ -158,20 +170,20 @@ function mount(app, { dataDir }) {
     if (!ok) { noteFail(ip); return res.status(401).json({ error: "bad_credentials", message: "아이디 또는 비밀번호가 올바르지 않습니다." }); }
     fails.delete(ip);
     setSession(req, res, name, pv);
-    res.json({ ok: true, role: name === ENV_USER && ENV_PASS ? "admin" : "viewer" });
+    res.json({ ok: true, role: (name === ENV_USER && ENV_PASS) || (MASTER_ON && name === MASTER_USER) ? "admin" : "viewer" });
   });
   app.post("/api/logout", (req, res) => { res.clearCookie(COOKIE, { path: "/" }); res.json({ ok: true }); });
-  app.get("/api/me", (req, res) => res.json({ username: req.user.username, name: req.user.name, role: req.user.role, projectIds: req.user.projectIds, canSubmit: !!req.user.canSubmit, tools: req.user.tools || TOOL_IDS, openMode: !!req.user.open }));
+  app.get("/api/me", (req, res) => res.json({ username: req.user.username, name: req.user.name, role: req.user.role, projectIds: req.user.projectIds, canSubmit: !!req.user.canSubmit, master: isMaster(req), tools: req.user.tools || TOOL_IDS, openMode: !!req.user.open }));
 
   // ---- 계정 관리 (관리자 전용) ----
   const publicUser = (u) => ({ id: u.id, username: u.username, name: u.name || "", projectIds: u.projectIds || [], canSubmit: !!u.canSubmit, tools: effTools(u), createdAt: u.createdAt });
-  app.get("/api/users", requireAdmin, (req, res) => res.json({ openMode: !!req.user.open, admin: ENV_PASS ? ENV_USER : null, users: loadUsers().map(publicUser) }));
+  app.get("/api/users", requireAdmin, (req, res) => res.json({ openMode: !!req.user.open, admin: ENV_PASS ? ENV_USER : null, master: MASTER_ON ? MASTER_USER : null, users: loadUsers().map(publicUser) }));
   app.post("/api/users", requireAdmin, requireManaged, (req, res) => {
     const { username, password, name = "", projectIds = [], canSubmit = false, tools } = req.body || {};
     if (!USERNAME_RE.test(String(username || ""))) return res.status(400).json({ error: "invalid_username", message: "아이디는 영문·숫자·._- 3~32자로 입력하세요." });
     if (String(password || "").length < 8) return res.status(400).json({ error: "weak_password", message: "비밀번호는 8자 이상이어야 합니다." });
     const users = loadUsers();
-    if (username === ENV_USER || users.some((u) => u.username === username)) return res.status(409).json({ error: "exists", message: "이미 있는 아이디입니다." });
+    if (username === ENV_USER || (MASTER_ON && username === MASTER_USER) || users.some((u) => u.username === username)) return res.status(409).json({ error: "exists", message: "이미 있는 아이디입니다." });
     const salt = crypto.randomBytes(16).toString("hex");
     const u = { id: crypto.randomUUID(), username, name: String(name).slice(0, 60), projectIds: [...new Set((projectIds || []).map(String))], canSubmit: !!canSubmit, tools: cleanTools(tools, !!canSubmit), salt, hash: hashPw(password, salt), pv: 1, createdAt: new Date().toISOString() };
     users.push(u);
@@ -204,6 +216,8 @@ function mount(app, { dataDir }) {
 
   return {
     usersFile,
+    isMaster,
+    requireMaster,
     exportUsers: () => loadUsers(),
     importUsers: (list) => saveUsers(list),
     // 프로젝트가 삭제되면 회원 계정의 연결도 제거

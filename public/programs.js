@@ -1,6 +1,6 @@
 // 프로그램 목록(앱 메뉴) — 새 프로그램을 만들면 아래 PROGRAMS 에 한 줄만 추가하면
 // 모든 화면의 좌측 상단 메뉴와 홈 화면 카드에 자동으로 나타난다.
-//   id: 고유 이름 · icon: 이모지 · title: 이름 · desc: 한 줄 설명 · href: 주소 · adminOnly: true 면 관리자에게만 표시
+//   id: 고유 이름 · icon: 이모지 · title: 이름 · desc: 한 줄 설명 · href: 주소 · adminOnly: true 면 관리자에게만, masterOnly: true 면 마스터에게만 표시
 (function () {
   const PROGRAMS = [
     { id: "rank", icon: "🏆", title: "순위 체크 (Naver 카페)", desc: "키워드 검색 → 통합·카페 순위와 콘텐츠 조회수를 매일 기록하고, 차트와 엑셀로 확인합니다.", href: "/rank.html" },
@@ -9,6 +9,7 @@
     { id: "partners", icon: "🤝", title: "업체 관리", desc: "파트너별 예치금(선금)을 충전하고 작업마다 차감해 잔액을 관리합니다. 요율(비용 조건·단가)은 자유롭게 수정합니다.", href: "/partners.html", adminOnly: true },
     { id: "research", icon: "🔍", title: "키워드 리서치 보드", desc: "클라이언트별 키워드 리서치·평가·채택, 카페 모니터링과 AI 키워드 확장을 관리합니다.", href: "/", adminOnly: true },
     { id: "experiments", icon: "🧪", title: "실험 노트", desc: "가설·진행·결과를 표에 간단히 적고 엑셀(CSV)로 내려받습니다.", href: "/experiments.html", adminOnly: true },
+    { id: "finance", icon: "💰", title: "경영관리", desc: "입금·출금 내역을 기록하고 월별 합계와 잔액을 확인합니다. 마스터 계정 전용입니다.", href: "/finance.html", masterOnly: true },
     { id: "admin", icon: "👥", title: "계정 관리", desc: "회원 계정을 만들고 볼 수 있는 프로젝트를 지정합니다.", href: "/admin.html", adminOnly: true },
     // 새 프로그램은 여기에 추가: { id: "new", icon: "📈", title: "이름", desc: "설명", href: "/new.html" },
   ];
@@ -18,6 +19,7 @@
   const getMe = () => (mePromise ??= fetch("/api/me").then((r) => (r.status === 401 ? (location.href = "/login.html", null) : r.json())).catch(() => ({ role: "admin" })));
   const visible = (me) => PROGRAMS.filter((p) => {
     if (p.adminOnly && me && me.role === "viewer") return false;
+    if (p.masterOnly && !(me && me.master)) return false; // 마스터 전용 프로그램
     // 회원은 계정에 허용된 순위체크 도구만 (tools 없으면 모두 허용)
     if (me && me.role === "viewer" && (p.id === "rank" || p.id === "threads") && Array.isArray(me.tools) && !me.tools.includes(p.id)) return false;
     return true;
@@ -62,7 +64,7 @@
     menu.innerHTML = `<div class="panel">${visible(me).map((p) => `<a class="item${p.id === currentId ? " cur" : ""}" href="${esc(p.href)}"><span class="ico">${p.icon}</span><span class="t">${esc(p.title)}</span><span class="d">${esc(p.desc)}</span></a>`).join("")}</div>`;
     const who = bar.querySelector("#appwho");
     if (me && !me.openMode) {
-      who.innerHTML = `${esc(me.name || me.username || "")} (${me.role === "viewer" ? "회원" : "관리자"}) <a href="#" id="appLogout">로그아웃</a>`;
+      who.innerHTML = `${esc(me.name || me.username || "")} (${me.role === "viewer" ? "회원" : me.master && !me.openMode ? "마스터" : "관리자"}) <a href="#" id="appLogout">로그아웃</a>`;
       who.querySelector("#appLogout").addEventListener("click", async (e) => { e.preventDefault(); await fetch("/api/logout", { method: "POST" }); location.href = "/login.html"; });
     }
   }

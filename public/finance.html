@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>경영관리</title>
+<style>
+:root{color-scheme:light;--bg:#F7F5F0;--surface:#fff;--surface-2:#F0ECE3;--ink:#1E2420;--ink-soft:#63706A;--border:#DDD6C8;--accent:#0E6E58;--accent-ink:#fff;--bad:#AE4430;--bad-soft:#FBE9E3;--good:#1F7A4D;--good-soft:#E4F5EA;--warn:#A6741A;--warn-soft:#FBF0DA}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#14181A;--surface:#1C2220;--surface-2:#232B28;--ink:#ECEFEC;--ink-soft:#9AA6A0;--border:#313A36;--accent:#3FCB9F;--accent-ink:#0B1512;--bad:#FF7A5C;--bad-soft:#2E1B16;--good:#4ADE94;--good-soft:#17281F;--warn:#E3B24E;--warn-soft:#2E2716}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1,h2,h3{margin:0}h1{font-size:1.4rem}h2{font-size:1.05rem}h3{font-size:.9rem}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.meta{font-size:.82rem;color:var(--ink-soft);line-height:1.6}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+label{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--ink-soft)}
+label b{color:var(--ink);font-size:.82rem}
+input,select,textarea{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--ink);min-width:0;width:100%}
+textarea{min-height:52px;resize:vertical}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--ink);padding:7px 12px;font-size:.8rem}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;padding:9px 16px;font-size:.88rem}
+button.danger{color:var(--bad);border-color:var(--bad-soft)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.msg{border-radius:8px;padding:9px 12px;font-size:.85rem;display:none}.msg.show{display:block}
+.msg.ok{background:var(--good-soft);color:var(--good)}.msg.err{background:var(--bad-soft);color:var(--bad)}
+.bal{font-size:1.8rem;font-weight:800;letter-spacing:-.02em}.bal.neg{color:var(--bad)}
+.bal small{font-size:.8rem;font-weight:600;color:var(--ink-soft);margin-left:4px}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left;vertical-align:middle}
+th{background:var(--surface-2);font-weight:600;color:var(--ink-soft);font-size:.78rem;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+.amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:700}
+.amt.plus{color:var(--good)}.amt.minus{color:var(--bad)}
+.tag{display:inline-block;background:var(--surface-2);border-radius:999px;padding:2px 9px;font-size:.76rem}
+.tag.topup{background:var(--good-soft);color:var(--good)}.tag.charge{background:var(--bad-soft);color:var(--bad)}
+.vatbtn{border:1px solid var(--border);background:var(--surface-2);border-radius:999px;padding:3px 10px;font-size:.78rem;cursor:pointer}
+.vatbtn.issued{background:var(--good-soft);color:var(--good);border-color:transparent;font-weight:700}
+.vatbtn.none{background:var(--bad-soft);color:var(--bad);border-color:var(--bad);font-weight:800}
+.rate{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rate input.rl{flex:1 1 160px}.rate input.rp{flex:0 0 130px}
+.chip{border:1px solid var(--border);border-radius:999px;padding:4px 11px;font-size:.8rem;cursor:pointer;background:var(--surface-2)}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.hl{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.sub{color:var(--ink-soft);font-size:.78rem}
+[hidden]{display:none!important}
+.in{color:var(--good);font-weight:700}.out{color:var(--bad);font-weight:700}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.stat{background:var(--surface-2);border-radius:12px;padding:12px 14px}.stat .l{font-size:.78rem;color:var(--ink-soft)}.stat .v{font-size:1.35rem;font-weight:800}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>💰 경영관리 · 입출금</h1></header>
+  <div class="meta">마스터 계정 전용 화면입니다. 입금·출금 내역을 기록하고 월별 합계와 누적 잔액을 확인합니다.</div>
+  <div class="msg" id="flash"></div>
+
+  <section class="card">
+    <h2>내역 추가</h2>
+    <form id="addForm" class="row">
+      <label style="flex:0 0 130px"><b>날짜</b><input type="date" name="date" id="fDate" required></label>
+      <label style="flex:0 0 100px"><b>구분</b><select name="type"><option value="in">입금</option><option value="out">출금</option></select></label>
+      <label style="flex:0 0 150px"><b>금액(원)</b><input type="number" name="amount" min="1" step="1" required placeholder="예: 500000"></label>
+      <label style="flex:1 1 120px"><b>분류</b><input name="category" placeholder="예: 매출, 인건비, 광고비"></label>
+      <label style="flex:1 1 140px"><b>거래처</b><input name="counterparty" placeholder="예: J컴퍼니"></label>
+      <label style="flex:2 1 180px"><b>메모</b><input name="note"></label>
+      <div><button class="primary" type="submit">추가</button></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="hl">
+      <h2>내역</h2>
+      <div class="row">
+        <label><b>월</b><input type="month" id="month"></label>
+        <button id="allBtn" type="button">전체 보기</button>
+        <a href="/api/finance/csv"><button type="button">엑셀(CSV) 내려받기</button></a>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="l">입금 합계</div><div class="v in" id="sIn">0원</div></div>
+      <div class="stat"><div class="l">출금 합계</div><div class="v out" id="sOut">0원</div></div>
+      <div class="stat"><div class="l">순증감</div><div class="v" id="sNet">0원</div></div>
+      <div class="stat"><div class="l">누적 잔액(전체 기간)</div><div class="v" id="sTotal">0원</div></div>
+    </div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th style="width:104px">날짜</th><th style="width:64px">구분</th><th class="amt" style="width:130px">금액(원)</th><th>분류</th><th>거래처</th><th>메모</th><th style="width:48px"></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+  </section>
+</div>
+<script src="/programs.js"></script>
+<script>
+Programs.mountBar("finance");
+const $=(s)=>document.querySelector(s);
+const esc=Programs.esc;
+const won=(n)=>(n<0?"-":"")+Math.abs(n).toLocaleString("ko-KR")+"원";
+const api=async(url,method="GET",body)=>{const r=await fetch(url,{method,headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});if(r.status===401){location.href="/login.html";throw new Error("login");}const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||d.error||"오류");return d;};
+let timer=null;const flash=(t,kind="ok")=>{const f=$("#flash");f.textContent=t;f.className="msg show "+kind;clearTimeout(timer);timer=setTimeout(()=>f.classList.remove("show"),4000);};
+const kstToday=()=>new Date(Date.now()+9*3600e3).toISOString().slice(0,10);
+$("#fDate").value=kstToday();
+$("#month").value=kstToday().slice(0,7);
+async function reload(){
+  const m=$("#month").value;
+  const d=await api("/api/finance"+(m?"?month="+m:""));
+  $("#sIn").textContent=won(d.summary.income);$("#sOut").textContent=won(d.summary.expense);
+  $("#sNet").textContent=won(d.summary.net);$("#sNet").className="v "+(d.summary.net<0?"out":"in");
+  $("#sTotal").textContent=won(d.total.net);
+  $("#rows").innerHTML=d.entries.length?d.entries.map(e=>`<tr><td>${esc(e.date)}</td><td class="${e.type}">${e.type==="in"?"입금":"출금"}</td><td class="amt ${e.type}">${e.type==="in"?"+":"-"}${e.amount.toLocaleString("ko-KR")}</td><td>${esc(e.category)}</td><td>${esc(e.counterparty)}</td><td>${esc(e.note)}</td><td><button class="danger" data-del="${esc(e.id)}" title="삭제">✕</button></td></tr>`).join(""):'<tr><td colspan="7" class="meta">내역이 없습니다.</td></tr>';
+}
+$("#month").addEventListener("change",()=>reload().catch(e=>flash(e.message,"err")));
+$("#allBtn").addEventListener("click",()=>{$("#month").value="";reload().catch(e=>flash(e.message,"err"));});
+$("#addForm").addEventListener("submit",async(ev)=>{ev.preventDefault();const f=Object.fromEntries(new FormData(ev.target));try{await api("/api/finance","POST",f);ev.target.reset();$("#fDate").value=f.date;await reload();flash("추가했습니다.");}catch(err){flash(err.message,"err");}});
+$("#rows").addEventListener("click",async(ev)=>{const id=ev.target.dataset&&ev.target.dataset.del;if(!id||!confirm("이 내역을 삭제할까요?"))return;try{await api("/api/finance/"+id,"DELETE");await reload();flash("삭제했습니다.");}catch(err){flash(err.message,"err");}});
+reload().catch(e=>flash(e.message,"err"));
+</script>
+</body>
+</html>

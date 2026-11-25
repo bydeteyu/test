@@ -90,6 +90,7 @@ async function load() {
   users = d.users;
   $("#openWarn").hidden = !d.openMode;
   $("#adminInfo").textContent = d.admin ? `관리자 계정: ${d.admin} (비밀번호는 서버 환경 변수 APP_PASSWORD 로 관리합니다)` : "";
+  if (d.master) $("#adminInfo").textContent += ` · 마스터 계정: ${d.master} (보호된 계정 — 여기서 수정·삭제할 수 없습니다)`;
   $("#createProjects").innerHTML = projects.length ? projects.map((p) => `<label><input type="checkbox" name="pj" value="${esc(p.id)}"> ${esc(p.name)}</label>`).join("") : '<span class="meta">프로젝트가 없습니다. 순위 체크 화면에서 먼저 프로젝트를 만드세요.</span>';
   renderRows();
 }

@@ -97,6 +97,26 @@ test("마스터 전용 입출금 + admin 은 마스터 수정/삭제 불가", as
     assert.ok(!rm.data.counterparties.includes("A사"));
     assert.ok((await master.call("GET", "/api/finance?month=2026-11")).data.entries.some((e) => e.counterparty === "A사")); // 제거해도 내역은 유지
 
+    // 영구 삭제: 삭제된 내역에서만 가능, 직전 백업 파일 + 기록이 남는다
+    const x = (await master.call("POST", "/api/finance", { type: "out", amount: 777, date: "2026-11-27", category: "임시" })).data.entry;
+    assert.strictEqual((await master.call("DELETE", `/api/finance/${x.id}/purge`)).status, 404); // 아직 삭제 전
+    assert.strictEqual((await admin.call("DELETE", `/api/finance/${x.id}/purge`)).status, 403);
+    await master.call("DELETE", `/api/finance/${x.id}`);
+    assert.strictEqual((await master.call("DELETE", `/api/finance/${x.id}/purge`)).status, 200);
+    assert.ok(!(await master.call("GET", "/api/finance/deleted")).data.entries.some((e) => e.id === x.id));
+    assert.ok(fs.readdirSync(path.join(dir, "finance-backups")).some((f) => f.startsWith("finance-before-purge-")));
+    assert.strictEqual((await master.call("GET", "/api/finance/log")).data.log[0].action, "purge");
+    // 변경 기록 초기화: 기존 기록은 파일로 보관, 새 기록은 초기화 한 줄로 시작
+    assert.strictEqual((await admin.call("POST", "/api/finance/log/reset")).status, 403);
+    const before = (await master.call("GET", "/api/finance/log?limit=500")).data.log.length;
+    const rs = await master.call("POST", "/api/finance/log/reset");
+    assert.strictEqual(rs.data.cleared, before);
+    const after = (await master.call("GET", "/api/finance/log")).data.log;
+    assert.strictEqual(after.length, 1);
+    assert.strictEqual(after[0].action, "log_reset");
+    assert.ok(fs.readdirSync(path.join(dir, "finance-backups")).some((f) => f.startsWith("finance-log-")));
+    assert.ok((await master.call("GET", "/api/finance?month=2026-11")).data.entries.length >= 2); // 내역 데이터는 그대로
+
     // admin 은 마스터 계정을 만들거나 바꾸거나 지울 수 없다
     assert.strictEqual((await admin.call("POST", "/api/users", { username: "master", password: "whatever123" })).status, 409);
     const list = (await admin.call("GET", "/api/users")).data;

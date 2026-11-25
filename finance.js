@@ -60,6 +60,14 @@ function mount(app, { dataDir, auth } = {}) {
     fs.writeFileSync(tmp, JSON.stringify(db, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, file);
   }
+  // 되돌릴 수 없는 작업(영구 삭제) 직전의 데이터를 시각이 붙은 별도 파일로 보관
+  function safetyCopy(tag) {
+    try {
+      if (!fs.existsSync(file)) return;
+      fs.mkdirSync(snapDir, { recursive: true, mode: 0o700 });
+      fs.copyFileSync(file, path.join(snapDir, `finance-before-${tag}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`));
+    } catch { /* 보관 실패가 작업을 막지는 않는다 */ }
+  }
   const record = (req, action, before, after) => {
     const row = { at: new Date().toISOString(), by: (req.user && req.user.username) || "", action, id: (after || before || {}).id, before: before || null, after: after || null };
     try { fs.appendFileSync(logFile, JSON.stringify(row) + "\n", { mode: 0o600 }); } catch { /* 기록 실패는 무시 */ }
@@ -175,6 +183,31 @@ function mount(app, { dataDir, auth } = {}) {
     save(db);
     record(req, "delete", before, e);
     res.json({ ok: true, removed: 1 });
+  });
+
+  // 영구 삭제: 이미 "삭제된 내역"에 있는 것만 가능. 복구할 수 없으므로 직전 상태를 별도 스냅샷으로 남기고 변경 기록에도 남긴다.
+  app.delete("/api/finance/:id/purge", requireMaster, (req, res) => {
+    const db = load();
+    const e = db.entries.find((x) => x.id === req.params.id && x.deletedAt);
+    if (!e) return res.status(404).json({ error: "not_found", message: "삭제된 내역에서만 영구 삭제할 수 있습니다." });
+    safetyCopy("purge");
+    db.entries = db.entries.filter((x) => x.id !== e.id);
+    save(db);
+    record(req, "purge", { ...e }, null);
+    res.json({ ok: true });
+  });
+
+  // 변경 기록 초기화: 기존 기록 파일은 finance-backups/ 로 옮겨 보관하고, 새 기록은 "초기화" 한 줄로 시작한다.
+  app.post("/api/finance/log/reset", requireMaster, (req, res) => {
+    const n = readLog().length;
+    try {
+      if (fs.existsSync(logFile)) {
+        fs.mkdirSync(snapDir, { recursive: true, mode: 0o700 });
+        fs.renameSync(logFile, path.join(snapDir, `finance-log-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`));
+      }
+    } catch (e) { return res.status(500).json({ error: "reset_failed", message: "기록 파일을 보관하지 못해 초기화하지 않았습니다." }); }
+    record(req, "log_reset", null, { id: "log", cleared: n });
+    res.json({ ok: true, cleared: n });
   });
 
   app.post("/api/finance/:id/restore", requireMaster, (req, res) => {

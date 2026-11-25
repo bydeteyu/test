@@ -345,6 +345,16 @@ test("bodyOf: 아이디·시간·조회수 줄을 건너뛰고 본문을 고른�
   assert.strictEqual(bodyOf("kangaroo.22260327\n조회 5회"), "");
 });
 
+test("isJunkText: 로그인/가입 안내 제목은 본문으로 쓰지 않는다", () => {
+  const { isJunkText } = require("../threads");
+  assert.strictEqual(isJunkText("Threads에 로그인 또는 가입하기"), true);
+  assert.strictEqual(isJunkText("Log in or sign up to Threads"), true);
+  assert.strictEqual(isJunkText("Threads"), true);
+  assert.strictEqual(isJunkText("스레드"), true);
+  assert.strictEqual(isJunkText("오랜만에 괜찮은 앱테크 발견!"), false); // 실제 본문은 유지
+  assert.strictEqual(isJunkText(""), false);
+});
+
 test("Threads: 확장 프로그램 키로 대상 조회·숫자 보고, 키 없으면 거부, 서버 조회가 확장 숫자를 지우지 않는다", async () => {
   const web = http.createServer((req, res) => { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end("<html><body>조회 50회</body></html>"); });
   await new Promise((r) => web.listen(0, "127.0.0.1", r));

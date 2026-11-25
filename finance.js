@@ -17,6 +17,26 @@ function summarize(entries) {
   return { income, expense, net: income - expense };
 }
 
+// 월(YYYY-MM)의 직전 달
+const prevMonth = (m) => { const [y, mo] = m.split("-").map(Number); return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, "0")}`; };
+
+// 구분+분류+거래처 단위로 이번 달과 전월 합계를 비교한다 (예: 인건비·병득 10월 6,000,000 → 11월 6,500,000 = +500,000)
+function compareMonths(entries, month) {
+  const pm = prevMonth(month);
+  const groups = new Map();
+  for (const e of entries) {
+    const m = e.date.slice(0, 7);
+    if (m !== month && m !== pm) continue;
+    const key = [e.type, e.category || "", e.counterparty || ""].join("\u0001");
+    const g = groups.get(key) || { type: e.type, category: e.category || "", counterparty: e.counterparty || "", current: 0, previous: 0 };
+    g[m === month ? "current" : "previous"] += e.amount || 0;
+    groups.set(key, g);
+  }
+  const items = [...groups.values()].map((g) => ({ ...g, diff: g.current - g.previous }));
+  items.sort((a, b) => (a.type === b.type ? (a.category + a.counterparty).localeCompare(b.category + b.counterparty, "ko") : a.type === "out" ? -1 : 1));
+  return { previousMonth: pm, items };
+}
+
 function mount(app, { dataDir, auth } = {}) {
   const requireMaster = auth ? auth.requireMaster : (req, res, next) => next();
   const file = path.join(dataDir || ".", "finance.json");
@@ -45,6 +65,14 @@ function mount(app, { dataDir, auth } = {}) {
     try { fs.appendFileSync(logFile, JSON.stringify(row) + "\n", { mode: 0o600 }); } catch { /* 기록 실패는 무시 */ }
   };
   const readLog = () => { try { return fs.readFileSync(logFile, "utf-8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
+  // 분류/거래처 드롭다운 목록. 아직 저장된 목록이 없으면(기존 데이터) 입력된 값들로 시작한다.
+  const uniq = (a) => [...new Set(a.filter(Boolean))];
+  const getOptions = (db) => db.options || { categories: uniq(db.entries.map((e) => e.category)), counterparties: uniq(db.entries.map((e) => e.counterparty)) };
+  const KINDS = { category: "categories", counterparty: "counterparties" };
+  function ensureOption(db, kind, name) {
+    const o = (db.options = getOptions(db));
+    if (name && !o[KINDS[kind]].includes(name)) o[KINDS[kind]].push(name);
+  }
   const sorted = (list) => list.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.createdAt < b.createdAt ? 1 : -1)));
 
   // 페이지: 마스터가 아니면 홈으로 (정적 파일 서빙보다 먼저 등록됨)
@@ -54,7 +82,27 @@ function mount(app, { dataDir, auth } = {}) {
     const month = /^\d{4}-\d{2}$/.test(String(req.query.month || "")) ? req.query.month : null;
     const all = load().entries.filter((e) => !e.deletedAt); // 삭제(숨김) 처리된 내역은 목록·합계에서 제외
     const list = sorted(month ? all.filter((e) => e.date.startsWith(month)) : all);
-    res.json({ entries: list, summary: summarize(list), total: summarize(all) });
+    res.json({ entries: list, summary: summarize(list), total: summarize(all), compare: month ? compareMonths(all, month) : null });
+  });
+
+  // 분류·거래처 드롭다운 목록 (추가/제거). 제거해도 이미 기록된 내역은 바뀌지 않는다.
+  app.get("/api/finance/options", requireMaster, (req, res) => res.json(getOptions(load())));
+  app.post("/api/finance/options", requireMaster, (req, res) => {
+    const kind = req.body && req.body.kind, name = clean(req.body && req.body.name, 40);
+    if (!KINDS[kind] || !name) return res.status(400).json({ error: "invalid_input", message: "추가할 이름을 입력하세요." });
+    const db = load();
+    const had = getOptions(db)[KINDS[kind]].includes(name);
+    ensureOption(db, kind, name);
+    if (!had) { save(db); record(req, "option_add", null, { id: `option:${kind}:${name}`, kind, name }); }
+    res.status(had ? 200 : 201).json(db.options || getOptions(db));
+  });
+  app.delete("/api/finance/options", requireMaster, (req, res) => {
+    const kind = req.query.kind, name = clean(req.query.name, 40);
+    if (!KINDS[kind]) return res.status(400).json({ error: "invalid_input" });
+    const db = load();
+    const o = (db.options = getOptions(db));
+    if (o[KINDS[kind]].includes(name)) { o[KINDS[kind]] = o[KINDS[kind]].filter((x) => x !== name); save(db); record(req, "option_remove", { id: `option:${kind}:${name}`, kind, name }, null); }
+    res.json(o);
   });
 
   // 삭제(숨김)된 내역 목록 — 여기서 복구할 수 있다
@@ -97,6 +145,8 @@ function mount(app, { dataDir, auth } = {}) {
     if (r.error) return res.status(400).json({ error: "invalid_input", message: r.error });
     const db = load();
     db.entries.push(r.value);
+    ensureOption(db, "category", r.value.category);
+    ensureOption(db, "counterparty", r.value.counterparty);
     save(db);
     record(req, "create", null, r.value);
     res.status(201).json({ entry: r.value });

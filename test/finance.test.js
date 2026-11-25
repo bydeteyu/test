@@ -73,6 +73,30 @@ test("마스터 전용 입출금 + admin 은 마스터 수정/삭제 불가", as
     assert.strictEqual((await admin.call("GET", "/api/finance/log")).status, 403);
     assert.strictEqual((await admin.call("POST", `/api/finance/${a.data.entry.id}/restore`)).status, 403);
 
+    // 분류/거래처 드롭다운 목록: 입력된 값으로 시작 + 추가/제거, 새 내역 값은 자동 등록
+    const o0 = (await master.call("GET", "/api/finance/options")).data;
+    assert.ok(o0.categories.includes("광고비") && o0.counterparties.length >= 0);
+    assert.strictEqual((await master.call("POST", "/api/finance/options", { kind: "category", name: "인건비" })).status, 201);
+    assert.strictEqual((await master.call("POST", "/api/finance/options", { kind: "counterparty", name: "병득" })).status, 201);
+    assert.strictEqual((await master.call("POST", "/api/finance/options", { kind: "counterparty", name: "병득" })).status, 200); // 중복은 한 번만
+    assert.strictEqual((await master.call("POST", "/api/finance/options", { kind: "x", name: "a" })).status, 400);
+    assert.strictEqual((await admin.call("GET", "/api/finance/options")).status, 403);
+    // 전월 대비: 인건비·병득 10월 6,000,000 → 11월 6,500,000 = +500,000
+    await master.call("POST", "/api/finance", { type: "out", amount: 6000000, date: "2026-10-25", category: "인건비", counterparty: "병득" });
+    await master.call("POST", "/api/finance", { type: "out", amount: 6500000, date: "2026-11-25", category: "인건비", counterparty: "병득" });
+    await master.call("POST", "/api/finance", { type: "out", amount: 100000, date: "2026-11-26", category: "신규비용", counterparty: "A사" });
+    const cmp = (await master.call("GET", "/api/finance?month=2026-11")).data.compare;
+    assert.strictEqual(cmp.previousMonth, "2026-10");
+    const pay = cmp.items.find((c) => c.category === "인건비" && c.counterparty === "병득");
+    assert.deepStrictEqual([pay.previous, pay.current, pay.diff], [6000000, 6500000, 500000]);
+    assert.strictEqual(cmp.items.find((c) => c.category === "신규비용").previous, 0);
+    assert.strictEqual((await master.call("GET", "/api/finance?month=2027-01")).data.compare.previousMonth, "2026-12"); // 연도 경계
+    assert.strictEqual((await master.call("GET", "/api/finance")).data.compare, null); // 전체 보기에는 비교 없음
+    assert.ok((await master.call("GET", "/api/finance/options")).data.counterparties.includes("A사")); // 자동 등록
+    const rm = await master.call("DELETE", "/api/finance/options?kind=counterparty&name=" + encodeURIComponent("A사"));
+    assert.ok(!rm.data.counterparties.includes("A사"));
+    assert.ok((await master.call("GET", "/api/finance?month=2026-11")).data.entries.some((e) => e.counterparty === "A사")); // 제거해도 내역은 유지
+
     // admin 은 마스터 계정을 만들거나 바꾸거나 지울 수 없다
     assert.strictEqual((await admin.call("POST", "/api/users", { username: "master", password: "whatever123" })).status, 409);
     const list = (await admin.call("GET", "/api/users")).data;

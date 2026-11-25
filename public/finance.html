@@ -45,6 +45,10 @@ tbody tr:last-child td{border-bottom:none}
 .sub{color:var(--ink-soft);font-size:.78rem}
 [hidden]{display:none!important}
 .in{color:var(--good);font-weight:700}.out{color:var(--bad);font-weight:700}
+.diff{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap}
+.diff.good{background:var(--good-soft);color:var(--good)}.diff.bad{background:var(--bad-soft);color:var(--bad)}.diff.flat{background:var(--surface-2);color:var(--ink-soft)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chips .chip{display:inline-flex;gap:6px;align-items:center;cursor:default}.chips .chip button{border:0;padding:0 2px;color:var(--ink-soft);font-size:.8rem}
+details>summary{cursor:pointer;font-weight:600;font-size:.85rem}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .stat{background:var(--surface-2);border-radius:12px;padding:12px 14px}.stat .l{font-size:.78rem;color:var(--ink-soft)}.stat .v{font-size:1.35rem;font-weight:800}
 </style>
@@ -61,11 +65,22 @@ tbody tr:last-child td{border-bottom:none}
       <label style="flex:0 0 130px"><b>날짜</b><input type="date" name="date" id="fDate" required></label>
       <label style="flex:0 0 100px"><b>구분</b><select name="type"><option value="in">입금</option><option value="out">출금</option></select></label>
       <label style="flex:0 0 150px"><b>금액(원)</b><input type="text" name="amount" id="fAmount" inputmode="numeric" autocomplete="off" required placeholder="예: 500,000"></label>
-      <label style="flex:1 1 120px"><b>분류</b><input name="category" placeholder="예: 매출, 인건비, 광고비"></label>
-      <label style="flex:1 1 140px"><b>거래처</b><input name="counterparty" placeholder="예: J컴퍼니"></label>
+      <label style="flex:1 1 130px"><b>분류</b><select name="category" id="fCat" data-kind="category"></select></label>
+      <label style="flex:1 1 150px"><b>거래처</b><select name="counterparty" id="fCp" data-kind="counterparty"></select></label>
       <label style="flex:2 1 180px"><b>메모</b><input name="note"></label>
       <div><button class="primary" type="submit">추가</button></div>
     </form>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>분류 · 거래처 목록 관리 (자주 쓰는 항목 추가/제거)</summary>
+      <div style="display:grid;gap:14px;margin-top:12px">
+        <div><h3>분류</h3><div class="chips" id="chipsCategory"></div><form class="row optForm" data-kind="category" style="margin-top:8px"><input name="name" placeholder="새 분류 이름" maxlength="40" style="max-width:240px"><button type="submit">추가</button></form></div>
+        <div><h3>거래처</h3><div class="chips" id="chipsCounterparty"></div><form class="row optForm" data-kind="counterparty" style="margin-top:8px"><input name="name" placeholder="새 거래처 이름" maxlength="40" style="max-width:240px"><button type="submit">추가</button></form></div>
+        <div class="meta">목록에서 제거해도 이미 기록된 내역은 그대로 유지됩니다.</div>
+      </div>
+    </details>
   </section>
 
   <section class="card">
@@ -85,9 +100,14 @@ tbody tr:last-child td{border-bottom:none}
       <div class="stat"><div class="l">누적 잔액(전체 기간)</div><div class="v" id="sTotal">0원</div></div>
     </div>
     <div style="overflow-x:auto"><table>
-      <thead><tr><th style="width:104px">날짜</th><th style="width:64px">구분</th><th class="amt" style="width:130px">금액(원)</th><th>분류</th><th>거래처</th><th>메모</th><th style="width:48px"></th></tr></thead>
+      <thead><tr><th style="width:104px">날짜</th><th style="width:64px">구분</th><th class="amt" style="width:130px">금액(원)</th><th style="width:150px">전월 대비</th><th>분류</th><th>거래처</th><th>메모</th><th style="width:48px"></th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
+    <div id="cmpBox" hidden>
+      <h3 id="cmpTitle">전월 대비 변동</h3>
+      <div class="meta">같은 구분·분류·거래처끼리 월 합계를 비교합니다. 입금은 늘면 초록, 출금은 늘면 빨강으로 표시됩니다.</div>
+      <div style="overflow-x:auto"><table><thead><tr><th style="width:64px">구분</th><th>분류</th><th>거래처</th><th class="amt" id="cmpPrevH">전월</th><th class="amt" id="cmpCurH">이번 달</th><th class="amt">차액</th></tr></thead><tbody id="cmpRows"></tbody></table></div>
+    </div>
   </section>
 
   <section class="card">
@@ -115,21 +135,61 @@ $("#fDate").value=kstToday();
 const fAmount=$("#fAmount");
 fAmount.addEventListener("input",()=>{const d=fAmount.value.replace(/\D/g,"").replace(/^0+(?=\d)/,"");fAmount.value=d?Number(d).toLocaleString("ko-KR"):"";});
 $("#month").value=kstToday().slice(0,7);
+const sgn=(n)=>(n>0?"+":n<0?"-":"")+Math.abs(n).toLocaleString("ko-KR");
+const mlabel=(ym)=>Number(ym.slice(5))+"월";
+// 변동 배지: 입금은 늘면 좋음, 출금은 줄면 좋음
+const diffBadge=(c)=>{
+  if(!c.previous&&c.current)return `<span class="diff flat">전월 없음 · 신규</span>`;
+  if(c.diff===0)return `<span class="diff flat">전월과 동일</span>`;
+  const good=(c.type==="in")===(c.diff>0);
+  return `<span class="diff ${good?"good":"bad"}">전월 대비 ${sgn(c.diff)}</span>`;
+};
+const gkey=(x)=>[x.type,x.category||"",x.counterparty||""].join("|");
+let opts={categories:[],counterparties:[]};
+function fillSelect(sel,list,keep){
+  const kind=sel.dataset.kind;
+  sel.innerHTML=`<option value="">(선택 안 함)</option>`+list.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("")+`<option value="__new__">＋ 새 ${kind==="category"?"분류":"거래처"} 추가…</option>`;
+  sel.value=list.includes(keep)?keep:"";
+}
+function renderOpts(){
+  fillSelect($("#fCat"),opts.categories,$("#fCat").value);fillSelect($("#fCp"),opts.counterparties,$("#fCp").value);
+  for(const [kind,list] of [["category",opts.categories],["counterparty",opts.counterparties]]){
+    $("#chips"+(kind==="category"?"Category":"Counterparty")).innerHTML=list.length?list.map(v=>`<span class="chip">${esc(v)}<button type="button" title="목록에서 제거" data-rmkind="${kind}" data-rmname="${esc(v)}">✕</button></span>`).join(""):'<span class="meta">등록된 항목이 없습니다.</span>';
+  }
+}
+async function loadOpts(){opts=await api("/api/finance/options");renderOpts();}
+async function addOpt(kind,name){opts=await api("/api/finance/options","POST",{kind,name});renderOpts();}
+for(const sel of [$("#fCat"),$("#fCp")])sel.addEventListener("change",async()=>{
+  if(sel.value!=="__new__")return;
+  const kind=sel.dataset.kind,name=(prompt(`새 ${kind==="category"?"분류":"거래처"} 이름을 입력하세요`)||"").trim();
+  try{if(name){await addOpt(kind,name);sel.value=name;}else sel.value="";}catch(err){sel.value="";flash(err.message,"err");}
+});
+document.addEventListener("submit",async(ev)=>{const f=ev.target.closest&&ev.target.closest(".optForm");if(!f)return;ev.preventDefault();const name=f.elements.name.value.trim();if(!name)return;try{await addOpt(f.dataset.kind,name);f.reset();flash("목록에 추가했습니다.");}catch(err){flash(err.message,"err");}});
+document.addEventListener("click",async(ev)=>{const b=ev.target.closest&&ev.target.closest("[data-rmkind]");if(!b)return;if(!confirm(`"${b.dataset.rmname}" 항목을 목록에서 제거할까요? (기록된 내역은 그대로 유지됩니다)`))return;try{opts=await api(`/api/finance/options?kind=${b.dataset.rmkind}&name=${encodeURIComponent(b.dataset.rmname)}`,"DELETE");renderOpts();}catch(err){flash(err.message,"err");}});
 async function reload(){
   const m=$("#month").value;
   const d=await api("/api/finance"+(m?"?month="+m:""));
+  const cmp=d.compare,cmap=new Map(),shown=new Set();
+  if(cmp)for(const c of cmp.items)cmap.set(gkey(c),c);
   $("#sIn").textContent=won(d.summary.income);$("#sOut").textContent=won(d.summary.expense);
   $("#sNet").textContent=won(d.summary.net);$("#sNet").className="v "+(d.summary.net<0?"out":"in");
   $("#sTotal").textContent=won(d.total.net);
-  $("#rows").innerHTML=d.entries.length?d.entries.map(e=>`<tr><td>${esc(e.date)}</td><td class="${e.type}">${e.type==="in"?"입금":"출금"}</td><td class="amt ${e.type}">${e.type==="in"?"+":"-"}${e.amount.toLocaleString("ko-KR")}</td><td>${esc(e.category)}</td><td>${esc(e.counterparty)}</td><td>${esc(e.note)}</td><td><button class="danger" data-del="${esc(e.id)}" title="삭제">✕</button></td></tr>`).join(""):'<tr><td colspan="7" class="meta">내역이 없습니다.</td></tr>';
+  $("#rows").innerHTML=d.entries.length?d.entries.map(e=>{const c=cmap.get(gkey(e));let badge="";if(c&&!shown.has(gkey(e))){shown.add(gkey(e));badge=diffBadge(c);}return `<tr><td>${esc(e.date)}</td><td class="${e.type}">${e.type==="in"?"입금":"출금"}</td><td class="amt ${e.type}">${e.type==="in"?"+":"-"}${e.amount.toLocaleString("ko-KR")}</td><td>${badge}</td><td>${esc(e.category)}</td><td>${esc(e.counterparty)}</td><td>${esc(e.note)}</td><td><button class="danger" data-del="${esc(e.id)}" title="삭제">✕</button></td></tr>`}).join(""):'<tr><td colspan="8" class="meta">내역이 없습니다.</td></tr>';
+  // 전월 대비 변동표 (월을 선택했을 때만)
+  $("#cmpBox").hidden=!cmp;
+  if(cmp){
+    $("#cmpTitle").textContent=`전월 대비 변동 (${mlabel(cmp.previousMonth)} → ${mlabel(m)})`;
+    $("#cmpPrevH").textContent=mlabel(cmp.previousMonth)+"(원)";$("#cmpCurH").textContent=mlabel(m)+"(원)";
+    $("#cmpRows").innerHTML=cmp.items.length?cmp.items.map(c=>`<tr><td class="${c.type}">${c.type==="in"?"입금":"출금"}</td><td>${esc(c.category||"(미지정)")}</td><td>${esc(c.counterparty||"(미지정)")}</td><td class="amt">${c.previous?c.previous.toLocaleString("ko-KR"):"-"}</td><td class="amt">${c.current?c.current.toLocaleString("ko-KR"):"-"}</td><td class="amt">${!c.previous&&c.current?'<span class="diff flat">신규</span>':!c.current&&c.previous?`<span class="diff ${c.type==="in"?"bad":"good"}">이번 달 없음 ${sgn(c.diff)}</span>`:c.diff===0?'<span class="diff flat">변동 없음</span>':`<span class="diff ${(c.type==="in")===(c.diff>0)?"good":"bad"}">${sgn(c.diff)}</span>`}</td></tr>`).join(""):'<tr><td colspan="6" class="meta">비교할 내역이 없습니다.</td></tr>';
+  }
 }
 $("#month").addEventListener("change",()=>reload().catch(e=>flash(e.message,"err")));
 $("#allBtn").addEventListener("click",()=>{$("#month").value="";reload().catch(e=>flash(e.message,"err"));});
 $("#addForm").addEventListener("submit",async(ev)=>{ev.preventDefault();const f=Object.fromEntries(new FormData(ev.target));f.amount=String(f.amount||"").replace(/\D/g,"");try{await api("/api/finance","POST",f);ev.target.reset();$("#fDate").value=f.date;await reload();if(!$("#more").hidden)await loadMore();flash("추가했습니다.");}catch(err){flash(err.message,"err");}});
 $("#rows").addEventListener("click",async(ev)=>{const id=ev.target.dataset&&ev.target.dataset.del;if(!id||!confirm("이 내역을 삭제할까요? (삭제된 내역에서 복구할 수 있습니다)"))return;try{await api("/api/finance/"+id,"DELETE");await reload();if(!$("#more").hidden)await loadMore();flash("삭제했습니다. (복구 가능)");}catch(err){flash(err.message,"err");}});
-const ACT={create:"추가",update:"수정",delete:"삭제",restore:"복구"};
+const ACT={create:"추가",update:"수정",delete:"삭제",restore:"복구",option_add:"목록 추가",option_remove:"목록 제거"};
 const kst=(iso)=>new Date(new Date(iso).getTime()+9*3600e3).toISOString().slice(0,16).replace("T"," ");
-const desc=(l)=>{const e=l.after||l.before||{};return `${e.date||""} ${e.type==="in"?"입금":"출금"} ${(e.amount||0).toLocaleString("ko-KR")}원 ${[e.category,e.counterparty].filter(Boolean).join(" · ")}`;};
+const desc=(l)=>{const e=l.after||l.before||{};if(l.action&&l.action.startsWith("option"))return `${e.kind==="category"?"분류":"거래처"}: ${e.name}`;return `${e.date||""} ${e.type==="in"?"입금":"출금"} ${(e.amount||0).toLocaleString("ko-KR")}원 ${[e.category,e.counterparty].filter(Boolean).join(" · ")}`;};
 async function loadMore(){
   const [d,l]=await Promise.all([api("/api/finance/deleted"),api("/api/finance/log")]);
   $("#delRows").innerHTML=d.entries.length?d.entries.map(e=>`<tr><td>${esc(e.date)}</td><td class="${e.type}">${e.type==="in"?"입금":"출금"}</td><td class="amt">${e.amount.toLocaleString("ko-KR")}</td><td>${esc(e.category)}</td><td>${esc(e.counterparty)}</td><td>${esc(kst(e.deletedAt))}</td><td><button data-restore="${esc(e.id)}">복구</button></td></tr>`).join(""):'<tr><td colspan="7" class="meta">삭제된 내역이 없습니다.</td></tr>';
@@ -137,7 +197,7 @@ async function loadMore(){
 }
 $("#moreBtn").addEventListener("click",()=>{const open=$("#more").hidden;$("#more").hidden=!open;$("#moreBtn").textContent=open?"접기":"펼치기";if(open)loadMore().catch(e=>flash(e.message,"err"));});
 $("#delRows").addEventListener("click",async(ev)=>{const id=ev.target.dataset&&ev.target.dataset.restore;if(!id)return;try{await api("/api/finance/"+id+"/restore","POST");await reload();await loadMore();flash("복구했습니다.");}catch(err){flash(err.message,"err");}});
-reload().catch(e=>flash(e.message,"err"));
+loadOpts().then(()=>reload()).catch(e=>flash(e.message,"err"));
 </script>
 </body>
 </html>

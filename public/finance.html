@@ -56,7 +56,7 @@ details>summary{cursor:pointer;font-weight:600;font-size:.85rem}
 tfoot .footSum td{border-top:2px solid var(--border);background:var(--surface-2);font-size:.86rem}
 .msel{position:relative}.msel>summary{list-style:none;border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:7px 9px;font-weight:400;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.msel>summary::-webkit-details-marker{display:none}
 .mpanel{position:absolute;z-index:6;top:100%;left:0;margin-top:3px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px;max-height:240px;overflow:auto;min-width:180px;box-shadow:0 6px 18px rgba(0,0,0,.14)}
-.mpanel label{display:flex;gap:7px;align-items:center;padding:4px 6px;font-size:.84rem;cursor:pointer;border-radius:6px}.mpanel label:hover{background:var(--surface-2)}.mpanel input{width:auto}
+.mpanel label{display:block;padding:5px 7px;font-size:.84rem;cursor:pointer;border-radius:6px;white-space:nowrap}.mpanel label:hover{background:var(--surface-2)}.mpanel input{width:auto;margin:0 8px 0 0;vertical-align:middle}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .stat{background:var(--surface-2);border-radius:12px;padding:12px 14px}.stat .l{font-size:.78rem;color:var(--ink-soft)}.stat .v{font-size:1.35rem;font-weight:800}
 </style>
@@ -71,7 +71,7 @@ tfoot .footSum td{border-top:2px solid var(--border);background:var(--surface-2)
     <h2>내역 추가</h2>
     <form id="addForm" class="row">
       <label style="flex:0 0 130px"><b>날짜</b><input type="date" name="date" id="fDate" required></label>
-      <label style="flex:0 0 100px"><b>구분</b><select name="type"><option value="in">입금</option><option value="out">출금</option></select></label>
+      <label style="flex:0 0 100px"><b>구분</b><select name="type"><option value="out" selected>출금</option><option value="in">입금</option></select></label>
       <label style="flex:0 0 150px"><b>금액(원)</b><input type="text" name="amount" id="fAmount" inputmode="numeric" autocomplete="off" required placeholder="예: 500,000"></label>
       <label style="flex:1 1 130px"><b>분류</b><select name="category" id="fCat" data-kind="category"></select></label>
       <label style="flex:1 1 150px"><b>거래처</b><select name="counterparty" id="fCp" data-kind="counterparty"></select></label>

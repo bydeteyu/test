@@ -4,7 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { normalize, resolveShortUrl, resolveClubId, UA, fetchKeyword, findTarget, ensureMatchKey, today } = require("./rank-tracker/core");
+const { normalize, resolveShortUrl, resolveClubId, UA, fetchKeyword, findTarget, ensureMatchKey, locatePost, today } = require("./rank-tracker/core");
 
 const AUTO_HOUR = Number(process.env.CAFE_COMMENT_HOUR || 11); // KST, 기본 오전 11시
 
@@ -131,7 +131,7 @@ function authorPresent(comments, author) {
 
 // 한 항목 점검: 카페 검색 순위(1~30 / 범위 밖) + 지정 작성자 댓글 유지 여부
 async function checkItem(it) {
-  let rank = null, present = null, error = null;
+  let rank = null, present = null, error = null, freshArt = null, postKey = null;
   try {
     it.match = it.url; // findTarget 이 쓰는 주소 필드
     await ensureMatchKey(it); // naver.me 단축 주소는 카페 글 키로 풀어둔다
@@ -141,12 +141,17 @@ async function checkItem(it) {
     else if (posts.length) {
       const hit = findTarget(posts.slice(0, 30), it, {});
       rank = hit ? (hit.rank ?? null) : null; // null = 30위 밖
-      if (hit && hit.key) { it.postKey = hit.key; if (hit.art) it.postArt = hit.art; }
+      if (hit && hit.key) { postKey = hit.key; if (hit.art) freshArt = hit.art; }
     } else rank = null;
   } catch (e) { error = "순위 조회 오류: " + e.message; }
+  // 검색어가 넓어 30위 밖이면 글을 못 찾아 댓글용 새 art 토큰이 없다 → 제목으로 글을 직접 찾아 토큰을 받는다
+  if (!freshArt) {
+    try { const loc = await locatePost(it); if (loc && loc.key) { postKey = postKey || loc.key; freshArt = loc.art || freshArt; } } catch { /* 못 찾으면 저장된 주소로 시도 */ }
+  }
+  if (postKey) { it.postKey = postKey; if (freshArt) it.postArt = freshArt; }
   try {
-    // 검색에서 글을 찾았으면 그때 받은 새 art 토큰으로 읽는다(회원공개 카페는 저장된 주소의 토큰이 만료됨)
-    const r = await fetchComments(it.postKey || it.url, { art: it.postArt || null });
+    // 검색/제목검색에서 받은 새 art 토큰으로 읽는다(회원공개 카페는 저장된 주소의 토큰이 만료됨)
+    const r = await fetchComments(postKey || it.postKey || it.url, { art: freshArt || it.postArt || null });
     if (r.ok) present = authorPresent(r.comments, it.author);
     else error = (error ? error + " / " : "") + "댓글: " + r.reason;
   } catch (e) { error = (error ? error + " / " : "") + "댓글 조회 오류: " + e.message; }
@@ -258,6 +263,7 @@ function mount(app, { dataDir } = {}) {
           if (hit && hit.key) url = hit.key;
         } else rankInfo = { rank: null, note: posts === null ? "검색 실패" : "결과 없음" };
       } catch (e) { rankInfo = { error: e.message }; }
+      if (!art) { try { const loc = await locatePost({ ...it, titleContains: it.titleContains || "" }); if (loc && loc.key) { art = loc.art || art; url = loc.key; if (rankInfo) rankInfo.locatedByTitle = true; } } catch { /* */ } }
     }
     const r = await fetchComments(url, { art });
     res.json({

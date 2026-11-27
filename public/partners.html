@@ -68,7 +68,7 @@ tbody tr:last-child td{border-bottom:none}
   <div id="detail" hidden>
     <section class="card">
       <div class="hl">
-        <div><h2 id="pName"></h2><div class="sub" id="pMedia"></div></div>
+        <div><h2 id="pName" style="display:inline-block"></h2> <button id="editName" title="이름·매체 수정" style="padding:3px 8px;font-size:.78rem">✏ 수정</button><div class="sub" id="pMedia"></div></div>
         <div style="text-align:right"><div class="sub">잔액</div><div class="bal" id="pBal"></div></div>
       </div>
       <div><div class="sub" style="margin-bottom:4px">계약 내용 / 메모 (예: 스레드 발행 1건 1만원 / 댓글 0.5만원 / AS 24시간 이내)</div>
@@ -159,6 +159,13 @@ function renderDetail(){
 $("#addForm").addEventListener("submit",async(e)=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{const r=await api("/api/partners","POST",{name:f.name.trim(),media:(f.media||"").trim()});e.target.reset();await reload(r.partner.id);flash("업체를 추가했습니다.");}catch(err){flash(err.message,"err");}});
 $("#partnerSel").addEventListener("change",(e)=>{curId=e.target.value;renderDetail();});
 $("#saveMemo").addEventListener("click",async()=>{try{await api("/api/partners/"+curId,"PATCH",{memo:$("#pMemo").value});await reload(curId);flash("메모를 저장했습니다.");}catch(err){flash(err.message,"err");}});
+$("#editName").addEventListener("click",async()=>{
+  const p=cur();if(!p)return;
+  const name=prompt("파트너(업체) 이름",p.name);if(name==null)return;
+  if(!name.trim()){flash("이름을 입력하세요.","err");return;}
+  const media=prompt("매체",p.media||"");if(media==null)return;
+  try{await api("/api/partners/"+curId,"PATCH",{name:name.trim(),media:media.trim()});await reload(curId);flash("수정했습니다.");}catch(err){flash(err.message,"err");}
+});
 $("#delPartner").addEventListener("click",async()=>{const p=cur();if(!p)return;if(!confirm(`"${p.name}" 업체와 모든 내역을 삭제할까요?`))return;try{await api("/api/partners/"+curId,"DELETE");curId=null;await reload();flash("삭제했습니다.");}catch(err){flash(err.message,"err");}});
 $("#addRate").addEventListener("click",()=>{const p=cur();(p.rates??=[]).push({label:"",price:0});renderRates();});
 $("#rates").addEventListener("click",(e)=>{if(e.target.matches("[data-rdel]")){const i=+e.target.closest(".rate").dataset.i;cur().rates.splice(i,1);renderRates();}});
